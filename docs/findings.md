@@ -45,6 +45,26 @@ For **Settings** the same pattern produced `XFILE::CDirectory::GetDirectory - Er
 
 **Test:** `test_main_plugin_routes.FolderEntriesTest.test_folder_entries_end_their_directory`
 
+### F9 · Repair readiness can stay blocked although the library is up to date
+
+`get_mix_repair_readiness()` in `main.py` (and its copy in `service.py`) allows repair only when Kodi's newest library timestamp (`librarylastupdated`, `librarylastcleaned`, `songslastadded`, `songsmodified`) is later than the **latest** time a missing track was detected in the mix.
+
+The rule measures when the add-on *noticed* a file was missing, not when the file went missing. Kodi only moves those timestamps when a scan or clean actually changes something.
+
+As a result:
+
+- **It can block repair indefinitely.** If the library is scanned after files are moved but before the check notices (the check runs every 1–2 hours), every later scan finds nothing new, and repair stays blocked until something unrelated changes in the library. Seen on 2026-10-10: the library last changed at 20:43, the check found more missing tracks at 21:25, and three scans at 21:27–21:34 changed no timestamp. 18 mixes stayed blocked.
+- **A newly missing track resets the whole mix.** One track going missing later moves the required time forward for all of the mix's missing tracks.
+- **The message is misleading.** "Kodi audio library has not been updated since the latest detected inconsistency" appears right after the user updated the library.
+- **Any library change counts.** For example, a tag edit on an unrelated album makes every mix "ready", even if the moved files were never scanned. This is harmless, because automatic repair still needs a confident candidate.
+- **The docs disagree with the code.** `docs/concept_repair_strategy.md` and `repair_readiness_flow.mmd` compare against the *first* inconsistency with `>=`; the code uses the *latest* detection with `>`.
+
+What is correct: Kodi stores these timestamps in UTC, and the add-on parses them as UTC. This was confirmed against the music database file's modification time.
+
+A more direct rule is to ask the library about each missing track. If Kodi no longer lists the missing path, the library already reflects the change.
+
+**Test:** `test_main_saved_mixes.RepairReadinessDeadlockTest.test_library_that_already_reflects_the_change_does_not_block_repair`
+
 ## Resolved
 
 ### F7 · The service start message showed the add-on prefix twice

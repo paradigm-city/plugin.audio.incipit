@@ -208,6 +208,32 @@ class ConsistencyTest(KodiTestCase):
         self.assertEqual(main.get_consistency_label({"consistency": "garbage"}), "")
 
 
+class RepairReadinessDeadlockTest(KodiTestCase):
+    """The timeline from kodi.log on 2026-10-10, which left 18 mixes blocked."""
+
+    @unittest.expectedFailure
+    def test_library_that_already_reflects_the_change_does_not_block_repair(self):
+        # Known issue F9: readiness needs a library *change* after the check noticed a missing file.
+        # Here the library changed before the check noticed, and later scans find nothing new, so
+        # Kodi's timestamps never move and repair stays blocked. The library no longer lists the
+        # missing files, so it already reflects the change and repair should be possible.
+        clock = self.use_clock(main.parse_kodi_datetime("2026-10-10 17:42:23"))  # 19:42 local
+        kodi.add_media(A)
+        kodi.add_media(C)
+        cache_path = self.save_mix([A, B, C])
+        main.analyze_mix_consistency(cache_path)  # B found missing
+
+        kodi.remove_media(C)  # C deleted; the scan at 20:43 local records the change
+        kodi.library_properties = {"librarylastupdated": "2026-10-10 18:43:52", "songsmodified": "2026-10-10 18:43:42"}
+
+        clock.now = main.parse_kodi_datetime("2026-10-10 19:25:43")  # 21:25 local: Kodi restart
+        main.analyze_mix_consistency(cache_path)  # C found missing -> last change 21:25
+
+        clock.advance(600)  # scans at 21:27-21:34 find nothing; timestamps stay at 18:43 UTC
+        readiness = main.get_mix_repair_readiness(main.get_saved_mix_metadata(cache_path))
+        self.assertEqual(readiness["status"], "ready")
+
+
 class RepairReadinessTest(KodiTestCase):
     def setUp(self):
         super().setUp()
