@@ -209,7 +209,7 @@ class LabelFormattingTest(KodiTestCase):
     def test_optional_blocks_and_leftovers(self):
         kodi.kodi_settings["musicfiles.trackformat"] = "[%N. ]%A - %T [(%B)] %Z"
         main.KODI_MUSIC_TRACK_TEMPLATE_CACHE = None
-        self.assertEqual(main.format_mix_track_label(TRACK, {"title": "Ace"}, 0), "Ace")
+        self.assertEqual(main.format_mix_track_label(TRACK, {"title": "Ace"}, 0), "(Unknown Artist) - Ace")
         self.assertEqual(main.format_mix_track_label(TRACK, {"title": "Ace", "artist": "M", "album": "B"}, 2), "2. M - Ace (B)")
 
     def test_fallback_template_when_kodi_setting_unavailable(self):
@@ -218,11 +218,16 @@ class LabelFormattingTest(KodiTestCase):
         self.assertEqual(main.get_kodi_music_track_template(), main.KODI_MUSIC_TRACK_TEMPLATE_FALLBACK)
         self.assertEqual(main.format_mix_track_label(TRACK, {"artist": "M"}, 1), "1. M - 01 Ace of Spades")
 
-    @unittest.expectedFailure
-    def test_missing_artist_drops_the_separator(self):
-        # Known issue: with "[%N. ]%A - %T" and no artist the label is "1. - 01 Ace of Spades";
-        # Kodi's own formatter drops text after an empty field. Remove expectedFailure once fixed.
-        self.assertEqual(main.format_mix_track_label(TRACK, {}, 1), "1. 01 Ace of Spades")
+    def test_missing_artist_and_title_get_placeholders(self):
+        # The filename stands in for a missing title; the placeholder is only used when there is none.
+        self.assertEqual(main.format_mix_track_label(TRACK, {}, 1), "1. (Unknown Artist) - 01 Ace of Spades")
+        self.assertEqual(main.format_mix_track_label("", {"artist": "M"}, 2), "2. M - (Unknown Title)")
+        self.assertEqual(main.format_mix_track_label("", {}, 3), "3. (Unknown Artist) - (Unknown Title)")
+
+    def test_placeholders_stay_out_of_the_music_tag(self):
+        kodi.library.add_song(TRACK, title="Ace of Spades")
+        self.run_plugin(action="play_track", path=TRACK)
+        self.assertEqual(kodi.resolved[0][1].getMusicInfoTag().getArtist(), "")
 
     def test_template_is_read_once(self):
         main.get_kodi_music_track_template()

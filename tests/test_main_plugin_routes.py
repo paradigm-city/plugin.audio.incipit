@@ -10,8 +10,6 @@ from unittest import mock
 from fake_kodi import ADDON_DIR, kodi
 from support import HANDLE, PLUGIN_URL, KodiTestCase, MusicIPServerTestCase, main, plugin_query
 
-# A Kodi track format whose artist separator is optional, so tracks without metadata read "1. Title".
-TRACK_FORMAT = "[%N. ][%A - ]%T"
 SEED = "D:\\music\\Motorhead\\Ace of Spades (1980)\\01 Ace of Spades.mp3"
 T1 = "D:\\music\\Motorhead\\Overkill (1979)\\01 Overkill.mp3"
 T2 = "D:\\music\\Saxon\\Wheels of Steel (1980)\\01 Motorcycle Man.mp3"
@@ -183,7 +181,6 @@ class MixInfoTest(KodiTestCase):
 class BrowseMixTest(MusicIPServerTestCase):
     def setUp(self):
         super().setUp()
-        kodi.kodi_settings["musicfiles.trackformat"] = TRACK_FORMAT
         kodi.add_media(SEED)
         kodi.add_media(T1)
         self.musicip.set_mix(SEED, [T1, T2])
@@ -193,7 +190,9 @@ class BrowseMixTest(MusicIPServerTestCase):
         self.run_plugin(action="browse_mix", seed=SEED, size="20")
         self.assertEqual(self.musicip.requests, [])
         self.assertEqual(self.listed_labels(), [
-            "1. 01 Ace of Spades", "2. 01 Overkill", "[B][COLOR red]![/COLOR][/B] 3. 01 Motorcycle Man",
+            "1. (Unknown Artist) - 01 Ace of Spades",
+            "2. (Unknown Artist) - 01 Overkill",
+            "[B][COLOR red]![/COLOR][/B] 3. (Unknown Artist) - 01 Motorcycle Man",
         ])
         url, item, is_folder = kodi.directory_items[0]
         self.assertEqual(plugin_query(url), {"action": "play_track", "path": SEED})
@@ -288,10 +287,6 @@ class BrowseSavedMixTest(MusicIPServerTestCase):
 
 
 class GenerateFromPlayingAudioTest(MusicIPServerTestCase):
-    def setUp(self):
-        super().setUp()
-        kodi.kodi_settings["musicfiles.trackformat"] = TRACK_FORMAT
-
     def test_generates_saves_and_plays_mix(self):
         kodi.play_file(SEED, title="Ace of Spades")
         self.musicip.set_mix(SEED, [T1, T2])
@@ -301,7 +296,7 @@ class GenerateFromPlayingAudioTest(MusicIPServerTestCase):
 
         self.assertEqual(main.load_mix(SEED, 20), [SEED, T1, T2])
         self.assertEqual(kodi.playlist_files(), [SEED, T1, T2])
-        self.assertEqual(kodi.playlist[1][1].getLabel(), "2. 01 Overkill")
+        self.assertEqual(kodi.playlist[1][1].getLabel(), "2. (Unknown Artist) - 01 Overkill")
         self.assertEqual((kodi.player.position, kodi.player.file), (0, SEED))
         self.assertNotified("Playing generated mix.")
         update = kodi.builtins[-1]
