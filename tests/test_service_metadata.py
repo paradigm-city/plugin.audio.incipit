@@ -186,6 +186,41 @@ class BackgroundConsistencyCheckTest(KodiTestCase):
         self.assertEqual(self.read_mix(self.cache_path), [self.PRESENT, self.MISSING])
         self.assertEqual(kodi.dialog_calls, [])
 
+    def test_notifies_when_automatic_repair_waits_for_library_update(self):
+        kodi.settings["service_auto_repair_enabled"] = "true"
+        service.run_consistency_check()
+        self.assertEqual(kodi.notifications, [(
+            "MusicIP",
+            "Mix '01 Overkill' has missing tracks. Update the Kodi music library to allow automatic repair.",
+            "warning",
+        )])
+
+    def test_notification_counts_several_waiting_mixes(self):
+        kodi.settings["service_auto_repair_enabled"] = "true"
+        self.save_mix([self.MISSING, self.PRESENT])
+        service.run_consistency_check()
+        self.assertEqual(kodi.notification_messages(), [
+            "2 mixes have missing tracks. Update the Kodi music library to allow automatic repair.",
+        ])
+
+    def test_no_notification_without_automatic_repair(self):
+        service.run_consistency_check()
+        self.assertEqual(kodi.notifications, [])
+
+    def test_no_notification_when_repair_is_possible(self):
+        kodi.settings["service_auto_repair_enabled"] = "true"
+        service.run_consistency_check()
+        kodi.notifications.clear()
+        self.library_updated()
+        service.run_consistency_check()
+        self.assertEqual(kodi.notifications, [])
+
+    def test_no_notification_for_consistent_mixes(self):
+        kodi.settings["service_auto_repair_enabled"] = "true"
+        kodi.add_media(self.MISSING)
+        service.run_consistency_check()
+        self.assertEqual(kodi.notifications, [])
+
     def test_one_broken_mix_does_not_stop_the_check(self):
         other = self.save_mix([self.MISSING, self.PRESENT])
         original = main.analyze_mix_consistency
