@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import glob
 import hashlib
+import importlib
 import json
 import datetime
 import os
@@ -1375,9 +1376,50 @@ def run_discovery_tick(song_cache: list[dict]) -> list[dict]:
     return song_cache
 
 
+def load_plugin_module():
+    # Mix storage, consistency analysis and repair live in the plugin module (main.py).
+    # Importing it has no side effects; the service's own main() is unrelated.
+    return importlib.import_module("main")
+
+
 def run_consistency_check() -> int:
-    log_info("Consistency service check skipped in this build branch.")
-    return 0
+    """Check all saved mixes for missing files; auto-repair when enabled and safe. Returns inconsistent mixes."""
+    plugin = load_plugin_module()
+    auto_repair = is_service_auto_repair_enabled()
+    cache_paths = plugin.list_saved_mix_cache_paths()
+    inconsistent = 0
+    repaired_tracks = 0
+
+    for cache_path in cache_paths:
+        try:
+            consistency = plugin.analyze_mix_consistency(cache_path)
+            if str(consistency.get("status") or "") != "inconsistent":
+                continue
+
+            inconsistent += 1
+            meta = plugin.get_saved_mix_metadata(cache_path)
+            label = str(meta.get("label") or os.path.basename(cache_path))
+            log_info(f"Consistency check: {label!r} has {consistency.get('missing_files')} missing track(s).")
+
+            readiness = get_repair_readiness_for_consistency(consistency, label)
+            if auto_repair and readiness.get("status") == "ready":
+                repaired = plugin.repair_saved_mix_automatic_only(cache_path)
+                repaired_tracks += repaired
+                log_info(f"Consistency check: automatic repair of {label!r} replaced {repaired} track(s).")
+                if repaired:
+                    meta = plugin.get_saved_mix_metadata(cache_path)
+                    readiness = get_repair_readiness_for_consistency(plugin.get_consistency_status(meta), label)
+
+            meta["repair_readiness"] = readiness
+            save_json_file(mix_meta_path_from_cache_path(cache_path), meta)
+        except Exception as exc:
+            log(f"Consistency check failed for {cache_path!r}: {exc}", xbmc.LOGWARNING)
+
+    log_info(
+        f"Consistency check: checked {len(cache_paths)} mix(es), {inconsistent} inconsistent, "
+        f"automatic repair {'enabled' if auto_repair else 'disabled'}, repaired {repaired_tracks} track(s)."
+    )
+    return inconsistent
 
 
 def reset_discovery_mode_on_startup() -> None:
