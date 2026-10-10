@@ -1389,6 +1389,7 @@ def run_consistency_check() -> int:
     cache_paths = plugin.list_saved_mix_cache_paths()
     inconsistent = 0
     repaired_tracks = 0
+    blocked_labels: list[str] = []
 
     for cache_path in cache_paths:
         try:
@@ -1409,6 +1410,8 @@ def run_consistency_check() -> int:
                 if repaired:
                     meta = plugin.get_saved_mix_metadata(cache_path)
                     readiness = get_repair_readiness_for_consistency(plugin.get_consistency_status(meta), label)
+            elif auto_repair and readiness.get("status") == "update_library_before_repair":
+                blocked_labels.append(label)
 
             meta["repair_readiness"] = readiness
             save_json_file(mix_meta_path_from_cache_path(cache_path), meta)
@@ -1419,7 +1422,21 @@ def run_consistency_check() -> int:
         f"Consistency check: checked {len(cache_paths)} mix(es), {inconsistent} inconsistent, "
         f"automatic repair {'enabled' if auto_repair else 'disabled'}, repaired {repaired_tracks} track(s)."
     )
+    if blocked_labels:
+        notify_repair_waiting_for_library(blocked_labels)
     return inconsistent
+
+
+def notify_repair_waiting_for_library(labels: list[str]) -> None:
+    if len(labels) == 1:
+        message = f"Mix '{labels[0]}' has missing tracks. Update the Kodi music library to allow automatic repair."
+    else:
+        message = f"{len(labels)} mixes have missing tracks. Update the Kodi music library to allow automatic repair."
+    log_info(f"Consistency check: notifying that automatic repair is waiting for a library update: {labels!r}")
+    try:
+        xbmcgui.Dialog().notification(ADDON.getAddonInfo("name"), message, xbmcgui.NOTIFICATION_WARNING)
+    except Exception as exc:
+        log(f"Could not show repair notification: {exc}", xbmc.LOGWARNING)
 
 
 def reset_discovery_mode_on_startup() -> None:
