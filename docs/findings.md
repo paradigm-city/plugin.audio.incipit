@@ -34,13 +34,13 @@ The service also still reads `start`, `stop` and `next` commands from `discovery
 
 In the `start` handler, the branch that adopts an already-started playlist could not run anyway, because `state["queue"]` is emptied just before `existing_queue` is read from it.
 
-### F7 · The service start message shows the add-on prefix twice
-
-`main()` in `service.py` passes a message that already starts with `[plugin.audio.musicip]` to `log()`, which adds the prefix again: `[plugin.audio.musicip] [plugin.audio.musicip] MusicIP service started. …`
-
-**Test:** `test_service_metadata.ServiceStartupLogTest.test_service_start_message_has_a_single_addon_prefix`
-
 ## Resolved
+
+### F7 · The service start message showed the add-on prefix twice
+
+`main()` in `service.py` passed a message that already started with `[plugin.audio.musicip]` to `log()`, which added the prefix again. The start line now has a single prefix, and it is always logged at info level, also without extended service logging.
+
+Fixed in e37c424 (2026-10-10).
 
 ### F1 · The background consistency check and automatic repair never ran
 

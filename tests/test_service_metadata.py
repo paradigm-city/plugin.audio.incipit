@@ -295,7 +295,9 @@ class ServiceLoggingTest(KodiTestCase):
         kodi.settings["service_auto_repair_enabled"] = "true"
         kodi.logs.clear()
         service.main()
-        self.assertEqual([entry for entry in kodi.logs if entry[1] < 3], [])
+        below_error = [message for message, level in kodi.logs if level < 3]
+        self.assertEqual(len(below_error), 1)
+        self.assertTrue(below_error[0].startswith("[plugin.audio.musicip] MusicIP service started. version="))
 
     def test_service_errors_are_still_logged(self):
         with mock.patch.object(service, "run_discovery_tick", side_effect=RuntimeError("boom")):
@@ -304,12 +306,25 @@ class ServiceLoggingTest(KodiTestCase):
 
 
 class ServiceStartupLogTest(KodiTestCase):
-    @unittest.expectedFailure
-    def test_service_start_message_has_a_single_addon_prefix(self):
-        # Known issue F7: the start message adds the add-on id itself, and log() adds it again.
+    def start_lines(self):
+        return [(message, level) for message, level in kodi.logs if "MusicIP service started." in message]
+
+    def test_start_line_is_logged_as_info_without_extended_logging(self):
+        service.main()
+        lines = self.start_lines()
+        self.assertEqual(len(lines), 1)
+        self.assertEqual(lines[0][1], 1)  # LOGINFO
+
+    def test_start_line_with_extended_logging(self):
         kodi.settings["service_extended_logging"] = "true"
         service.main()
-        self.assertNotIn("[plugin.audio.musicip] [plugin.audio.musicip]", kodi.log_text())
+        self.assertEqual(len(self.start_lines()), 1)
+
+    def test_service_start_message_has_a_single_addon_prefix(self):
+        service.main()
+        message = self.start_lines()[0][0]
+        self.assertTrue(message.startswith("[plugin.audio.musicip] MusicIP service started. version="))
+        self.assertNotIn("[plugin.audio.musicip] [plugin.audio.musicip]", message)
 
 
 class ServiceRepairReadinessTest(KodiTestCase):
