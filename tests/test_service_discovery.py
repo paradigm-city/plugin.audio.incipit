@@ -322,6 +322,7 @@ class MenuRefreshAndResetTest(KodiTestCase):
 
 class ServiceMainLoopTest(KodiTestCase):
     def test_one_loop_iteration_then_abort(self):
+        kodi.settings["service_extended_logging"] = "true"
         add_library_songs(3)
         send_command("start")
         service.main()

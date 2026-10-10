@@ -41,6 +41,7 @@ class MetadataRefreshTickTest(KodiTestCase):
         self.assertEqual(self.listed_labels()[0], "1. Motörhead - Ace of Spades")
 
     def test_unresolved_tracks_are_retried_then_dropped(self):
+        kodi.settings["service_extended_logging"] = "true"
         main.enqueue_metadata_refresh_for_tracks([OTHER])
         for attempt in range(1, service.METADATA_REFRESH_MAX_ATTEMPTS):
             self.assertEqual(service.run_metadata_refresh_tick(), 0)
@@ -222,6 +223,7 @@ class BackgroundConsistencyCheckTest(KodiTestCase):
         self.assertEqual(kodi.notifications, [])
 
     def test_one_broken_mix_does_not_stop_the_check(self):
+        kodi.settings["service_extended_logging"] = "true"
         other = self.save_mix([self.MISSING, self.PRESENT])
         original = main.analyze_mix_consistency
 
@@ -266,10 +268,46 @@ class BackgroundConsistencyCheckTest(KodiTestCase):
         return kodi.waits >= kodi.abort_after_waits
 
 
+class ServiceLoggingTest(KodiTestCase):
+    LEVELS = {"debug": 0, "info": 1, "warning": 2, "error": 3, "fatal": 4}
+
+    def log_every_level(self):
+        for name, level in self.LEVELS.items():
+            service.log(f"{name} message", level)
+        service.log_info("log_info message")
+
+    def test_only_errors_without_extended_logging(self):
+        self.log_every_level()
+        self.assertEqual(kodi.log_text().splitlines(), [
+            "[plugin.audio.musicip] error message",
+            "[plugin.audio.musicip] fatal message",
+        ])
+
+    def test_everything_with_extended_logging(self):
+        kodi.settings["service_extended_logging"] = "true"
+        self.log_every_level()
+        self.assertEqual(len(kodi.logs), 6)
+
+    def test_service_run_logs_nothing_but_errors(self):
+        kodi.add_media("D:\\music\\a.mp3")
+        self.save_mix(["D:\\music\\a.mp3", "D:\\music\\gone.mp3"])
+        main.enqueue_metadata_refresh_for_tracks(["D:\\music\\gone.mp3"])
+        kodi.settings["service_auto_repair_enabled"] = "true"
+        kodi.logs.clear()
+        service.main()
+        self.assertEqual([entry for entry in kodi.logs if entry[1] < 3], [])
+
+    def test_service_errors_are_still_logged(self):
+        with mock.patch.object(service, "run_discovery_tick", side_effect=RuntimeError("boom")):
+            service.main()
+        self.assertIn(("[plugin.audio.musicip] Discovery mode tick failed: boom", 3), kodi.logs)
+
+
 class ServiceStartupLogTest(KodiTestCase):
     @unittest.expectedFailure
     def test_service_start_message_has_a_single_addon_prefix(self):
         # Known issue F7: the start message adds the add-on id itself, and log() adds it again.
+        kodi.settings["service_extended_logging"] = "true"
         service.main()
         self.assertNotIn("[plugin.audio.musicip] [plugin.audio.musicip]", kodi.log_text())
 
@@ -314,6 +352,7 @@ class ServiceRepairReadinessTest(KodiTestCase):
         self.assertIn("shown", kodi.log_text())
 
     def test_unreadable_json_file(self):
+        kodi.settings["service_extended_logging"] = "true"
         path = self.profile_path("broken.json")
         service.get_profile_dir()
         with open(path, "w", encoding="utf-8") as handle:
