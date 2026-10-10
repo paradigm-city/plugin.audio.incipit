@@ -3662,9 +3662,14 @@ def cleanup_music_label(label: str, fallback: str) -> str:
     return value or fallback
 
 
+UNKNOWN_ARTIST_LABEL = "(Unknown Artist)"
+UNKNOWN_TITLE_LABEL = "(Unknown Title)"
+
+
 def format_mix_track_label(path: str, metadata: dict, mix_position: int) -> str:
-    title = str(metadata.get("title") or path_to_label(path) or "").strip()
-    artist = str(metadata.get("artist") or "").strip()
+    # Placeholders keep the template's separators meaningful ("1. (Unknown Artist) - Title", not "1. - Title").
+    title = str(metadata.get("title") or path_to_label(path) or "").strip() or UNKNOWN_TITLE_LABEL
+    artist = str(metadata.get("artist") or "").strip() or UNKNOWN_ARTIST_LABEL
     album = str(metadata.get("album") or "").strip()
 
     try:

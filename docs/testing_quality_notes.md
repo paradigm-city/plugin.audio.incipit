@@ -39,7 +39,6 @@ Tests marked `@unittest.expectedFailure` describe known issues. When one is fixe
 
 - Cancelling the filter input in the generate-mix dialog clears the filter (`test_main_mix_parameters.py`).
 - "Unknown date" is listed first instead of last among recent mix dates (`test_main_saved_mixes.py`).
-- A track without artist is labelled `1. - Title` with Kodi's default track format (`test_main_metadata.py`).
 
 ## Discovery mode tests
 
