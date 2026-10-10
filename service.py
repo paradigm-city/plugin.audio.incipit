@@ -167,7 +167,7 @@ def parse_kodi_datetime(value: object) -> int:
         text,
     )
     if not match:
-        log_info(f"Repair readiness: could not parse Kodi datetime value {text!r}")
+        log_info(f"Library freshness: could not parse Kodi datetime value {text!r}")
         return 0
 
     try:
@@ -187,10 +187,10 @@ def parse_kodi_datetime(value: object) -> int:
             tzinfo=datetime.timezone.utc,
         )
         timestamp = int(parsed.timestamp())
-        log_info(f"Repair readiness: parsed Kodi datetime {text!r} as timestamp {timestamp}")
+        log_info(f"Library freshness: parsed Kodi datetime {text!r} as timestamp {timestamp}")
         return timestamp
     except Exception as exc:
-        log_info(f"Repair readiness: failed to convert Kodi datetime {text!r}: {exc}")
+        log_info(f"Library freshness: failed to convert Kodi datetime {text!r}: {exc}")
         return 0
 
 
@@ -208,7 +208,7 @@ def get_audio_library_freshness() -> dict:
             {"properties": properties},
         )
     except Exception as exc:
-        log(f"Repair readiness: could not read Kodi audio library properties: {exc}", xbmc.LOGERROR)
+        log(f"Library freshness: could not read Kodi audio library properties: {exc}", xbmc.LOGERROR)
         return {
             "properties": {},
             "timestamps": {},
@@ -220,7 +220,7 @@ def get_audio_library_freshness() -> dict:
     for key in properties:
         timestamps[key] = parse_kodi_datetime(result.get(key))
         log_info(
-            f"Repair readiness: Kodi library property {key}="
+            f"Library freshness: Kodi library property {key}="
             f"{str(result.get(key) or '')!r}, parsed_ts={timestamps[key]}"
         )
 
@@ -252,18 +252,20 @@ def get_repair_readiness_required_ts(consistency: dict) -> int:
     return max(values) if values else 0
 
 
-def get_repair_readiness_for_consistency(consistency: dict) -> dict:
+def get_repair_readiness_for_consistency(consistency: dict, mix_label: str = "") -> dict:
     first_inconsistent_ts = int(consistency.get("first_inconsistent_ts") or 0)
     last_inconsistency_change_ts = int(consistency.get("last_inconsistency_change_ts") or 0)
     required_library_ts = get_repair_readiness_required_ts(consistency)
     status = str(consistency.get("status") or "").lower()
 
     if status != "inconsistent":
-        return {
+        readiness = {
             "status": "not_needed",
             "reason": "Mix is not inconsistent.",
             "checked_ts": int(time.time()),
         }
+        log_repair_readiness(readiness, mix_label)
+        return readiness
 
     freshness = get_audio_library_freshness()
     freshest_ts = int(freshness.get("freshest_ts") or 0)
@@ -282,7 +284,7 @@ def get_repair_readiness_for_consistency(consistency: dict) -> dict:
         readiness_status = "update_library_before_repair"
         reason = "Kodi audio library has not been updated since the latest detected inconsistency."
 
-    return {
+    readiness = {
         "status": readiness_status,
         "reason": reason,
         "checked_ts": int(time.time()),
@@ -294,6 +296,28 @@ def get_repair_readiness_for_consistency(consistency: dict) -> dict:
         "library_properties": freshness.get("properties") or {},
         "library_timestamps": freshness.get("timestamps") or {},
     }
+    log_repair_readiness(readiness, mix_label)
+    return readiness
+
+
+def format_ts_for_display(value: int) -> str:
+    ts = int(value or 0)
+    if ts <= 0:
+        return "unknown"
+    return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts))
+
+
+def log_repair_readiness(readiness: dict, mix_label: str = "") -> None:
+    status = str(readiness.get("status") or "")
+    target = f" for {mix_label!r}" if mix_label else ""
+    availability = "available" if status == "ready" else "not available"
+    details = f"status={status}, reason={readiness.get('reason') or ''!r}"
+    if "required_library_ts" in readiness:
+        details += (
+            f", required_library_ts={format_ts_for_display(readiness.get('required_library_ts'))}"
+            f", library_freshest_ts={format_ts_for_display(readiness.get('library_freshest_ts'))}"
+        )
+    log_info(f"Repair readiness: repair {availability}{target}; {details}")
 
 
 def get_setting(name: str, default: str = "") -> str:
