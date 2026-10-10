@@ -18,7 +18,7 @@ class SourcesTestCase(KodiTestCase):
     def setUp(self):
         super().setUp()
         kodi.music_sources = []
-        kodi.add_media(PRESENT)
+        kodi.library.add_song(PRESENT, title="Overkill")  # #metal is scanned into the library
         self.cache_path = self.save_mix([PRESENT, MISSING])
         main.analyze_mix_consistency(self.cache_path)
 
@@ -139,8 +139,9 @@ class MissingFileSearchTest(KodiTestCase):
         kodi.music_sources = []
         kodi.add_music_source(METAL)
         kodi.add_music_source(ROCK)
-        kodi.add_media(PRESENT)
-        kodi.add_media("D:\\music\\#rock\\Saxon\\Wheels of Steel (1980)\\01 Motorcycle Man.mp3")  # inside a source
+        # Both sources are scanned into the library.
+        kodi.library.add_song(PRESENT, title="Overkill")
+        kodi.library.add_song("D:\\music\\#rock\\Saxon\\Wheels of Steel (1980)\\01 Motorcycle Man.mp3", title="Motorcycle Man")
 
     def search(self, *missing):
         return main.search_missing_files_outside_sources(list(missing), main.get_music_source_paths())
@@ -250,19 +251,6 @@ class ServiceSearchTest(SourcesTestCase):
         self.assertEqual(kodi.notifications, [])
         self.assertEqual(self.meta()["missing_file_search"]["found_outside_sources"], {})
 
-    @unittest.expectedFailure
-    def test_file_moved_into_a_source_that_was_never_scanned_is_reported(self):
-        # Known issue F10: a music source that was never scanned into the library has no songs there, but the
-        # search treats every configured source as covered by the library and skips it. Seen on 2026-10-10:
-        # an album moved into D:\music\#jazz_fusion_progressive (a source with 0 songs in the library).
-        kodi.remove_media(MOVED)
-        kodi.add_music_source("D:\\music\\#jazz_fusion_progressive\\")  # configured, never scanned
-        kodi.library.add_song(PRESENT, title="Overkill")  # #metal is in the library
-        moved = "D:\\music\\#jazz_fusion_progressive\\Saxon\\Wheels of Steel (1980)\\01 Motorcycle Man.mp3"
-        kodi.add_media(moved)
-        service.run_consistency_check()
-        self.assertEqual(self.meta()["missing_file_search"]["found_outside_sources"], {MISSING: moved})
-
     def test_search_waits_while_discovery_mode_is_active(self):
         service.save_discovery_state({"enabled": True})
         service.run_consistency_check()
@@ -272,7 +260,106 @@ class ServiceSearchTest(SourcesTestCase):
     def test_search_is_logged_with_extended_service_logging(self):
         kodi.settings["service_extended_logging"] = "true"
         service.run_consistency_check()
-        self.assertIn(f"for 1 missing file(s); found 1 outside the music sources: [{MOVED!r}].", kodi.log_text())
+        self.assertIn(
+            f"for 1 missing file(s); found 1 outside the music sources: [{MOVED!r}]; "
+            "found 0 in music sources not scanned into the library [].",
+            kodi.log_text(),
+        )
+
+
+class UnscannedSourceTest(SourcesTestCase):
+    """A music source configured in Kodi but never scanned into the library (finding F10)."""
+
+    JAZZ = "D:\\music\\#jazz_fusion_progressive\\"
+    JAZZ_MOVED = "D:\\music\\#jazz_fusion_progressive\\Saxon\\Wheels of Steel (1980)\\01 Motorcycle Man.mp3"
+
+    def setUp(self):
+        super().setUp()
+        self.clock = self.use_clock()
+        kodi.add_music_source(METAL)
+        kodi.add_music_source(self.JAZZ)  # configured, no songs in the library
+        kodi.add_media(self.JAZZ_MOVED)
+
+    def scan_source_into_library(self):
+        kodi.library.add_song(self.JAZZ_MOVED, title="Motorcycle Man", artist="Saxon")
+
+    def test_file_moved_into_a_source_that_was_never_scanned_is_reported(self):
+        # Seen on 2026-10-10: an album moved into D:\music\#jazz_fusion_progressive, a source with 0 library songs.
+        service.run_consistency_check()
+        search = self.meta()["missing_file_search"]
+        self.assertEqual(search["found_in_unscanned_sources"], {MISSING: self.JAZZ_MOVED})
+        self.assertEqual(search["unscanned_sources"], [self.JAZZ])
+        self.assertEqual(search["found_outside_sources"], {})
+
+    def test_notification_names_the_source_once(self):
+        service.run_consistency_check()
+        self.clock.advance(main.MISSING_FILE_SEARCH_MAX_AGE_SECONDS + 1)
+        service.run_consistency_check()
+        self.assertEqual(kodi.notifications, [(
+            "MusicIP",
+            f"Missing file found in a music source that is not scanned into the library: {self.JAZZ}",
+            "info",
+        )])
+
+    def test_readiness_asks_for_a_scan(self):
+        service.run_consistency_check()
+        readiness = self.readiness()
+        self.assertEqual(readiness["status"], "scan_source_before_repair")
+        self.assertEqual(readiness["unscanned_sources"], [self.JAZZ])
+        self.assertEqual(
+            readiness["reason"],
+            f"1 missing file(s) were found in music source(s) that are not scanned into the library: {self.JAZZ}. "
+            "Scan the source into the library.",
+        )
+        self.assertEqual(self.meta()["repair_readiness"]["status"], "scan_source_before_repair")
+        with self.assertRaisesRegex(main.MusicIPError, "Scan music source before repair"):
+            main.ensure_repair_ready(self.cache_path)
+
+    def test_mix_entry_offers_the_scan(self):
+        service.run_consistency_check()
+        main.add_saved_mix_item(self.cache_path)
+        _url, item, _folder = kodi.directory_items[-1]
+        self.assertIn("Scan music source before repair", [label for label, _action in item.context_menu])
+
+    def test_accepting_the_question_scans_the_source(self):
+        service.run_consistency_check()
+        kodi.respond("yesno", True)
+        main.show_update_library_before_repair(self.cache_path)
+        heading, text = kodi.dialogs("yesno")[0][1]
+        self.assertEqual(heading, "Scan music source before repair")
+        self.assertIn("- " + self.JAZZ, text)
+        self.assertIn("Scan them into the library now?", text)
+        scans = [call["params"] for call in kodi.jsonrpc_calls if call["method"] == "AudioLibrary.Scan"]
+        self.assertEqual(scans, [{"directory": self.JAZZ}])
+        self.assertNotified(f"Kodi music library scan started for {self.JAZZ}.")
+
+    def test_declining_the_question_starts_no_scan(self):
+        service.run_consistency_check()
+        main.show_update_library_before_repair(self.cache_path)
+        self.assertNotIn("AudioLibrary.Scan", kodi.jsonrpc_methods())
+
+    def test_message_lists_the_source_and_the_found_file(self):
+        service.run_consistency_check()
+        message = main.build_repair_readiness_message(self.readiness())
+        self.assertIn("Found in music sources that are not scanned into the library:\n- " + self.JAZZ_MOVED, message)
+        self.assertIn("Scan these music sources into the library, then try repair again:\n- " + self.JAZZ, message)
+
+    def test_readiness_clears_once_the_source_has_library_songs(self):
+        service.run_consistency_check()
+        self.scan_source_into_library()
+        self.assertEqual(self.readiness()["status"], "ready")
+
+    def test_automatic_repair_after_the_scan(self):
+        kodi.settings["service_auto_repair_enabled"] = "true"
+        service.run_consistency_check()
+        self.assertEqual(self.read_mix(self.cache_path), [PRESENT, MISSING])
+        # Only the scan notification: no "update the library" notification for this mix.
+        self.assertEqual(len(kodi.notifications), 1)
+
+        self.scan_source_into_library()
+        self.clock.advance(3600)
+        service.run_consistency_check()
+        self.assertEqual(self.read_mix(self.cache_path), [PRESENT, self.JAZZ_MOVED])
 
 
 if __name__ == "__main__":
