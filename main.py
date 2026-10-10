@@ -164,6 +164,12 @@ def log_info(message: str) -> None:
         log(message, xbmc.LOGINFO)
 
 
+def log_library_freshness(message: str) -> None:
+    # Library timestamp details belong to the consistency/repair system and follow the service logging setting.
+    if get_setting_bool("service_extended_logging", False):
+        log(message, xbmc.LOGINFO)
+
+
 def addon_url(**query: str) -> str:
     return f"{BASE_URL}?{urlencode(query)}"
 
@@ -1553,7 +1559,7 @@ def parse_kodi_datetime(value: object) -> int:
         text,
     )
     if not match:
-        log_info(f"Library freshness: could not parse Kodi datetime value {text!r}")
+        log_library_freshness(f"Library freshness: could not parse Kodi datetime value {text!r}")
         return 0
 
     try:
@@ -1573,10 +1579,10 @@ def parse_kodi_datetime(value: object) -> int:
             tzinfo=datetime.timezone.utc,
         )
         timestamp = int(parsed.timestamp())
-        log_info(f"Library freshness: parsed Kodi datetime {text!r} as timestamp {timestamp}")
+        log_library_freshness(f"Library freshness: parsed Kodi datetime {text!r} as timestamp {timestamp}")
         return timestamp
     except Exception as exc:
-        log_info(f"Library freshness: failed to convert Kodi datetime {text!r}: {exc}")
+        log_library_freshness(f"Library freshness: failed to convert Kodi datetime {text!r}: {exc}")
         return 0
 
 
@@ -1601,7 +1607,7 @@ def get_audio_library_freshness() -> dict:
             {"properties": properties},
         )
     except Exception as exc:
-        log_info(f"Library freshness: could not read Kodi audio library properties: {exc}")
+        log_library_freshness(f"Library freshness: could not read Kodi audio library properties: {exc}")
         return {
             "properties": {},
             "timestamps": {},
@@ -1612,7 +1618,7 @@ def get_audio_library_freshness() -> dict:
     timestamps = {}
     for key in properties:
         timestamps[key] = parse_kodi_datetime(result.get(key))
-        log_info(
+        log_library_freshness(
             f"Library freshness: Kodi library property {key}="
             f"{str(result.get(key) or '')!r}, parsed_ts={timestamps[key]}"
         )
