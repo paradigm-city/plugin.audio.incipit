@@ -126,7 +126,7 @@ class SharedStorageTest(KodiTestCase):
         main.save_discovery_state({"enabled": True, "current_song": PATHS[1]})
         self.assertEqual(service.load_discovery_state()["current_song"], PATHS[1])
         service.save_discovery_state({"enabled": False})
-        self.assertFalse(main.discovery_mode_is_active())
+        self.assertFalse(main.get_discovery_state()["enabled"])
 
 
 if __name__ == "__main__":

@@ -19,6 +19,8 @@ Last reviewed: 2026-10-10
 - The settings `consistency_enabled`, `consistency_interval_minutes` and `service_auto_repair_enabled` are shown to users but have no effect.
 - The repair-readiness message tells users to "wait for the consistency service to run again", which never happens. Mixes are only checked through the manual **Check consistency** action or during a repair.
 
+The unused building blocks are kept on purpose for re-enabling this: `repair_saved_mix_automatic_only()` and `choose_repair_candidate_automatic_only()` in `main.py`, and `is_service_auto_repair_enabled()` in `service.py`.
+
 ### F2 · Cancelling the filter input clears the mix filter
 
 In the generate-mix dialog, `edit_mix_generation_parameter()` in `main.py` only ignores `None` from `Dialog().input()`. Kodi returns `""` when the dialog is cancelled, so cancelling replaces the filter with an empty one.
@@ -33,21 +35,24 @@ Kodi can't tell "cancelled" apart from "cleared on purpose", so a fix needs a UX
 
 **Test:** `test_main_saved_mixes.OrderingAndCleanupTest.test_unknown_date_group_sorts_last`
 
-### F5 · Unused code
-
-These functions are never called:
-
-- `main.py`: `write_discovery_command`, `discovery_mode_is_active`, `discovery_current_song`, `refresh_discovery_mode_menu`, `discovery_status_label`, `repair_saved_mix_automatic_only` (see F1).
-- `service.py`: `start_discovery_song`, `play_discovery_file_at_offset`, `correct_discovery_seek_position`, `seek_discovery_player_to_offset`, `request_discovery_menu_refresh`, `is_service_auto_repair_enabled` (see F1).
-- `service.py` defines `get_song_duration_seconds()` twice with identical bodies; the second definition replaces the first.
-
 ### F6 · The service's Discovery commands are never sent
 
-The plugin now starts, stops and skips Discovery playback directly, and no longer writes command files (`write_discovery_command` is unused, see F5). The service still reads and handles `start`, `stop` and `next` commands in `run_discovery_tick()`, but nothing sends them.
+The plugin now starts, stops and skips Discovery playback directly, and no longer writes command files (its `write_discovery_command` was removed with F5). The service still reads and handles `start`, `stop` and `next` commands in `run_discovery_tick()`, but nothing sends them.
 
 In the `start` handler, the branch that adopts an already-started playlist can never run, because `state["queue"]` is emptied just before `existing_queue` is read from it.
 
 ## Resolved
+
+### F5 · Unused code
+
+Functions nothing called were removed:
+
+- `main.py`: `write_discovery_command`, `discovery_mode_is_active`, `discovery_current_song`, `discovery_mode_url`, `refresh_discovery_mode_menu`, `discovery_status_label`.
+- `service.py`: `start_discovery_song`, `play_discovery_file_at_offset`, `correct_discovery_seek_position`, `seek_discovery_player_to_offset`, `jsonrpc_time_from_seconds`, `request_discovery_menu_refresh`, and the second, identical definition of `get_song_duration_seconds()`.
+
+The unused auto-repair functions were kept for F1.
+
+Fixed in 45746d8 (2026-10-10).
 
 ### F4 · A track without artist was labelled "1. - Title"
 

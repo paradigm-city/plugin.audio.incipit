@@ -34,7 +34,6 @@ class DiscoveryMenuTest(KodiTestCase):
         self.run_plugin(action="discovery_mode")
         self.assertEqual(self.listed_labels(), ["Start discovery mode", "Discovery mode settings"])
         self.assertIn(("setPluginCategory", "MusicIP discovery mode"), kodi.directory_calls)
-        self.assertEqual(main.discovery_status_label(), "Discovery mode: inactive")
 
     def test_active_menu(self):
         main.save_discovery_state({"enabled": True, "current_label": "Artist 1 - Song 1"})
@@ -44,13 +43,6 @@ class DiscoveryMenuTest(KodiTestCase):
             "Stop discovery mode", "Discovery mode settings",
         ])
         self.assertIn(("setPluginCategory", "Discovery mode: Artist 1 - Song 1"), kodi.directory_calls)
-        self.assertEqual(main.discovery_status_label(), "Discovery mode: active - Artist 1 - Song 1")
-        self.assertTrue(main.discovery_mode_is_active())
-
-    def test_write_command(self):
-        main.write_discovery_command("next")
-        command = self.read_json(main.discovery_command_path())
-        self.assertEqual((command["command"], command["excerpt_seconds"], command["offset_percent"]), ("next", 20, 33))
 
 
 class StartStopTest(KodiTestCase):

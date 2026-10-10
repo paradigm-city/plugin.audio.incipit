@@ -234,23 +234,6 @@ class PlayerEventTest(DiscoveryServiceTestCase):
         self.assertEqual(state["stop_reason"], "player_error")
 
 
-class SeekTest(DiscoveryServiceTestCase):
-    def test_seek_time_confirmed(self):
-        kodi.play_file(SONGS[0][0])
-        self.assertTrue(service.seek_discovery_player_to_offset(fake_kodi.Player(), 80, SONGS[0][0]))
-        self.assertEqual(kodi.player.time, 80.0)
-
-    def test_falls_back_to_json_rpc_seek(self):
-        kodi.play_file(SONGS[0][0])
-        with mock.patch.object(fake_kodi.Player, "seekTime", lambda self, seconds: None):
-            self.assertTrue(service.seek_discovery_player_to_offset(fake_kodi.Player(), 3725, SONGS[0][0]))
-        seek = [c for c in kodi.jsonrpc_calls if c["method"] == "Player.Seek"][0]
-        self.assertEqual(seek["params"]["value"]["time"], {"hours": 1, "minutes": 2, "seconds": 5, "milliseconds": 0})
-
-    def test_no_offset(self):
-        self.assertFalse(service.seek_discovery_player_to_offset(fake_kodi.Player(), 0, "x"))
-
-
 class SongDurationTest(KodiTestCase):
     def test_duration_from_song_or_song_details(self):
         kodi.library.add_song("D:\\a.mp3", title="A", duration=123)
@@ -262,7 +245,7 @@ class SongDurationTest(KodiTestCase):
 
 class MenuRefreshAndResetTest(KodiTestCase):
     def test_visible_discovery_menu_is_refreshed_once(self):
-        service.request_discovery_menu_refresh()
+        service.save_discovery_state({"ui_refresh_requested": True})
         folder = "plugin://plugin.audio.musicip/?action=discovery_mode&nonce=1"
         kodi.info_labels["Container.FolderPath"] = folder
         service.refresh_discovery_menu_if_visible()
@@ -270,7 +253,7 @@ class MenuRefreshAndResetTest(KodiTestCase):
         self.assertEqual(kodi.builtins, [f"Container.Update({folder},replace)"])
 
     def test_hidden_menu_is_not_refreshed(self):
-        service.request_discovery_menu_refresh()
+        service.save_discovery_state({"ui_refresh_requested": True})
         service.refresh_discovery_menu_if_visible()
         self.assertEqual(kodi.builtins, [])
         self.assertTrue(service.load_discovery_state()["ui_refresh_requested"])
