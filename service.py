@@ -133,9 +133,9 @@ def is_service_extended_logging_enabled() -> bool:
     return get_setting_bool("service_extended_logging", False)
 
 
-def log(message: str, level: int = xbmc.LOGINFO) -> None:
-    # Without extended service logging, only errors reach kodi.log.
-    if level < xbmc.LOGERROR and not is_service_extended_logging_enabled():
+def log(message: str, level: int = xbmc.LOGINFO, always: bool = False) -> None:
+    # Without extended service logging, only errors (and messages marked always) reach kodi.log.
+    if not always and level < xbmc.LOGERROR and not is_service_extended_logging_enabled():
         return
     xbmc.log(f"[{ADDON_ID}] {message}", level)
 
@@ -2217,7 +2217,7 @@ def main() -> None:
     ensure_musicip_keymap_installed()
 
     log(
-        f"[{ADDON_ID}] MusicIP service started. "
+        f"MusicIP service started. "
         f"version={ADDON.getAddonInfo('version')}, "
         f"profile={get_profile_dir()}, "
         f"discovery_state={discovery_state_path()}, "
@@ -2225,6 +2225,7 @@ def main() -> None:
         f"consistency_enabled={is_consistency_service_enabled()}, "
         f"interval={get_check_interval_seconds()} seconds.",
         xbmc.LOGINFO,
+        always=True,
     )
 
     reset_discovery_mode_on_startup()
