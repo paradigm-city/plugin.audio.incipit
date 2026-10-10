@@ -92,6 +92,52 @@ class CommandTest(DiscoveryServiceTestCase):
         self.assertFalse(service.command_is_stale_for_state({}, {"stopped_ts": 5}))
 
 
+class PluginStartedSessionTest(DiscoveryServiceTestCase):
+    """The plugin starts Discovery directly; from then on the service runs it via the shared state file."""
+
+    def setUp(self):
+        super().setUp()
+        self.run_plugin(action="discovery_start")
+        self.song_cache = []
+
+    def test_service_takes_over_a_plugin_started_session(self):
+        state = self.tick(10)
+        self.assertTrue(state["enabled"])
+        self.assertEqual(kodi.player.position, 0)
+
+        state = self.tick(11)  # excerpt of 20 s elapsed
+        self.assertEqual((kodi.player.position, state["current_playlist_position"]), (1, 1))
+        self.assertEqual(state["last_next_reason"], "excerpt_elapsed")
+        self.assertEqual(kodi.player.time, float(state["queue"][1]["offset"]))
+
+    def test_service_refills_and_prunes_a_plugin_started_playlist(self):
+        for _song in range(14):
+            self.tick(21)
+        state = service.load_discovery_state()
+        # Pruning runs before the auto-skip within a tick, so the backlog can be one longer until the next tick.
+        self.assertLessEqual(kodi.player.position, service.DISCOVERY_BACKLOG_SIZE + 1)
+        self.assertGreater(state["playlist_pruned_count"], 0)
+        self.assertEqual(kodi.playlist_files(), [entry["file"] for entry in state["queue"]])
+        self.assertGreaterEqual(len(state["queue"]) - kodi.player.position - 1, service.DISCOVERY_REFILL_THRESHOLD)
+
+    def test_plugin_skip_restarts_the_service_timer(self):
+        self.clock.advance(15)
+        self.run_plugin(action="discovery_next")
+        state = self.tick(10)  # 25 s since start, but only 10 s since the skip
+        self.assertEqual((kodi.player.position, state["current_playlist_position"]), (1, 1))
+
+    def test_plugin_stop_ends_service_control(self):
+        self.run_plugin(action="discovery_stop")
+        state = self.tick(60)
+        self.assertFalse(state["enabled"])
+        self.assertEqual(kodi.playlist, [])
+
+    def test_outside_playback_ends_service_control(self):
+        kodi.play_file("D:\\music\\Elsewhere\\song.mp3")
+        state = self.tick()
+        self.assertEqual((state["enabled"], state["stop_reason"]), (False, "external_playback"))
+
+
 class AutoSkipTest(DiscoveryServiceTestCase):
     def test_skips_after_excerpt_length(self):
         self.start()

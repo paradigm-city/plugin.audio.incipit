@@ -37,9 +37,11 @@ Kodi can't tell "cancelled" apart from "cleared on purpose", so a fix needs a UX
 
 ### F6 · The service's Discovery commands are never sent
 
-The plugin now starts, stops and skips Discovery playback directly, and no longer writes command files (its `write_discovery_command` was removed with F5). The service still reads and handles `start`, `stop` and `next` commands in `run_discovery_tick()`, but nothing sends them.
+The service runs Discovery mode: once the plugin has started playback and written the shared state file (`discovery_mode_state.json`), the service tracks the playlist, refills and prunes it, skips after each excerpt, corrects the start offset and reacts to player events. `tests/test_service_discovery.py` (`PluginStartedSessionTest`) covers this hand-over.
 
-In the `start` handler, the branch that adopts an already-started playlist can never run, because `state["queue"]` is emptied just before `existing_queue` is read from it.
+The service also still reads `start`, `stop` and `next` commands from `discovery_mode_command.json` in `run_discovery_tick()`, but the plugin no longer writes that file: it starts, stops and skips directly (its `write_discovery_command` was removed with F5). So this command handling never runs.
+
+In the `start` handler, the branch that adopts an already-started playlist could not run anyway, because `state["queue"]` is emptied just before `existing_queue` is read from it.
 
 ## Resolved
 
