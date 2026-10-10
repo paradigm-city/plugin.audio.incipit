@@ -18,21 +18,24 @@ Each saved mix has sidecar metadata. The consistency section records:
 - last inconsistency change timestamp
 - missing signature
 
-## Library freshness
+## Repair readiness
 
-Automatic repair depends on Kodi's library being recent enough.
+Repair candidates come from the Kodi music library, so the library must already reflect the moved or deleted files.
 
-The repair readiness check compares the first inconsistency timestamp with the freshest known Kodi music library timestamp.
+For every missing file of the mix, the readiness check asks the Kodi library whether it still lists that exact file:
 
-If the library is not recent enough, the add-on does not offer auto-repair and tells the user to update the library first.
+- If the library no longer lists any of them, it has caught up with the change: repair is **ready**.
+- If it still lists some, the library has not been updated and cleaned since the files disappeared: the add-on offers **Update library before repair** and names the files.
+- If the library cannot be queried, repair is not offered.
+
+Earlier versions compared Kodi's library timestamps with the time the add-on detected the missing files. That could block repair indefinitely: when the library was updated before the check noticed the missing files, later scans changed nothing and the timestamps never moved (finding F9).
 
 ## Auto-repair
 
 Auto-repair is allowed only when:
 
 - the mix is inconsistent
-- the Kodi library freshness is known
-- the library is newer than the first detected inconsistency
+- the Kodi library no longer lists any of the mix's missing files
 - a unique, high-confidence repair candidate is found
 
 If the result is ambiguous, automatic repair must not guess.

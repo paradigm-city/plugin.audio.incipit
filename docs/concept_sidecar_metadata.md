@@ -30,7 +30,7 @@ The consistency section describes missing files and when they were first detecte
 
 ## Repair readiness
 
-The repair readiness section records the Kodi library timestamps used to decide whether auto-repair is safe.
+The repair readiness section records whether repair is possible, why, and which missing files the Kodi music library still lists.
 
 ## Discovery relation
 

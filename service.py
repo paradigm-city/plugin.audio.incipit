@@ -246,85 +246,12 @@ def get_audio_library_freshness() -> dict:
     }
 
 
-def get_repair_readiness_required_ts(consistency: dict) -> int:
-    values = [
-        int(consistency.get("first_inconsistent_ts") or 0),
-        int(consistency.get("last_inconsistency_change_ts") or 0),
-    ]
-
-    for item in consistency.get("missing") or []:
-        if isinstance(item, dict):
-            values.append(int(item.get("first_missing_ts") or 0))
-
-    return max(values) if values else 0
-
-
 def get_repair_readiness_for_consistency(consistency: dict, mix_label: str = "") -> dict:
-    first_inconsistent_ts = int(consistency.get("first_inconsistent_ts") or 0)
-    last_inconsistency_change_ts = int(consistency.get("last_inconsistency_change_ts") or 0)
-    required_library_ts = get_repair_readiness_required_ts(consistency)
-    status = str(consistency.get("status") or "").lower()
-
-    if status != "inconsistent":
-        readiness = {
-            "status": "not_needed",
-            "reason": "Mix is not inconsistent.",
-            "checked_ts": int(time.time()),
-        }
-        log_repair_readiness(readiness, mix_label)
-        return readiness
-
-    freshness = get_audio_library_freshness()
-    freshest_ts = int(freshness.get("freshest_ts") or 0)
-    freshest_property = str(freshness.get("freshest_property") or "")
-
-    if required_library_ts <= 0:
-        readiness_status = "update_library_before_repair"
-        reason = "Required library freshness time is not known yet. Run consistency check again."
-    elif freshest_ts > required_library_ts:
-        readiness_status = "ready"
-        reason = "Kodi audio library is newer than the latest detected inconsistency."
-    elif freshest_ts <= 0:
-        readiness_status = "update_library_before_repair"
-        reason = "Kodi audio library freshness could not be determined."
-    else:
-        readiness_status = "update_library_before_repair"
-        reason = "Kodi audio library has not been updated since the latest detected inconsistency."
-
-    readiness = {
-        "status": readiness_status,
-        "reason": reason,
-        "checked_ts": int(time.time()),
-        "first_inconsistent_ts": first_inconsistent_ts,
-        "last_inconsistency_change_ts": last_inconsistency_change_ts,
-        "required_library_ts": required_library_ts,
-        "library_freshest_ts": freshest_ts,
-        "library_freshest_property": freshest_property,
-        "library_properties": freshness.get("properties") or {},
-        "library_timestamps": freshness.get("timestamps") or {},
-    }
-    log_repair_readiness(readiness, mix_label)
+    # The rule lives in the plugin module; the service only logs with its own setting.
+    plugin = load_plugin_module()
+    readiness = plugin.evaluate_repair_readiness(consistency)
+    log_info(plugin.format_repair_readiness_log(readiness, mix_label))
     return readiness
-
-
-def format_ts_for_display(value: int) -> str:
-    ts = int(value or 0)
-    if ts <= 0:
-        return "unknown"
-    return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts))
-
-
-def log_repair_readiness(readiness: dict, mix_label: str = "") -> None:
-    status = str(readiness.get("status") or "")
-    target = f" for {mix_label!r}" if mix_label else ""
-    availability = "available" if status == "ready" else "not available"
-    details = f"status={status}, reason={readiness.get('reason') or ''!r}"
-    if "required_library_ts" in readiness:
-        details += (
-            f", required_library_ts={format_ts_for_display(readiness.get('required_library_ts'))}"
-            f", library_freshest_ts={format_ts_for_display(readiness.get('library_freshest_ts'))}"
-        )
-    log_info(f"Repair readiness: repair {availability}{target}; {details}")
 
 
 def get_setting(name: str, default: str = "") -> str:

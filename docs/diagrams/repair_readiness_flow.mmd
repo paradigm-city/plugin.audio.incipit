@@ -3,12 +3,12 @@ flowchart TD
     B -- No --> C[status=consistent]
     B -- Yes --> D[Store first_missing_ts per missing track]
     D --> E[Update first_inconsistent_ts]
-    E --> F[Read Kodi library freshness]
-    F --> G{Library timestamp known?}
+    E --> F[Ask Kodi library about each missing file]
+    F --> G{Library query possible?}
     G -- No --> H[update_library_before_repair]
-    G -- Yes --> I{Library freshest ts >= first_inconsistent_ts?}
-    I -- No --> H
-    I -- Yes --> J[repair_ready]
+    G -- Yes --> I{Library still lists a missing file?}
+    I -- Yes --> H
+    I -- No --> J[repair_ready]
 
     J --> K[Auto-repair lookup]
     K --> L{Unique high-confidence candidate?}

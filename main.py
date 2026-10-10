@@ -1638,80 +1638,95 @@ def get_audio_library_freshness() -> dict:
     }
 
 
-def get_repair_readiness_required_ts(consistency: dict) -> int:
-    values = [
-        int(consistency.get("first_inconsistent_ts") or 0),
-        int(consistency.get("last_inconsistency_change_ts") or 0),
+def find_missing_paths_still_in_library(paths: list[str]) -> list[str]:
+    """The missing files that the Kodi music library still lists. Raises MusicIPError if Kodi cannot be queried."""
+    still_listed: list[str] = []
+    for path in paths:
+        filename, _directory = split_full_path(path)
+        if not filename:
+            continue
+        result = execute_jsonrpc(
+            "AudioLibrary.GetSongs",
+            {
+                "properties": ["file"],
+                "filter": {"field": "filename", "operator": "is", "value": filename},
+            },
+        )
+        if find_song_by_file(result.get("songs") or [], path) is not None:
+            still_listed.append(path)
+    return still_listed
+
+
+def evaluate_repair_readiness(consistency: dict) -> dict:
+    """Repair is ready once the Kodi library no longer lists any of the mix's missing files.
+
+    A library that still lists a missing file has not caught up with the move or deletion yet, so
+    its repair candidates cannot be trusted. Shared by the plugin and the service.
+    """
+    consistency = consistency if isinstance(consistency, dict) else {}
+    now = int(time.time())
+
+    if str(consistency.get("status") or "").lower() != "inconsistent":
+        return {"status": "not_needed", "reason": "Mix is not inconsistent.", "checked_ts": now}
+
+    missing_paths = [
+        str(item.get("path") or "")
+        for item in consistency.get("missing") or []
+        if isinstance(item, dict) and str(item.get("path") or "").strip()
     ]
+    readiness = {
+        "status": "update_library_before_repair",
+        "reason": "",
+        "checked_ts": now,
+        "first_inconsistent_ts": int(consistency.get("first_inconsistent_ts") or 0),
+        "last_inconsistency_change_ts": int(consistency.get("last_inconsistency_change_ts") or 0),
+        "missing_files": len(missing_paths),
+        "still_listed": [],
+    }
 
-    for item in consistency.get("missing") or []:
-        if isinstance(item, dict):
-            values.append(int(item.get("first_missing_ts") or 0))
-
-    return max(values) if values else 0
-
-
-def get_mix_repair_readiness(meta: dict) -> dict:
-    consistency = get_consistency_status(meta)
-    first_inconsistent_ts = int(consistency.get("first_inconsistent_ts") or 0)
-    last_inconsistency_change_ts = int(consistency.get("last_inconsistency_change_ts") or 0)
-    required_library_ts = get_repair_readiness_required_ts(consistency)
-
-    mix_label = str(meta.get("label") or meta.get("cache_path") or "")
-
-    if not is_mix_inconsistent(meta):
-        readiness = {
-            "status": "not_needed",
-            "reason": "Mix is not inconsistent.",
-            "checked_ts": int(time.time()),
-        }
-        log_repair_readiness(readiness, mix_label)
+    if not missing_paths:
+        readiness["reason"] = "No missing files are recorded yet. Run the consistency check again."
         return readiness
 
-    freshness = get_audio_library_freshness()
-    freshest_ts = int(freshness.get("freshest_ts") or 0)
-    freshest_property = str(freshness.get("freshest_property") or "")
+    try:
+        still_listed = find_missing_paths_still_in_library(missing_paths)
+    except Exception as exc:
+        readiness["reason"] = f"Kodi music library could not be queried: {exc}"
+        return readiness
 
-    if required_library_ts <= 0:
-        status = "update_library_before_repair"
-        reason = "Required library freshness time is not known yet. Run consistency check again."
-    elif freshest_ts > required_library_ts:
-        status = "ready"
-        reason = "Kodi audio library is newer than the latest detected inconsistency."
-    elif freshest_ts <= 0:
-        status = "update_library_before_repair"
-        reason = "Kodi audio library freshness could not be determined."
+    readiness["still_listed"] = still_listed
+    if still_listed:
+        readiness["reason"] = (
+            f"Kodi music library still lists {len(still_listed)} of {len(missing_paths)} missing file(s). "
+            "Update and clean the library."
+        )
     else:
-        status = "update_library_before_repair"
-        reason = "Kodi audio library has not been updated since the latest detected inconsistency."
-
-    readiness = {
-        "status": status,
-        "reason": reason,
-        "checked_ts": int(time.time()),
-        "first_inconsistent_ts": first_inconsistent_ts,
-        "last_inconsistency_change_ts": last_inconsistency_change_ts,
-        "required_library_ts": required_library_ts,
-        "library_freshest_ts": freshest_ts,
-        "library_freshest_property": freshest_property,
-        "library_properties": freshness.get("properties") or {},
-        "library_timestamps": freshness.get("timestamps") or {},
-    }
-    log_repair_readiness(readiness, mix_label)
+        readiness["status"] = "ready"
+        readiness["reason"] = "Kodi music library no longer lists the missing files."
     return readiness
 
 
-def log_repair_readiness(readiness: dict, mix_label: str = "") -> None:
+def get_mix_repair_readiness(meta: dict) -> dict:
+    readiness = evaluate_repair_readiness(get_consistency_status(meta))
+    log_repair_readiness(readiness, str(meta.get("label") or meta.get("cache_path") or ""))
+    return readiness
+
+
+def format_repair_readiness_log(readiness: dict, mix_label: str = "") -> str:
     status = str(readiness.get("status") or "")
     target = f" for {mix_label!r}" if mix_label else ""
     availability = "available" if status == "ready" else "not available"
     details = f"status={status}, reason={readiness.get('reason') or ''!r}"
-    if "required_library_ts" in readiness:
+    if "still_listed" in readiness:
         details += (
-            f", required_library_ts={format_ts_for_display(readiness.get('required_library_ts'))}"
-            f", library_freshest_ts={format_ts_for_display(readiness.get('library_freshest_ts'))}"
+            f", missing_files={readiness.get('missing_files')}"
+            f", still_listed_by_kodi={len(readiness.get('still_listed') or [])}"
         )
-    log_info(f"Repair readiness: repair {availability}{target}; {details}")
+    return f"Repair readiness: repair {availability}{target}; {details}"
+
+
+def log_repair_readiness(readiness: dict, mix_label: str = "") -> None:
+    log_info(format_repair_readiness_log(readiness, mix_label))
 
 
 def update_mix_repair_readiness_metadata(cache_path: str, tracks: list[str], meta: dict) -> dict:
@@ -1724,10 +1739,9 @@ def update_mix_repair_readiness_metadata(cache_path: str, tracks: list[str], met
 
 
 def get_or_update_mix_repair_readiness(cache_path: str, tracks: list[str], meta: dict) -> dict:
-    # Repair readiness depends on Kodi library timestamps, which can change
-    # outside the add-on while Kodi keeps running. Recalculate it whenever an
-    # inconsistent mix is rendered, so the context menu reflects a recent scan
-    # immediately instead of waiting for the service interval or Kodi restart.
+    # Repair readiness depends on the Kodi library, which can change outside the
+    # add-on while Kodi keeps running. Recalculate it whenever an inconsistent mix
+    # is rendered, so the context menu reflects a recent scan or clean immediately.
     return update_mix_repair_readiness_metadata(cache_path, tracks, meta)
 
 
@@ -1736,37 +1750,25 @@ def is_repair_ready(readiness: dict) -> bool:
 
 
 def build_repair_readiness_message(readiness: dict) -> str:
-    first_ts = int(readiness.get("first_inconsistent_ts") or 0)
-    change_ts = int(readiness.get("last_inconsistency_change_ts") or 0)
-    required_ts = int(readiness.get("required_library_ts") or 0)
-    library_ts = int(readiness.get("library_freshest_ts") or 0)
-    property_name = str(readiness.get("library_freshest_property") or "")
     reason = str(readiness.get("reason") or "")
+    still_listed = [str(path) for path in readiness.get("still_listed") or []]
 
     lines = [
         reason or "Kodi music library should be updated before repair.",
         "",
-        f"First inconsistency: {format_ts_for_display(first_ts)}",
-        f"Latest inconsistency change: {format_ts_for_display(change_ts)}",
-        f"Required library timestamp: {format_ts_for_display(required_ts)}",
-        f"Latest library timestamp: {format_ts_for_display(library_ts)}",
+        f"First inconsistency: {format_ts_for_display(int(readiness.get('first_inconsistent_ts') or 0))}",
+        f"Latest inconsistency change: {format_ts_for_display(int(readiness.get('last_inconsistency_change_ts') or 0))}",
+        f"Missing files: {int(readiness.get('missing_files') or 0)}",
     ]
-    if property_name:
-        lines.append(f"Library property: {property_name}")
-
-    library_properties = readiness.get("library_properties") if isinstance(readiness.get("library_properties"), dict) else {}
-    if library_properties:
-        lines.extend([
-            "",
-            f"Library last updated: {library_properties.get('librarylastupdated') or 'unknown'}",
-            f"Library last cleaned: {library_properties.get('librarylastcleaned') or 'unknown'}",
-            f"Songs last added: {library_properties.get('songslastadded') or 'unknown'}",
-            f"Songs modified: {library_properties.get('songsmodified') or 'unknown'}",
-        ])
+    if still_listed:
+        lines.extend(["", "Still listed by the Kodi music library:"])
+        lines.extend(f"- {path}" for path in still_listed[:10])
+        if len(still_listed) > 10:
+            lines.append(f"- ... and {len(still_listed) - 10} more")
 
     lines.extend([
         "",
-        "Update and clean the Kodi music library, wait for the consistency service to run again, then try repair again.",
+        "Update and clean the Kodi music library so it no longer lists these files, then try repair again.",
     ])
     return "\n".join(lines)
 
@@ -1779,7 +1781,7 @@ def show_update_library_before_repair(cache_path: str) -> None:
     if is_repair_ready(readiness):
         xbmcgui.Dialog().ok(
             "Repair is now available",
-            "Kodi audio library is newer than the latest detected inconsistency.\n\n"
+            "The Kodi music library no longer lists the missing files.\n\n"
             "Close this dialog and reopen the context menu. "
             "Auto-repair this mix should now be available.",
         )
@@ -4731,8 +4733,8 @@ def build_mix_info_message(cache_path: str) -> str:
             "Repair readiness:",
             f"Status: {readiness.get('status') or 'unknown'}",
             f"Reason: {readiness.get('reason') or ''}",
-            f"Required library timestamp: {format_sidecar_ts(readiness.get('required_library_ts'))}",
-            f"Latest library timestamp: {format_sidecar_ts(readiness.get('library_freshest_ts'))}",
+            f"Missing files still listed by Kodi: {len(readiness.get('still_listed') or [])}",
+            f"Checked: {format_sidecar_ts(readiness.get('checked_ts'))}",
         ])
 
     return "\n".join(lines)
