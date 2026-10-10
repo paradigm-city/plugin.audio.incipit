@@ -133,16 +133,17 @@ class BackgroundConsistencyCheckTest(KodiTestCase):
         self.clock = self.use_clock()
         kodi.add_media(self.PRESENT)
         kodi.library.add_song(self.MOVED, title="Motorcycle Man", artist="Saxon")
-        kodi.library_properties = {"songsmodified": kodi_datetime(self.clock.now - 3600)}
+        # Kodi has scanned the new location but not been cleaned: it still lists the missing file.
+        kodi.library.add_song(self.MISSING, title="Motorcycle Man", artist="Saxon", present=False)
         self.cache_path = self.save_mix([self.PRESENT, self.MISSING])
 
     def sidecar(self):
         return self.read_json(main.mix_meta_path_from_cache_path(self.cache_path))
 
     def library_updated(self):
+        # A library clean removes the entry for the missing file.
         self.clock.advance(600)
-        kodi.library_properties = {"songsmodified": kodi_datetime(self.clock.now)}
-        self.clock.advance(600)
+        kodi.library.songs = [song for song in kodi.library.songs if song["file"] != self.MISSING]
 
     def test_records_missing_tracks_and_readiness(self):
         self.assertEqual(service.run_consistency_check(), 1)
@@ -157,10 +158,10 @@ class BackgroundConsistencyCheckTest(KodiTestCase):
         self.assertEqual(service.run_consistency_check(), 0)
         self.assertEqual(self.sidecar()["consistency"]["status"], "ok")
 
-    def test_repairs_automatically_once_library_is_newer(self):
+    def test_repairs_automatically_once_library_is_cleaned(self):
         kodi.settings["service_auto_repair_enabled"] = "true"
         service.run_consistency_check()
-        self.assertEqual(self.read_mix(self.cache_path)[1], self.MISSING)  # library older than the inconsistency
+        self.assertEqual(self.read_mix(self.cache_path)[1], self.MISSING)  # library still lists the missing file
 
         self.library_updated()
         self.assertEqual(service.run_consistency_check(), 1)
@@ -328,29 +329,35 @@ class ServiceStartupLogTest(KodiTestCase):
 
 
 class ServiceRepairReadinessTest(KodiTestCase):
+    MISSING = "D:\\music\\gone.mp3"
+    CONSISTENCY = {"status": "inconsistent", "first_inconsistent_ts": 100, "missing": [{"path": MISSING}]}
+
+    def test_service_uses_the_plugin_rule(self):
+        for still_listed in (False, True):
+            with self.subTest(still_listed=still_listed):
+                kodi.library.songs.clear()
+                if still_listed:
+                    kodi.library.add_song(self.MISSING, title="Gone", present=False)
+                from_service = service.get_repair_readiness_for_consistency(self.CONSISTENCY)
+                from_plugin = main.evaluate_repair_readiness(self.CONSISTENCY)
+                for key in ("status", "reason", "missing_files", "still_listed"):
+                    self.assertEqual(from_service[key], from_plugin[key])
+        self.assertEqual(service.get_repair_readiness_for_consistency({"status": "ok"})["status"], "not_needed")
+
     def test_readiness_result_is_logged_with_extended_logging(self):
         kodi.settings["service_extended_logging"] = "true"
-        consistency = {"status": "inconsistent", "first_inconsistent_ts": 100}
-        kodi.library_properties = {"songsmodified": "2026-01-01 00:00:00"}
-        service.get_repair_readiness_for_consistency(consistency, "Rock mix")
-        kodi.library_properties = {}
-        service.get_repair_readiness_for_consistency(consistency)
+        service.get_repair_readiness_for_consistency(self.CONSISTENCY, "Rock mix")
+        kodi.library.add_song(self.MISSING, title="Gone", present=False)
+        service.get_repair_readiness_for_consistency(self.CONSISTENCY)
         lines = [message for message, _level in kodi.logs if "Repair readiness:" in message]
         self.assertIn("Repair readiness: repair available for 'Rock mix'; status=ready", lines[0])
         self.assertIn("Repair readiness: repair not available; status=update_library_before_repair, "
-                      "reason='Kodi audio library freshness could not be determined.'", lines[1])
-        self.assertIn("Library freshness: Kodi library property songsmodified=", kodi.log_text())
+                      "reason='Kodi music library still lists 1 of 1 missing file(s). Update and clean the library.'", lines[1])
 
-    def test_matches_plugin_readiness(self):
-        consistency = {"status": "inconsistent", "first_inconsistent_ts": 100, "missing": [{"first_missing_ts": 150}]}
-        for properties in ({}, {"songsmodified": "1970-01-01 00:02:00"}, {"songsmodified": "2026-01-01 00:00:00"}):
-            with self.subTest(properties=properties):
-                kodi.library_properties = properties
-                from_service = service.get_repair_readiness_for_consistency(consistency)
-                from_plugin = main.get_mix_repair_readiness({"consistency": consistency})
-                for key in ("status", "reason", "required_library_ts", "library_freshest_ts"):
-                    self.assertEqual(from_service[key], from_plugin[key])
-        self.assertEqual(service.get_repair_readiness_for_consistency({"status": "ok"})["status"], "not_needed")
+    def test_readiness_follows_the_service_logging_setting(self):
+        kodi.settings["plugin_extended_logging"] = "true"
+        service.get_repair_readiness_for_consistency(self.CONSISTENCY)
+        self.assertNotIn("Repair readiness:", kodi.log_text())
 
     def test_service_settings(self):
         self.assertTrue(service.is_consistency_service_enabled())

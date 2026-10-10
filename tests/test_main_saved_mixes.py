@@ -209,14 +209,11 @@ class ConsistencyTest(KodiTestCase):
 
 
 class RepairReadinessDeadlockTest(KodiTestCase):
-    """The timeline from kodi.log on 2026-10-10, which left 18 mixes blocked."""
+    """The timeline from kodi.log on 2026-10-10 that left 18 mixes blocked under the old timestamp rule (F9)."""
 
-    @unittest.expectedFailure
     def test_library_that_already_reflects_the_change_does_not_block_repair(self):
-        # Known issue F9: readiness needs a library *change* after the check noticed a missing file.
-        # Here the library changed before the check noticed, and later scans find nothing new, so
-        # Kodi's timestamps never move and repair stays blocked. The library no longer lists the
-        # missing files, so it already reflects the change and repair should be possible.
+        # The library changed before the check noticed the missing files, and later scans found nothing new,
+        # so Kodi's timestamps never moved. The library no longer lists the missing files, so repair is possible.
         clock = self.use_clock(main.parse_kodi_datetime("2026-10-10 17:42:23"))  # 19:42 local
         kodi.add_media(A)
         kodi.add_media(C)
@@ -235,34 +232,86 @@ class RepairReadinessDeadlockTest(KodiTestCase):
 
 
 class RepairReadinessTest(KodiTestCase):
+    """Repair is ready once the Kodi library no longer lists any of the mix's missing files."""
+
     def setUp(self):
         super().setUp()
+        kodi.add_media(A)
         self.cache_path = self.save_mix([A, B])
-        with mock.patch("time.time", return_value=main.parse_kodi_datetime("2026-10-05 12:00:00")):
-            main.analyze_mix_consistency(self.cache_path)
+        main.analyze_mix_consistency(self.cache_path)  # B is missing
 
     def readiness(self):
         meta = main.get_saved_mix_metadata(self.cache_path)
         return main.get_mix_repair_readiness(meta)
 
+    def library_still_lists_missing_file(self):
+        kodi.library.add_song(B, title="Song 2", present=False)
+
+    def test_library_still_lists_missing_file(self):
+        self.library_still_lists_missing_file()
+        readiness = self.readiness()
+        self.assertEqual(readiness["status"], "update_library_before_repair")
+        self.assertEqual(readiness["still_listed"], [B])
+        self.assertEqual(readiness["reason"], "Kodi music library still lists 1 of 1 missing file(s). Update and clean the library.")
+        self.assertFalse(main.is_repair_ready(readiness))
+        with self.assertRaisesRegex(main.MusicIPError, "Update library before repair"):
+            main.ensure_repair_ready(self.cache_path)
+
+    def test_library_no_longer_lists_missing_file(self):
+        readiness = self.readiness()
+        self.assertEqual(readiness["status"], "ready")
+        self.assertEqual(readiness["reason"], "Kodi music library no longer lists the missing files.")
+        main.ensure_repair_ready(self.cache_path)
+        sidecar = self.read_json(main.mix_meta_path_from_cache_path(self.cache_path))
+        self.assertEqual(sidecar["repair_readiness"]["status"], "ready")
+
+    def test_moved_file_listed_under_its_new_path_is_ready(self):
+        kodi.library.add_song("E:\\moved\\02 Song 2.mp3", title="Song 2")
+        self.assertEqual(self.readiness()["status"], "ready")
+
+    def test_path_comparison_ignores_folder_separators(self):
+        kodi.library.add_song(B.replace("\\", "/"), title="Song 2", present=False)
+        self.assertEqual(self.readiness()["still_listed"], [B])
+
+    def test_timestamps_are_not_used(self):
+        self.library_still_lists_missing_file()
+        kodi.library_properties = {"songsmodified": "2099-01-01 00:00:00"}
+        self.assertEqual(self.readiness()["status"], "update_library_before_repair")
+        self.assertNotIn("AudioLibrary.GetProperties", kodi.jsonrpc_methods())
+
+    def test_library_query_failure_blocks_repair(self):
+        kodi.fail_jsonrpc("AudioLibrary.GetSongs")
+        readiness = self.readiness()
+        self.assertEqual(readiness["status"], "update_library_before_repair")
+        self.assertTrue(readiness["reason"].startswith("Kodi music library could not be queried:"))
+
+    def test_no_missing_files_recorded(self):
+        readiness = main.evaluate_repair_readiness({"status": "inconsistent", "missing": []})
+        self.assertEqual(readiness["status"], "update_library_before_repair")
+        self.assertEqual(readiness["reason"], "No missing files are recorded yet. Run the consistency check again.")
+
+    def test_consistent_mix_needs_no_repair(self):
+        self.assertEqual(main.get_mix_repair_readiness({})["status"], "not_needed")
+        self.assertEqual(main.evaluate_repair_readiness({"status": "ok"})["status"], "not_needed")
+
     def test_readiness_result_is_logged_with_extended_logging(self):
         kodi.settings["plugin_extended_logging"] = "true"
-        kodi.library_properties = {"librarylastupdated": "2026-10-04 08:00:00"}
+        self.library_still_lists_missing_file()
         self.readiness()
-        kodi.library_properties = {"songsmodified": "2026-10-05 13:00:00"}
+        kodi.library.songs.clear()
         self.readiness()
         main.get_mix_repair_readiness({"label": "Fine mix"})
 
         lines = [message for message, _level in kodi.logs if "Repair readiness:" in message]
-        self.assertEqual(len(lines), 3)
-        self.assertIn("Repair readiness: repair not available for '01 Song 1'; status=update_library_before_repair, "
-                      "reason='Kodi audio library has not been updated since the latest detected inconsistency.', "
-                      "required_library_ts=", lines[0])
-        self.assertIn("library_freshest_ts=2026-10-04", lines[0])
-        self.assertIn("Repair readiness: repair available for '01 Song 1'; status=ready, "
-                      "reason='Kodi audio library is newer than the latest detected inconsistency.'", lines[1])
-        self.assertIn("Repair readiness: repair not available for 'Fine mix'; status=not_needed, "
-                      "reason='Mix is not inconsistent.'", lines[2])
+        self.assertEqual(lines, [
+            "[plugin.audio.musicip] Repair readiness: repair not available for '01 Song 1'; "
+            "status=update_library_before_repair, reason='Kodi music library still lists 1 of 1 missing file(s). "
+            "Update and clean the library.', missing_files=1, still_listed_by_kodi=1",
+            "[plugin.audio.musicip] Repair readiness: repair available for '01 Song 1'; status=ready, "
+            "reason='Kodi music library no longer lists the missing files.', missing_files=1, still_listed_by_kodi=0",
+            "[plugin.audio.musicip] Repair readiness: repair not available for 'Fine mix'; status=not_needed, "
+            "reason='Mix is not inconsistent.'",
+        ])
 
     def test_readiness_is_not_logged_without_extended_logging(self):
         self.readiness()
@@ -280,56 +329,36 @@ class RepairReadinessTest(KodiTestCase):
         self.assertIn("Library freshness: parsed Kodi datetime '2026-10-04 08:00:00'", kodi.log_text())
         self.assertNotIn("Repair readiness:", kodi.log_text())
 
-    def test_readiness_listing_with_only_plugin_logging(self):
-        # Your setup: plugin logging on, service logging off -> the result line, no timestamp details.
-        kodi.settings["plugin_extended_logging"] = "true"
-        self.readiness()
-        self.assertIn("Repair readiness: repair not available", kodi.log_text())
-        self.assertNotIn("Library freshness:", kodi.log_text())
-
-    def test_library_not_updated_since_inconsistency(self):
-        kodi.library_properties = {"librarylastupdated": "2026-10-04 08:00:00"}
-        readiness = self.readiness()
-        self.assertEqual(readiness["status"], "update_library_before_repair")
-        self.assertFalse(main.is_repair_ready(readiness))
-        with self.assertRaisesRegex(main.MusicIPError, "Update library before repair"):
-            main.ensure_repair_ready(self.cache_path)
-
-    def test_library_updated_after_inconsistency(self):
-        kodi.library_properties = {"librarylastupdated": "2026-10-04 08:00:00", "songsmodified": "2026-10-05 13:00:00"}
-        readiness = self.readiness()
-        self.assertEqual(readiness["status"], "ready")
-        self.assertEqual(readiness["library_freshest_property"], "songsmodified")
-        main.ensure_repair_ready(self.cache_path)
-        sidecar = self.read_json(main.mix_meta_path_from_cache_path(self.cache_path))
-        self.assertEqual(sidecar["repair_readiness"]["status"], "ready")
-
-    def test_unknown_library_freshness(self):
-        kodi.fail_jsonrpc("AudioLibrary.GetProperties")
-        self.assertEqual(self.readiness()["reason"], "Kodi audio library freshness could not be determined.")
-
-    def test_consistent_mix_needs_no_repair(self):
-        self.assertEqual(main.get_mix_repair_readiness({})["status"], "not_needed")
-
     def test_readiness_message(self):
-        kodi.library_properties = {"librarylastupdated": "2026-10-04 08:00:00"}
+        self.library_still_lists_missing_file()
         message = main.build_repair_readiness_message(self.readiness())
-        self.assertIn("Kodi audio library has not been updated since the latest detected inconsistency.", message)
-        self.assertIn("Library property: librarylastupdated", message)
-        self.assertIn("Library last updated: 2026-10-04 08:00:00", message)
-        self.assertIn("Songs modified: unknown", message)
+        self.assertIn("Kodi music library still lists 1 of 1 missing file(s). Update and clean the library.", message)
+        self.assertIn("Missing files: 1", message)
+        self.assertIn("Still listed by the Kodi music library:\n- " + B, message)
+        self.assertIn("Update and clean the Kodi music library so it no longer lists these files, then try repair again.", message)
+        self.assertNotIn("consistency service", message)
+
+    def test_readiness_message_shortens_long_lists(self):
+        paths = [f"D:\\music\\{n}.mp3" for n in range(12)]
+        message = main.build_repair_readiness_message({"reason": "x", "missing_files": 12, "still_listed": paths})
+        self.assertIn("- ... and 2 more", message)
+        self.assertNotIn(paths[10], message)
 
     def test_update_library_dialog_runs_scan_and_clean(self):
+        self.library_still_lists_missing_file()
         kodi.respond("select", 3)
         main.show_update_library_before_repair(self.cache_path)
         self.assertEqual(kodi.jsonrpc_methods()[-2:], ["AudioLibrary.Scan", "AudioLibrary.Clean"])
         self.assertNotified("scan and cleanup started")
-        self.assertEqual(kodi.dialogs("ok")[0][1][0], "Update library before repair")
+        heading, text = kodi.dialogs("ok")[0][1]
+        self.assertEqual(heading, "Update library before repair")
+        self.assertIn(B, text)
 
     def test_update_library_dialog_when_already_ready(self):
-        kodi.library_properties = {"songsmodified": "2026-10-06 00:00:00"}
         main.show_update_library_before_repair(self.cache_path)
-        self.assertEqual(kodi.dialogs("ok")[0][1][0], "Repair is now available")
+        heading, text = kodi.dialogs("ok")[0][1]
+        self.assertEqual(heading, "Repair is now available")
+        self.assertIn("no longer lists the missing files", text)
         self.assertEqual(kodi.dialogs("select"), [])
 
     def test_library_maintenance_modes(self):

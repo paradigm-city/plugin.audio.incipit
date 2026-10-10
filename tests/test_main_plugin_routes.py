@@ -88,8 +88,11 @@ class SavedMixListingTest(KodiTestCase):
         older = plugin_query(item.context_action("Cleanup mixes from this date and older"))
         self.assertEqual((older["action"], older["older"]), ("cleanup_saved_mixes", "1"))
 
+    def library_still_lists_missing_file(self):
+        kodi.library.add_song(T2, title="Motorcycle Man", artist="Saxon", present=False)
+
     def test_mixes_of_a_date(self):
-        kodi.library_properties = {"songsmodified": "2000-01-01 00:00:00"}
+        self.library_still_lists_missing_file()
         self.run_plugin(action="saved_mixes_by_date", date="2026-10-05")
         ok_url, ok_item, _ = item_by_label("01 Ace of Spades (2 tracks)")
         self.assertEqual(plugin_query(ok_url)["cache_path"], self.ok_mix)
@@ -103,8 +106,7 @@ class SavedMixListingTest(KodiTestCase):
         labels = [label for label, _action in broken.context_menu]
         self.assertEqual(labels, ["Information", "Show mix information", "Check consistency", "Update library before repair", "Cleanup this mix"])
 
-    def test_repair_offered_once_library_is_newer(self):
-        kodi.library_properties = {"songsmodified": "2099-01-01 00:00:00"}
+    def test_repair_offered_once_library_no_longer_lists_missing_file(self):
         self.run_plugin(action="saved_mixes_by_date", date="2026-10-05")
         _url, broken, _ = item_by_label("[B][COLOR red]![/COLOR][/B] 01 Overkill (2 tracks)")
         repair = plugin_query(broken.context_action("Auto-repair this mix"))
@@ -136,18 +138,19 @@ class SavedMixListingTest(KodiTestCase):
         self.assertNotified("Mix consistency OK.")
         self.assertEqual(kodi.builtins.count("Container.Refresh"), 2)
 
-    def test_repair_action_requires_fresh_library(self):
+    def test_repair_action_requires_updated_library(self):
+        self.library_still_lists_missing_file()
         self.run_plugin(action="repair_mix", cache_path=self.broken_mix)
         self.assertNotified("Update library before repair.")
 
     def test_repair_action(self):
-        kodi.library_properties = {"songsmodified": "2099-01-01 00:00:00"}
         kodi.library.add_song("E:\\moved\\01 Motorcycle Man.mp3", title="Motorcycle Man", artist="Saxon")
         self.run_plugin(action="repair_mix", cache_path=self.broken_mix)
         self.assertNotified("Repaired 1 track(s).")
         self.assertEqual(self.read_mix(self.broken_mix), [T1, "E:\\moved\\01 Motorcycle Man.mp3"])
 
     def test_update_library_action(self):
+        self.library_still_lists_missing_file()
         kodi.respond("select", 1)
         self.run_plugin(action="update_library_before_repair", cache_path=self.broken_mix)
         self.assertIn("AudioLibrary.Scan", kodi.jsonrpc_methods())

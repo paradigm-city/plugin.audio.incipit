@@ -71,10 +71,6 @@ class SharedHelpersTest(unittest.TestCase):
         for value in ("2026-10-08 12:16:17", "2026-10-08T12:16:17Z", "2026-10-08", "", "garbage", "2026-13-45"):
             self.assertSame("parse_kodi_datetime", value)
 
-    def test_readiness_required_timestamp(self):
-        consistency = {"first_inconsistent_ts": 5, "last_inconsistency_change_ts": 9, "missing": [{"first_missing_ts": 7}, "x"]}
-        self.assertSame("get_repair_readiness_required_ts", consistency)
-        self.assertSame("get_repair_readiness_required_ts", {})
 
 
 class SharedLibraryLookupTest(KodiTestCase):
