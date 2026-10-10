@@ -306,9 +306,11 @@ class RepairReadinessTest(KodiTestCase):
         self.assertEqual(lines, [
             "[plugin.audio.musicip] Repair readiness: repair not available for '01 Song 1'; "
             "status=update_library_before_repair, reason='Kodi music library still lists 1 of 1 missing file(s). "
-            "Update and clean the library.', missing_files=1, still_listed_by_kodi=1",
+            "Update and clean the library.', missing_files=1, still_listed_by_kodi=1, "
+            "unavailable_sources=0, outside_sources=0",
             "[plugin.audio.musicip] Repair readiness: repair available for '01 Song 1'; status=ready, "
-            "reason='Kodi music library no longer lists the missing files.', missing_files=1, still_listed_by_kodi=0",
+            "reason='Kodi music library no longer lists the missing files.', missing_files=1, still_listed_by_kodi=0, "
+            "unavailable_sources=0, outside_sources=0",
             "[plugin.audio.musicip] Repair readiness: repair not available for 'Fine mix'; status=not_needed, "
             "reason='Mix is not inconsistent.'",
         ])
@@ -368,6 +370,98 @@ class RepairReadinessTest(KodiTestCase):
             self.assertEqual(kodi.jsonrpc_methods(), methods)
         main.run_audio_library_maintenance("other")
         self.assertNotified("No library action selected.")
+
+
+class RepairReadinessSourcesTest(KodiTestCase):
+    """Repair needs Kodi music sources that can still add or update the missing files."""
+
+    SOURCE = "D:\\music\\#metal\\"
+    PRESENT = "D:\\music\\#metal\\Motorhead\\Overkill (1979)\\01 Overkill.mp3"
+    MISSING = "D:\\music\\#metal\\Saxon\\Wheels of Steel (1980)\\01 Motorcycle Man.mp3"
+
+    def setUp(self):
+        super().setUp()
+        kodi.music_sources = []
+        kodi.add_media(self.PRESENT)
+        self.cache_path = self.save_mix([self.PRESENT, self.MISSING])
+        main.analyze_mix_consistency(self.cache_path)
+
+    def readiness(self):
+        return main.get_mix_repair_readiness(main.get_saved_mix_metadata(self.cache_path))
+
+    def test_ready_when_the_covering_source_exists(self):
+        kodi.add_music_source(self.SOURCE)
+        readiness = self.readiness()
+        self.assertEqual(readiness["status"], "ready")
+        self.assertEqual((readiness["unavailable_sources"], readiness["outside_sources"]), ([], []))
+
+    def test_source_folder_gone_after_reorganization_blocks_repair(self):
+        kodi.add_music_source(self.SOURCE, present=False)
+        readiness = self.readiness()
+        self.assertEqual(readiness["status"], "update_sources_before_repair")
+        self.assertEqual(readiness["unavailable_sources"], [self.SOURCE])
+        self.assertEqual(
+            readiness["reason"],
+            f"Kodi music source(s) no longer available: {self.SOURCE}. Update the music sources to the new "
+            "folder structure (or reconnect the drive), then update the library.",
+        )
+        self.assertEqual(main.repair_readiness_action_label(readiness), "Check music sources before repair")
+        with self.assertRaisesRegex(main.MusicIPError, "Check music sources before repair"):
+            main.ensure_repair_ready(self.cache_path)
+
+    def test_most_specific_source_decides(self):
+        kodi.add_music_source("D:\\")
+        kodi.add_music_source(self.SOURCE, present=False)
+        self.assertEqual(self.readiness()["unavailable_sources"], [self.SOURCE])
+
+    def test_missing_files_outside_all_sources_are_only_reported(self):
+        # Normal after an obsolete source was removed during a reorganization.
+        kodi.add_music_source("E:\\new_structure\\")
+        readiness = self.readiness()
+        self.assertEqual(readiness["status"], "ready")
+        self.assertEqual(readiness["outside_sources"], [self.MISSING])
+        self.assertEqual(
+            readiness["reason"],
+            "Kodi music library no longer lists the missing files. 1 of them were outside all Kodi music sources.",
+        )
+
+    def test_no_music_sources(self):
+        readiness = self.readiness()
+        self.assertEqual(readiness["status"], "update_sources_before_repair")
+        self.assertEqual(readiness["reason"], "Kodi has no music sources, so the library cannot add the missing files. Add a music source.")
+
+    def test_multipath_source(self):
+        kodi.music_sources = [{"file": "multipath://D%3a%5cmusic%5c%23metal%5c/E%3a%5cother%5c/", "label": "Metal"}]
+        self.assertEqual(main.get_music_source_paths(), [self.SOURCE, "E:\\other\\"])
+        self.assertEqual(self.readiness()["unavailable_sources"], [self.SOURCE])
+
+    def test_network_source(self):
+        self.assertEqual(main.find_covering_music_source("smb://nas/music/a/b.mp3", ["smb://NAS/music/", "D:\\"]), "smb://NAS/music/")
+        self.assertEqual(main.find_covering_music_source("D:\\musicbox\\a.mp3", ["D:\\music\\"]), "")
+
+    def test_unreadable_sources_fall_back_to_the_library_check(self):
+        kodi.settings["plugin_extended_logging"] = "true"
+        kodi.fail_jsonrpc("Files.GetSources")
+        readiness = self.readiness()
+        self.assertEqual(readiness["status"], "ready")
+        self.assertFalse(readiness["sources_checked"])
+        self.assertIn("music_sources=unreadable", kodi.log_text())
+
+    def test_sources_dialog_and_message(self):
+        kodi.add_music_source(self.SOURCE, present=False)
+        main.show_update_library_before_repair(self.cache_path)
+        self.assertEqual(kodi.dialogs("select"), [])  # scanning cannot help yet
+        heading, text = kodi.dialogs("ok")[0][1]
+        self.assertEqual(heading, "Check music sources before repair")
+        self.assertIn("Kodi music sources that no longer exist:\n- " + self.SOURCE, text)
+        self.assertIn("Update the Kodi music sources to match the folder structure on disk", text)
+
+    def test_saved_mix_entry_names_the_sources(self):
+        kodi.add_music_source(self.SOURCE, present=False)
+        main.add_saved_mix_item(self.cache_path)
+        _url, item, _folder = kodi.directory_items[-1]
+        self.assertIn("Check music sources before repair", [label for label, _action in item.context_menu])
+        self.assertTrue(item.getLabel2().endswith("· Check music sources before repair"))
 
 
 class KodiDatetimeTest(unittest.TestCase):

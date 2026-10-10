@@ -6,8 +6,10 @@ All fakes share one KodiState (``kodi``); tests call kodi.reset() between cases.
 What is modelled:
 - add-on settings, with defaults read from resources/settings.xml
 - special://profile paths, mapped to a temporary directory
-- music files: a path "exists" only if a test added it (never the real disk)
-- JSON-RPC: AudioLibrary (songs with filters, properties, scan/clean), Player, Playlist, Settings
+- music files and folders: a path "exists" only if a test added it (never the real disk);
+  xbmcvfs.listdir() browses what was added
+- JSON-RPC: AudioLibrary (songs with filters, properties, scan/clean), Files.GetSources (music sources),
+  Player, Playlist, Settings
 - player and music playlist, dialogs with scripted answers, plugin directory listings
 """
 
@@ -17,6 +19,7 @@ import atexit
 import json
 import ntpath
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -46,6 +49,10 @@ def read_addon_version() -> str:
 
 def media_key(path: str) -> str:
     return str(path or "").replace("\\", "/").rstrip("/").casefold()
+
+
+def path_parts(path: str) -> list:
+    return [part for part in re.split(r"[\\/]+", str(path or "")) if part]
 
 
 class JsonRpcError(Exception):
@@ -233,11 +240,17 @@ class KodiState:
         self.jsonrpc_calls = []
         self.jsonrpc_failures = {}
         self.media_files = set()
+        self.media_entries = {}  # media_key -> (original path, is_folder), for listdir()
         self.playlist = []
         self.player = PlayerState()
         self.sleeps = 0
         self.abort_after_waits = 1
         self.waits = 0
+        # Music sources as Kodi reports them; by default the drives used in tests, all present.
+        self.listed = []
+        self.music_sources = []
+        for drive in ("D:\\", "E:\\", "F:\\"):
+            self.add_music_source(drive)
 
     def cleanup(self):
         if self.root:
@@ -263,10 +276,33 @@ class KodiState:
             return False
 
     def add_media(self, path):
+        """A music file that exists on the (fake) disk."""
         self.media_files.add(media_key(path))
+        self.media_entries[media_key(path)] = (path, False)
+
+    def add_folder(self, path):
+        """A folder that exists on the (fake) disk, even if it holds no files."""
+        self.media_files.add(media_key(path))
+        self.media_entries[media_key(path)] = (path, True)
 
     def remove_media(self, path):
         self.media_files.discard(media_key(path))
+        self.media_entries.pop(media_key(path), None)
+
+    def listdir(self, path):
+        """(folders, files) directly inside path, derived from the files and folders added."""
+        base = [part.casefold() for part in path_parts(path)]
+        folders, files = set(), set()
+        for original, is_folder in self.media_entries.values():
+            parts = path_parts(original)
+            if len(parts) <= len(base) or [part.casefold() for part in parts[:len(base)]] != base:
+                continue
+            if len(parts) == len(base) + 1 and not is_folder:
+                files.add(parts[-1])
+            else:
+                folders.add(parts[len(base)])
+        self.listed.append(path)
+        return sorted(folders), sorted(files)
 
     # --- dialogs ------------------------------------------------------------------------
     def respond(self, method, *responses):
@@ -310,6 +346,11 @@ class KodiState:
         self.player.tag = InfoTagMusic(**dict(tag.values, url=url))
 
     # --- JSON-RPC -----------------------------------------------------------------------
+    def add_music_source(self, path, label="", present=True):
+        self.music_sources.append({"file": path, "label": label or path})
+        if present:
+            self.add_folder(path)
+
     def fail_jsonrpc(self, method, times=1, message="Invalid params"):
         self.jsonrpc_failures.setdefault(method, []).extend([message] * times)
 
@@ -342,6 +383,10 @@ class KodiState:
             return {key: self.library_properties.get(key, "") for key in params.get("properties") or []}
         if method in ("AudioLibrary.Scan", "AudioLibrary.Clean"):
             return "OK"
+        if method == "Files.GetSources":
+            if params.get("media") != "music":
+                return {"sources": []}
+            return {"sources": [dict(source) for source in self.music_sources]}
         if method == "Settings.GetSettingValue":
             setting = params.get("setting")
             if setting not in self.kodi_settings:
@@ -594,6 +639,13 @@ def _exists(path):
     return media_key(path) in kodi.media_files
 
 
+def _listdir(path):
+    if kodi.is_local(path):
+        entries = list(os.scandir(path))
+        return [e.name for e in entries if e.is_dir()], [e.name for e in entries if not e.is_dir()]
+    return kodi.listdir(path)
+
+
 def _mkdirs(path):
     os.makedirs(path, exist_ok=True)
     return True
@@ -649,6 +701,7 @@ def install():
     xbmcvfs.exists = _exists
     xbmcvfs.mkdirs = _mkdirs
     xbmcvfs.delete = _delete
+    xbmcvfs.listdir = _listdir
 
     for module in (xbmc, xbmcaddon, xbmcgui, xbmcplugin, xbmcvfs):
         sys.modules[module.__name__] = module
