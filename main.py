@@ -709,29 +709,6 @@ def save_discovery_state(state: dict) -> None:
     save_json_file(discovery_state_path(), state or {})
 
 
-def write_discovery_command(command: str) -> None:
-    payload = {
-        "command": command,
-        "ts": int(time.time()),
-        "excerpt_seconds": get_discovery_excerpt_seconds(),
-        "offset_percent": get_discovery_offset_percent(),
-    }
-    save_json_file(discovery_command_path(), payload)
-
-
-def discovery_mode_is_active() -> bool:
-    return bool(get_discovery_state().get("enabled"))
-
-
-def discovery_current_song() -> str:
-    state = get_discovery_state()
-    return str(state.get("current_song") or "").strip()
-
-
-def discovery_mode_url() -> str:
-    return addon_url(action="discovery_mode", nonce=new_nonce())
-
-
 def replace_with_discovery_mode_menu() -> None:
     try:
         xbmc.executebuiltin(
@@ -739,21 +716,6 @@ def replace_with_discovery_mode_menu() -> None:
         )
     except Exception as exc:
         log(f"Discovery mode: could not replace container with Discovery screen: {exc}", xbmc.LOGWARNING)
-
-
-def refresh_discovery_mode_menu() -> None:
-    xbmc.executebuiltin(f"Container.Update({discovery_mode_url()},replace)")
-
-
-def discovery_status_label() -> str:
-    state = get_discovery_state()
-    if not state.get("enabled"):
-        return "Discovery mode: inactive"
-
-    current = str(state.get("current_label") or state.get("current_song") or "").strip()
-    if current:
-        return f"Discovery mode: active - {current}"
-    return "Discovery mode: active"
 
 
 def mix_cache_key(seed: str, size: int) -> str:
