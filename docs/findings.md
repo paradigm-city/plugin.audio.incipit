@@ -34,6 +34,17 @@ The service also still reads `start`, `stop` and `next` commands from `discovery
 
 In the `start` handler, the branch that adopts an already-started playlist could not run anyway, because `state["queue"]` is emptied just before `existing_queue` is read from it.
 
+### F8 · Menu actions are folders but return no listing
+
+In the main menu and the Discovery menu, these entries are added as folders, but their actions never call `endOfDirectory()`. They switch screens with `Container.Update(…,replace)` instead:
+
+- **Generate mix from playing audio** (`generate_current_mix`, on success)
+- **Start discovery mode**, **Skip to next discovery song**, **Stop discovery mode**, **Create mix from current discovery song** (`discovery_start`, `discovery_next`, `discovery_stop`, `discovery_mix_current`)
+
+For **Settings** the same pattern produced `XFILE::CDirectory::GetDirectory - Error getting plugin://plugin.audio.musicip/?action=open_settings` in `kodi.log` (fixed in dd92060). For these entries no such error has been seen in `kodi.log` so far, likely because the screen switch cancels Kodi's pending folder request.
+
+**Test:** `test_main_plugin_routes.FolderEntriesTest.test_folder_entries_end_their_directory`
+
 ## Resolved
 
 ### F7 · The service start message showed the add-on prefix twice

@@ -36,7 +36,19 @@ class RootAndSettingsTest(KodiTestCase):
     def test_open_settings(self):
         self.run_plugin(action="open_settings")
         self.assertEqual(kodi.settings_opened, 1)
-        self.assertBuiltin(f"Container.Update({PLUGIN_URL}?nonce=")
+        self.assertEqual(kodi.builtins[-1], "Container.Refresh")
+        self.assertEqual(kodi.ended, [])
+
+    def test_settings_entries_are_actions_not_folders(self):
+        # A folder entry makes Kodi expect a listing, which open_settings never returns.
+        self.run_plugin()
+        self.run_plugin(action="discovery_mode")
+        for label in ("Settings", "Discovery mode settings"):
+            with self.subTest(label=label):
+                url, item, is_folder = item_by_label(label)
+                self.assertFalse(is_folder)
+                self.assertEqual(item.getProperty("IsPlayable"), "false")
+                self.assertEqual(plugin_query(url)["action"], "open_settings")
 
     def test_unknown_action(self):
         self.run_plugin(action="frobnicate")
@@ -381,6 +393,52 @@ class MixEditingRoutesTest(MusicIPServerTestCase):
         self.run_plugin(action="more_like_this", seed=SEED, size="10", index="1", path=T1, cache_path=self.cache_path)
         self.assertNotified("MusicIP returned an empty mix.")
         self.assertEqual(kodi.notifications[-1][2], "error")
+
+
+class FolderEntriesTest(MusicIPServerTestCase):
+    """Kodi expects every folder entry to answer with a directory listing (endOfDirectory)."""
+
+    def folder_actions(self):
+        self.run_plugin()
+        self.run_plugin(action="discovery_mode")
+        main.save_discovery_state({"enabled": True})
+        self.run_plugin(action="discovery_mode")
+        actions = []
+        for url, _item, is_folder in kodi.directory_items:
+            action = plugin_query(url).get("action")
+            if is_folder and action not in actions:
+                actions.append(action)
+        return actions
+
+    def prepare_for(self, action):
+        kodi.reset()
+        kodi.settings.update({"host": "127.0.0.1", "port": str(self.musicip.port)})
+        for n in range(1, 4):
+            kodi.library.add_song(f"D:\\music\\{n}.mp3", title=f"Song {n}", duration=240)
+        if action in ("discovery_next", "discovery_stop", "discovery_mix_current"):
+            self.run_plugin(action="discovery_start")
+        kodi.play_file(SEED)
+        self.musicip.set_mix(SEED, [T1])
+        self.musicip.set_mix("D:\\music\\1.mp3", [T1])
+        kodi.respond("select", 0)
+        kodi.ended.clear()
+
+    def test_menus_offer_these_folders(self):
+        self.assertEqual(sorted(self.folder_actions()), sorted([
+            "generate_current_mix", "discovery_mode", "saved_mixes",
+            "discovery_start", "discovery_mix_current", "discovery_next", "discovery_stop",
+        ]))
+
+    @unittest.expectedFailure
+    def test_folder_entries_end_their_directory(self):
+        # Known issue F8: these actions replace the screen with Container.Update instead of returning a listing.
+        without_listing = []
+        for action in self.folder_actions():
+            self.prepare_for(action)
+            self.run_plugin(action=action)
+            if not kodi.ended:
+                without_listing.append(action)
+        self.assertEqual(without_listing, [])
 
 
 class KeyboardShortcutTest(KodiTestCase):
