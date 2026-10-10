@@ -1712,18 +1712,159 @@ def check_music_sources_for_missing_files(paths: list[str]) -> dict:
     return {"sources": sources, "unavailable_sources": unavailable, "outside_sources": outside}
 
 
+MISSING_FILE_SEARCH_SKIP_FOLDERS = {
+    "$recycle.bin", "recycler", "system volume information", "@eadir", "#recycle", ".trash", ".trashes",
+}
+MISSING_FILE_SEARCH_MAX_SECONDS = 60
+MISSING_FILE_SEARCH_MAX_FOLDERS = 100000
+MISSING_FILE_SEARCH_MAX_AGE_SECONDS = 24 * 3600
+
+
+def split_source_volume(path: str) -> tuple[str, list[str], str]:
+    """(volume, folder names below it, separator) of a source folder; volume "" if it cannot be searched."""
+    value = str(path or "").strip()
+    if "://" in value:
+        scheme, rest = value.split("://", 1)
+        parts = [part for part in rest.split("/") if part]
+        if scheme.lower() not in ("smb", "nfs") or len(parts) < 2:
+            return "", [], "/"
+        return f"{scheme}://{parts[0]}/{parts[1]}/", parts[2:], "/"
+    if re.match(r"^[A-Za-z]:[\\/]", value):
+        return value[:2] + "\\", [part for part in re.split(r"[\\/]", value[3:]) if part], "\\"
+    if value.startswith("/"):
+        parts = [part for part in value.split("/") if part]
+        return (f"/{parts[0]}/", parts[1:], "/") if parts else ("", [], "/")
+    return "", [], "/"
+
+
+def get_virtual_library_roots(sources: list[str]) -> list[str]:
+    """One root per disk, share or root folder: the deepest folder that contains all of its music sources.
+
+    If a source itself is that folder (for example the only source on a disk), the root is one level higher,
+    so folders next to it are searched too.
+    """
+    groups: dict[str, list[tuple[str, list[str], str]]] = {}
+    for source in sources:
+        volume, parts, separator = split_source_volume(source)
+        if volume:
+            groups.setdefault(volume.casefold(), []).append((volume, parts, separator))
+
+    roots: list[str] = []
+    for entries in groups.values():
+        volume, common, separator = entries[0]
+        for _volume, parts, _separator in entries[1:]:
+            length = 0
+            while length < min(len(common), len(parts)) and common[length].casefold() == parts[length].casefold():
+                length += 1
+            common = common[:length]
+        if any(len(parts) == len(common) for _volume, parts, _separator in entries):
+            common = common[:-1]
+        roots.append(volume + "".join(part + separator for part in common))
+    return roots
+
+
+def is_inside_music_source(path: str, source_keys: list[str]) -> bool:
+    key = canonical_audio_path(path)
+    return any(key == source_key or key.startswith(source_key + "/") for source_key in source_keys)
+
+
+def suggest_music_source_folder(found_path: str, source_keys: list[str], root_keys: set[str]) -> str:
+    """The highest folder above a found file that contains no music source and is not a search root."""
+    _filename, candidate = split_full_path(found_path)
+    while True:
+        _name, parent = split_full_path(candidate)
+        parent_key = canonical_audio_path(parent)
+        if (
+            not parent
+            or parent_key in root_keys
+            or any(source_key == parent_key or source_key.startswith(parent_key + "/") for source_key in source_keys)
+        ):
+            break
+        candidate = parent
+    separator = "/" if "/" in candidate and "\\" not in candidate else "\\"
+    return candidate if candidate.endswith(("/", "\\")) else candidate + separator
+
+
+def search_missing_files_outside_sources(missing_paths: list[str], sources: list[str]) -> dict:
+    """Look for missing files below the virtual library roots, outside the music sources.
+
+    A file matches when its name and its folder name both match the missing file, which keeps moved albums
+    and rejects unrelated files with common names. Folders inside music sources are skipped: the library
+    already covers them.
+    """
+    wanted: dict[tuple[str, str], list[str]] = {}
+    for missing in missing_paths:
+        filename, directory = split_full_path(missing)
+        folder_name = split_full_path(directory)[0]
+        if filename and folder_name:
+            wanted.setdefault((folder_name.casefold(), filename.casefold()), []).append(missing)
+
+    source_keys = [key for key in (canonical_audio_path(source) for source in sources) if key]
+    roots = get_virtual_library_roots(sources)
+    root_keys = {canonical_audio_path(root) for root in roots}
+    found: dict[str, str] = {}
+    started = time.time()
+    folders_searched = 0
+    complete = True
+    pending = list(roots)
+
+    while pending and len(found) < len(missing_paths):
+        if time.time() - started > MISSING_FILE_SEARCH_MAX_SECONDS or folders_searched >= MISSING_FILE_SEARCH_MAX_FOLDERS:
+            complete = False
+            break
+        folder = pending.pop()
+        if is_inside_music_source(folder, source_keys):
+            continue
+        try:
+            directories, files = xbmcvfs.listdir(folder)
+        except Exception:
+            continue
+        folders_searched += 1
+        folder_name = split_full_path(folder)[0].casefold()
+        for name in files:
+            for missing in wanted.get((folder_name, str(name).casefold()), []):
+                found.setdefault(missing, folder + name)
+        separator = "/" if folder.endswith("/") else "\\"
+        for name in directories:
+            name = str(name)
+            if name.casefold() in MISSING_FILE_SEARCH_SKIP_FOLDERS or name.startswith((".", "$")):
+                continue
+            pending.append(folder + name + separator)
+
+    suggestions = sorted({suggest_music_source_folder(found_path, source_keys, root_keys) for found_path in found.values()})
+    return {
+        "checked_ts": int(time.time()),
+        "roots": roots,
+        "found_outside_sources": found,
+        "suggested_sources": suggestions,
+        "complete": complete,
+        "folders_searched": folders_searched,
+    }
+
+
+def missing_file_search_is_current(search: object, consistency: dict) -> bool:
+    # An unfinished search (time limit) also counts, so a huge disk is not searched again on every check.
+    if not isinstance(search, dict):
+        return False
+    if str(search.get("signature") or "") != str(consistency.get("missing_signature") or ""):
+        return False
+    return int(time.time()) - int(search.get("checked_ts") or 0) < MISSING_FILE_SEARCH_MAX_AGE_SECONDS
+
+
 def repair_readiness_action_label(readiness: dict) -> str:
     if str(readiness.get("status") or "") == "update_sources_before_repair":
         return "Check music sources before repair"
     return "Update library before repair"
 
 
-def evaluate_repair_readiness(consistency: dict) -> dict:
+def evaluate_repair_readiness(consistency: dict, search: dict | None = None) -> dict:
     """Repair is ready once Kodi's music sources are available and the library no longer lists any of
     the mix's missing files.
 
     A source that no longer exists cannot provide the moved files. A library that still lists a missing
     file has not caught up with the move or deletion yet, so its repair candidates cannot be trusted.
+    search (the result of the service's disk search, if any) adds folders to suggest as music sources;
+    it never blocks repair, because some folders are left out of the library on purpose.
     Shared by the plugin and the service.
     """
     consistency = consistency if isinstance(consistency, dict) else {}
@@ -1751,6 +1892,11 @@ def evaluate_repair_readiness(consistency: dict) -> dict:
         readiness["reason"] = "No missing files are recorded yet. Run the consistency check again."
         return readiness
 
+    if isinstance(search, dict) and str(search.get("signature") or "") == str(consistency.get("missing_signature") or ""):
+        found = search.get("found_outside_sources") if isinstance(search.get("found_outside_sources"), dict) else {}
+        readiness["found_outside_sources"] = {old: new for old, new in found.items() if old in missing_paths}
+        readiness["suggested_sources"] = [str(folder) for folder in search.get("suggested_sources") or []]
+
     try:
         source_check = check_music_sources_for_missing_files(missing_paths)
     except Exception:
@@ -1763,14 +1909,14 @@ def evaluate_repair_readiness(consistency: dict) -> dict:
         if not source_check["sources"]:
             readiness["status"] = "update_sources_before_repair"
             readiness["reason"] = "Kodi has no music sources, so the library cannot add the missing files. Add a music source."
-            return readiness
+            return add_source_suggestion_to_reason(readiness)
         if source_check["unavailable_sources"]:
             readiness["status"] = "update_sources_before_repair"
             readiness["reason"] = (
                 f"Kodi music source(s) no longer available: {', '.join(source_check['unavailable_sources'])}. "
                 "Update the music sources to the new folder structure (or reconnect the drive), then update the library."
             )
-            return readiness
+            return add_source_suggestion_to_reason(readiness)
 
     try:
         still_listed = find_missing_paths_still_in_library(missing_paths)
@@ -1784,17 +1930,28 @@ def evaluate_repair_readiness(consistency: dict) -> dict:
             f"Kodi music library still lists {len(still_listed)} of {len(missing_paths)} missing file(s). "
             "Update and clean the library."
         )
+        add_source_suggestion_to_reason(readiness)
     else:
         readiness["status"] = "ready"
         readiness["reason"] = "Kodi music library no longer lists the missing files."
         outside = len(readiness.get("outside_sources") or [])
         if outside:
             readiness["reason"] += f" {outside} of them were outside all Kodi music sources."
+    return add_source_suggestion_to_reason(readiness)
+
+
+def add_source_suggestion_to_reason(readiness: dict) -> dict:
+    suggestions = readiness.get("suggested_sources") or []
+    if suggestions:
+        readiness["reason"] += (
+            f" {len(readiness.get('found_outside_sources') or {})} missing file(s) were found outside the Kodi "
+            f"music sources, in: {', '.join(suggestions)}. Add that folder as a music source to repair from there."
+        )
     return readiness
 
 
 def get_mix_repair_readiness(meta: dict) -> dict:
-    readiness = evaluate_repair_readiness(get_consistency_status(meta))
+    readiness = evaluate_repair_readiness(get_consistency_status(meta), meta.get("missing_file_search"))
     log_repair_readiness(readiness, str(meta.get("label") or meta.get("cache_path") or ""))
     return readiness
 
@@ -1816,6 +1973,8 @@ def format_repair_readiness_log(readiness: dict, mix_label: str = "") -> str:
             f", unavailable_sources={len(readiness.get('unavailable_sources') or [])}"
             f", outside_sources={len(readiness.get('outside_sources') or [])}"
         )
+    if readiness.get("suggested_sources"):
+        details += f", suggested_sources={readiness.get('suggested_sources')!r}"
     return f"Repair readiness: repair {availability}{target}; {details}"
 
 
@@ -1861,6 +2020,14 @@ def build_repair_readiness_message(readiness: dict) -> str:
     outside = len(readiness.get("outside_sources") or [])
     if outside:
         lines.extend(["", f"Missing files outside all Kodi music sources: {outside}"])
+    found = readiness.get("found_outside_sources") if isinstance(readiness.get("found_outside_sources"), dict) else {}
+    if found:
+        lines.extend(["", "Found outside the Kodi music sources:"])
+        lines.extend(f"- {new}" for new in list(found.values())[:10])
+        if len(found) > 10:
+            lines.append(f"- ... and {len(found) - 10} more")
+        lines.extend(["", "Add as a music source to repair from there:"])
+        lines.extend(f"- {folder}" for folder in readiness.get("suggested_sources") or [])
     if still_listed:
         lines.extend(["", "Still listed by the Kodi music library:"])
         lines.extend(f"- {path}" for path in still_listed[:10])
@@ -4839,6 +5006,11 @@ def build_mix_info_message(cache_path: str) -> str:
         f"Missing files: {consistency.get('missing_files', 0)}",
         f"Checked: {format_sidecar_ts(consistency.get('checked_ts'))}",
     ])
+
+    search = meta.get("missing_file_search")
+    if isinstance(search, dict) and search.get("suggested_sources"):
+        lines.extend(["", "Missing files found outside the Kodi music sources, add as a music source:"])
+        lines.extend(f"- {folder}" for folder in search.get("suggested_sources") or [])
 
     if readiness:
         lines.extend([

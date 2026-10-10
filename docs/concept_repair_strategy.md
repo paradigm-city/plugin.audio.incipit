@@ -30,6 +30,13 @@ For every missing file of the mix, the readiness check asks the Kodi library whe
 
 Earlier versions compared Kodi's library timestamps with the time the add-on detected the missing files. That could block repair indefinitely: when the library was updated before the check noticed the missing files, later scans changed nothing and the timestamps never moved (finding F9).
 
+## Music sources
+
+Kodi cannot know where a missing file has moved, and some folders are left out of the library on purpose. Two checks help after a reorganization of the folders on disk:
+
+- **Source no longer available:** if the music source that covered a missing file's old location no longer exists (or its drive or share is offline), repair is not offered ("Check music sources before repair"); scanning cannot help until the sources match the folders on disk. A missing file outside all sources is only reported: that is also the normal state after an obsolete source was removed.
+- **Missing file found elsewhere:** the background consistency check searches the disks for missing files. It builds one virtual library root per disk, share or root folder (the deepest folder containing all of its music sources), walks it outside the music sources, and matches file name plus folder name. If a missing file turns up in a folder that is not a music source, the add-on suggests adding the highest such folder as a music source. This is a suggestion only; it never blocks repair. The search runs only when a mix's missing files change or after a day, stops after 60 seconds, and waits while Discovery mode is active.
+
 ## Auto-repair
 
 Auto-repair is allowed only when:

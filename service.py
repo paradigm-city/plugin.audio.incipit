@@ -246,10 +246,10 @@ def get_audio_library_freshness() -> dict:
     }
 
 
-def get_repair_readiness_for_consistency(consistency: dict, mix_label: str = "") -> dict:
+def get_repair_readiness_for_consistency(consistency: dict, mix_label: str = "", search: dict | None = None) -> dict:
     # The rule lives in the plugin module; the service only logs with its own setting.
     plugin = load_plugin_module()
-    readiness = plugin.evaluate_repair_readiness(consistency)
+    readiness = plugin.evaluate_repair_readiness(consistency, search)
     log_info(plugin.format_repair_readiness_log(readiness, mix_label))
     return readiness
 
@@ -1320,30 +1320,36 @@ def run_consistency_check() -> int:
     plugin = load_plugin_module()
     auto_repair = is_service_auto_repair_enabled()
     cache_paths = plugin.list_saved_mix_cache_paths()
-    inconsistent = 0
     repaired_tracks = 0
     blocked_labels: list[str] = []
     sources_blocked = False
 
+    checked: list[tuple[str, dict, dict, str]] = []
     for cache_path in cache_paths:
         try:
             consistency = plugin.analyze_mix_consistency(cache_path)
             if str(consistency.get("status") or "") != "inconsistent":
                 continue
-
-            inconsistent += 1
             meta = plugin.get_saved_mix_metadata(cache_path)
             label = str(meta.get("label") or os.path.basename(cache_path))
             log_info(f"Consistency check: {label!r} has {consistency.get('missing_files')} missing track(s).")
+            checked.append((cache_path, consistency, meta, label))
+        except Exception as exc:
+            log(f"Consistency check failed for {cache_path!r}: {exc}", xbmc.LOGWARNING)
 
-            readiness = get_repair_readiness_for_consistency(consistency, label)
+    new_suggestions = update_missing_file_searches(plugin, checked)
+
+    for cache_path, consistency, meta, label in checked:
+        try:
+            search = meta.get("missing_file_search")
+            readiness = get_repair_readiness_for_consistency(consistency, label, search)
             if auto_repair and readiness.get("status") == "ready":
                 repaired = plugin.repair_saved_mix_automatic_only(cache_path)
                 repaired_tracks += repaired
                 log_info(f"Consistency check: automatic repair of {label!r} replaced {repaired} track(s).")
                 if repaired:
                     meta = plugin.get_saved_mix_metadata(cache_path)
-                    readiness = get_repair_readiness_for_consistency(plugin.get_consistency_status(meta), label)
+                    readiness = get_repair_readiness_for_consistency(plugin.get_consistency_status(meta), label, search)
             elif auto_repair and readiness.get("status") in ("update_library_before_repair", "update_sources_before_repair"):
                 blocked_labels.append(label)
                 sources_blocked = sources_blocked or readiness.get("status") == "update_sources_before_repair"
@@ -1354,12 +1360,85 @@ def run_consistency_check() -> int:
             log(f"Consistency check failed for {cache_path!r}: {exc}", xbmc.LOGWARNING)
 
     log_info(
-        f"Consistency check: checked {len(cache_paths)} mix(es), {inconsistent} inconsistent, "
+        f"Consistency check: checked {len(cache_paths)} mix(es), {len(checked)} inconsistent, "
         f"automatic repair {'enabled' if auto_repair else 'disabled'}, repaired {repaired_tracks} track(s)."
     )
+    if new_suggestions:
+        notify_missing_files_found_outside_sources(new_suggestions)
     if blocked_labels:
         notify_repair_waiting_for_library(blocked_labels, sources_blocked)
-    return inconsistent
+    return len(checked)
+
+
+def update_missing_file_searches(plugin, checked: list[tuple[str, dict, dict, str]]) -> list[str]:
+    """Search the disks for missing files of mixes whose last search is out of date.
+
+    Stores the result in each mix's sidecar (meta["missing_file_search"]) and returns folders suggested
+    as music sources that were not suggested for those mixes before.
+    """
+    outdated = [
+        entry for entry in checked
+        if not plugin.missing_file_search_is_current(entry[2].get("missing_file_search"), entry[1])
+    ]
+    if not outdated:
+        return []
+    if load_discovery_state().get("enabled"):
+        log_info("Consistency check: missing-file search postponed while Discovery mode is active.")
+        return []
+
+    try:
+        sources = plugin.get_music_source_paths()
+    except Exception as exc:
+        log_info(f"Consistency check: missing-file search skipped, music sources unreadable: {exc}")
+        return []
+
+    missing_paths = sorted({
+        str(item.get("path") or "")
+        for _cache_path, consistency, _meta, _label in outdated
+        for item in consistency.get("missing") or []
+        if isinstance(item, dict) and item.get("path")
+    })
+    result = plugin.search_missing_files_outside_sources(missing_paths, sources)
+    log_info(
+        f"Consistency check: searched {result['folders_searched']} folder(s) below {result['roots']!r} for "
+        f"{len(missing_paths)} missing file(s); found {len(result['found_outside_sources'])} outside the music sources"
+        f"{'' if result['complete'] else ' (search stopped at its time limit)'}; "
+        f"suggested sources: {result['suggested_sources']!r}."
+    )
+
+    source_keys = [plugin.canonical_audio_path(source) for source in sources]
+    root_keys = {plugin.canonical_audio_path(root) for root in result["roots"]}
+    new_suggestions: list[str] = []
+    for cache_path, consistency, meta, _label in outdated:
+        own_paths = {str(item.get("path") or "") for item in consistency.get("missing") or [] if isinstance(item, dict)}
+        found = {old: new for old, new in result["found_outside_sources"].items() if old in own_paths}
+        suggestions = sorted({plugin.suggest_music_source_folder(new, source_keys, root_keys) for new in found.values()})
+        previous = meta.get("missing_file_search") if isinstance(meta.get("missing_file_search"), dict) else {}
+        for folder in suggestions:
+            if folder not in (previous.get("suggested_sources") or []) and folder not in new_suggestions:
+                new_suggestions.append(folder)
+        meta["missing_file_search"] = {
+            "checked_ts": result["checked_ts"],
+            "signature": str(consistency.get("missing_signature") or ""),
+            "roots": result["roots"],
+            "found_outside_sources": found,
+            "suggested_sources": suggestions,
+            "complete": result["complete"],
+        }
+        save_json_file(mix_meta_path_from_cache_path(cache_path), meta)
+    return new_suggestions
+
+
+def notify_missing_files_found_outside_sources(folders: list[str]) -> None:
+    if len(folders) == 1:
+        message = f"Missing tracks were found in {folders[0]}, which is not a Kodi music source. Add it to repair the mix."
+    else:
+        message = f"Missing tracks were found in {len(folders)} folders that are not Kodi music sources. See the mix information."
+    log_info(f"Consistency check: notifying about missing files outside the music sources: {folders!r}")
+    try:
+        xbmcgui.Dialog().notification(ADDON.getAddonInfo("name"), message, xbmcgui.NOTIFICATION_INFO)
+    except Exception as exc:
+        log(f"Could not show source suggestion notification: {exc}", xbmc.LOGWARNING)
 
 
 def notify_repair_waiting_for_library(labels: list[str], sources_blocked: bool = False) -> None:
