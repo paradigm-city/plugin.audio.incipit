@@ -4058,7 +4058,8 @@ def show_root() -> None:
         HANDLE,
         addon_url(action="open_settings", nonce=new_nonce()),
         settings_item,
-        isFolder=True,
+        # An action, not a folder: Kodi runs it without expecting a directory listing.
+        isFolder=False,
     )
 
     xbmcplugin.endOfDirectory(HANDLE, cacheToDisc=False)
@@ -4079,6 +4080,8 @@ def add_discovery_run_action_item(label: str, action: str) -> None:
 def add_discovery_action_item(label: str, action: str, is_folder: bool = True) -> None:
     item = xbmcgui.ListItem(label=label, offscreen=True)
     apply_music_metadata(item, label)
+    if not is_folder:
+        item.setProperty("IsPlayable", "false")
     xbmcplugin.addDirectoryItem(
         HANDLE,
         addon_url(action=action, nonce=new_nonce()),
@@ -4109,7 +4112,7 @@ def show_discovery_mode_menu() -> None:
     else:
         add_discovery_action_item("Start discovery mode", "discovery_start", is_folder=True)
 
-    add_discovery_action_item("Discovery mode settings", "open_settings", is_folder=True)
+    add_discovery_action_item("Discovery mode settings", "open_settings", is_folder=False)
 
     xbmcplugin.endOfDirectory(HANDLE, cacheToDisc=False)
 
@@ -4880,7 +4883,8 @@ def play_track(path: str) -> None:
 def open_settings() -> None:
     ADDON.openSettings()
     try:
-        xbmc.executebuiltin(f"Container.Update({addon_url(nonce=new_nonce())},replace)")
+        # Show changed settings in the list the user opened them from.
+        xbmc.executebuiltin("Container.Refresh")
     except Exception:
         pass
 
