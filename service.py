@@ -129,13 +129,19 @@ def ensure_musicip_keymap_installed() -> None:
         log(f"Could not install MusicIP keymap to {target}: {exc}", xbmc.LOGERROR)
 
 
+def is_service_extended_logging_enabled() -> bool:
+    return get_setting_bool("service_extended_logging", False)
+
+
 def log(message: str, level: int = xbmc.LOGINFO) -> None:
+    # Without extended service logging, only errors reach kodi.log.
+    if level < xbmc.LOGERROR and not is_service_extended_logging_enabled():
+        return
     xbmc.log(f"[{ADDON_ID}] {message}", level)
 
 
 def log_info(message: str) -> None:
-    if get_setting_bool("service_extended_logging", False):
-        log(message, xbmc.LOGINFO)
+    log(message, xbmc.LOGINFO)
 
 
 
