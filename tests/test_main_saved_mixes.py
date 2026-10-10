@@ -242,12 +242,24 @@ class RepairReadinessTest(KodiTestCase):
         self.readiness()
         self.assertNotIn("Repair readiness:", kodi.log_text())
 
-    def test_library_timestamps_are_logged_as_library_freshness(self):
-        kodi.settings["plugin_extended_logging"] = "true"
+    def test_library_freshness_follows_extended_service_logging(self):
         kodi.library_properties = {"librarylastupdated": "2026-10-04 08:00:00"}
+        kodi.settings["plugin_extended_logging"] = "true"
+        main.get_audio_library_freshness()
+        self.assertNotIn("Library freshness:", kodi.log_text())
+
+        kodi.settings["service_extended_logging"] = "true"
         main.get_audio_library_freshness()
         self.assertIn("Library freshness: Kodi library property librarylastupdated='2026-10-04 08:00:00'", kodi.log_text())
+        self.assertIn("Library freshness: parsed Kodi datetime '2026-10-04 08:00:00'", kodi.log_text())
         self.assertNotIn("Repair readiness:", kodi.log_text())
+
+    def test_readiness_listing_with_only_plugin_logging(self):
+        # Your setup: plugin logging on, service logging off -> the result line, no timestamp details.
+        kodi.settings["plugin_extended_logging"] = "true"
+        self.readiness()
+        self.assertIn("Repair readiness: repair not available", kodi.log_text())
+        self.assertNotIn("Library freshness:", kodi.log_text())
 
     def test_library_not_updated_since_inconsistency(self):
         kodi.library_properties = {"librarylastupdated": "2026-10-04 08:00:00"}
