@@ -1657,11 +1657,74 @@ def find_missing_paths_still_in_library(paths: list[str]) -> list[str]:
     return still_listed
 
 
-def evaluate_repair_readiness(consistency: dict) -> dict:
-    """Repair is ready once the Kodi library no longer lists any of the mix's missing files.
+def expand_music_source_path(path: str) -> list[str]:
+    # A source with several folders is reported as multipath://<url-encoded path>/<url-encoded path>/
+    if path.startswith("multipath://"):
+        return [unquote(part) for part in path[len("multipath://"):].split("/") if part]
+    return [path] if path else []
 
-    A library that still lists a missing file has not caught up with the move or deletion yet, so
-    its repair candidates cannot be trusted. Shared by the plugin and the service.
+
+def get_music_source_paths() -> list[str]:
+    """Folders of Kodi's music sources. Raises MusicIPError if Kodi cannot be queried."""
+    result = execute_jsonrpc("Files.GetSources", {"media": "music"})
+    paths: list[str] = []
+    for source in result.get("sources") or []:
+        paths.extend(expand_music_source_path(str(source.get("file") or "").strip()))
+    return paths
+
+
+def music_source_exists(source: str) -> bool:
+    folder = source if source.endswith(("/", "\\")) else source + ("/" if "://" in source else os.sep)
+    try:
+        return bool(xbmcvfs.exists(folder))
+    except Exception:
+        return False
+
+
+def find_covering_music_source(path: str, sources: list[str]) -> str:
+    key = canonical_audio_path(path)
+    best = ""
+    for source in sources:
+        source_key = canonical_audio_path(source)
+        if source_key and (key == source_key or key.startswith(source_key + "/")):
+            if len(source_key) > len(canonical_audio_path(best)):
+                best = source
+    return best
+
+
+def check_music_sources_for_missing_files(paths: list[str]) -> dict:
+    """Can Kodi's music sources still add or update the missing files?
+
+    unavailable_sources: sources that covered a missing file but no longer exist (folders reorganized,
+    drive or share offline); the library cannot pick up the moved files there until the sources are fixed.
+    outside_sources: missing files that no configured source covers. Only informational, because that is
+    also the normal state after an obsolete source has been removed.
+    """
+    sources = get_music_source_paths()
+    unavailable: list[str] = []
+    outside: list[str] = []
+    for path in paths:
+        source = find_covering_music_source(path, sources)
+        if not source:
+            outside.append(path)
+        elif source not in unavailable and not music_source_exists(source):
+            unavailable.append(source)
+    return {"sources": sources, "unavailable_sources": unavailable, "outside_sources": outside}
+
+
+def repair_readiness_action_label(readiness: dict) -> str:
+    if str(readiness.get("status") or "") == "update_sources_before_repair":
+        return "Check music sources before repair"
+    return "Update library before repair"
+
+
+def evaluate_repair_readiness(consistency: dict) -> dict:
+    """Repair is ready once Kodi's music sources are available and the library no longer lists any of
+    the mix's missing files.
+
+    A source that no longer exists cannot provide the moved files. A library that still lists a missing
+    file has not caught up with the move or deletion yet, so its repair candidates cannot be trusted.
+    Shared by the plugin and the service.
     """
     consistency = consistency if isinstance(consistency, dict) else {}
     now = int(time.time())
@@ -1689,6 +1752,27 @@ def evaluate_repair_readiness(consistency: dict) -> dict:
         return readiness
 
     try:
+        source_check = check_music_sources_for_missing_files(missing_paths)
+    except Exception:
+        source_check = None  # Sources could not be read; the library check below still applies.
+
+    readiness["sources_checked"] = source_check is not None
+    if source_check is not None:
+        readiness["unavailable_sources"] = source_check["unavailable_sources"]
+        readiness["outside_sources"] = source_check["outside_sources"]
+        if not source_check["sources"]:
+            readiness["status"] = "update_sources_before_repair"
+            readiness["reason"] = "Kodi has no music sources, so the library cannot add the missing files. Add a music source."
+            return readiness
+        if source_check["unavailable_sources"]:
+            readiness["status"] = "update_sources_before_repair"
+            readiness["reason"] = (
+                f"Kodi music source(s) no longer available: {', '.join(source_check['unavailable_sources'])}. "
+                "Update the music sources to the new folder structure (or reconnect the drive), then update the library."
+            )
+            return readiness
+
+    try:
         still_listed = find_missing_paths_still_in_library(missing_paths)
     except Exception as exc:
         readiness["reason"] = f"Kodi music library could not be queried: {exc}"
@@ -1703,6 +1787,9 @@ def evaluate_repair_readiness(consistency: dict) -> dict:
     else:
         readiness["status"] = "ready"
         readiness["reason"] = "Kodi music library no longer lists the missing files."
+        outside = len(readiness.get("outside_sources") or [])
+        if outside:
+            readiness["reason"] += f" {outside} of them were outside all Kodi music sources."
     return readiness
 
 
@@ -1721,6 +1808,13 @@ def format_repair_readiness_log(readiness: dict, mix_label: str = "") -> str:
         details += (
             f", missing_files={readiness.get('missing_files')}"
             f", still_listed_by_kodi={len(readiness.get('still_listed') or [])}"
+        )
+    if readiness.get("sources_checked") is False:
+        details += ", music_sources=unreadable"
+    elif "unavailable_sources" in readiness:
+        details += (
+            f", unavailable_sources={len(readiness.get('unavailable_sources') or [])}"
+            f", outside_sources={len(readiness.get('outside_sources') or [])}"
         )
     return f"Repair readiness: repair {availability}{target}; {details}"
 
@@ -1760,16 +1854,27 @@ def build_repair_readiness_message(readiness: dict) -> str:
         f"Latest inconsistency change: {format_ts_for_display(int(readiness.get('last_inconsistency_change_ts') or 0))}",
         f"Missing files: {int(readiness.get('missing_files') or 0)}",
     ]
+    unavailable_sources = [str(source) for source in readiness.get("unavailable_sources") or []]
+    if unavailable_sources:
+        lines.extend(["", "Kodi music sources that no longer exist:"])
+        lines.extend(f"- {source}" for source in unavailable_sources)
+    outside = len(readiness.get("outside_sources") or [])
+    if outside:
+        lines.extend(["", f"Missing files outside all Kodi music sources: {outside}"])
     if still_listed:
         lines.extend(["", "Still listed by the Kodi music library:"])
         lines.extend(f"- {path}" for path in still_listed[:10])
         if len(still_listed) > 10:
             lines.append(f"- ... and {len(still_listed) - 10} more")
 
-    lines.extend([
-        "",
-        "Update and clean the Kodi music library so it no longer lists these files, then try repair again.",
-    ])
+    if str(readiness.get("status") or "") == "update_sources_before_repair":
+        advice = (
+            "Update the Kodi music sources to match the folder structure on disk, "
+            "then update and clean the library, then try repair again."
+        )
+    else:
+        advice = "Update and clean the Kodi music library so it no longer lists these files, then try repair again."
+    lines.extend(["", advice])
     return "\n".join(lines)
 
 
@@ -1785,6 +1890,11 @@ def show_update_library_before_repair(cache_path: str) -> None:
             "Close this dialog and reopen the context menu. "
             "Auto-repair this mix should now be available.",
         )
+        return
+
+    if str(readiness.get("status") or "") == "update_sources_before_repair":
+        # Scanning cannot help until the sources match the folders on disk.
+        xbmcgui.Dialog().ok(repair_readiness_action_label(readiness), build_repair_readiness_message(readiness))
         return
 
     choice = xbmcgui.Dialog().select(
@@ -1814,7 +1924,7 @@ def ensure_repair_ready(cache_path: str) -> None:
     meta = get_saved_mix_metadata(cache_path, tracks)
     readiness = update_mix_repair_readiness_metadata(cache_path, tracks, meta)
     if not is_repair_ready(readiness):
-        raise MusicIPError("Update library before repair.")
+        raise MusicIPError(f"{repair_readiness_action_label(readiness)}.")
 
 
 def format_saved_mix_label(meta: dict) -> str:
@@ -3998,7 +4108,10 @@ def add_saved_mix_item(cache_path: str) -> None:
         if is_repair_ready(repair_readiness):
             context_items.append(("Auto-repair this mix", build_repair_mix_action(cache_path)))
         else:
-            context_items.append(("Update library before repair", build_update_library_before_repair_action(cache_path)))
+            context_items.append((
+                repair_readiness_action_label(repair_readiness),
+                build_update_library_before_repair_action(cache_path),
+            ))
     context_items.append(("Cleanup this mix", build_cleanup_saved_mix_action(cache_path)))
     list_item.addContextMenuItems(context_items)
 
@@ -4009,7 +4122,7 @@ def add_saved_mix_item(cache_path: str) -> None:
     if consistency_label and consistency_label != "OK":
         detail_parts.append(consistency_label)
     if inconsistent and repair_readiness and not is_repair_ready(repair_readiness):
-        detail_parts.append("Update library before repair")
+        detail_parts.append(repair_readiness_action_label(repair_readiness))
     if detail_parts:
         list_item.setLabel2(" · ".join(detail_parts))
 

@@ -1323,6 +1323,7 @@ def run_consistency_check() -> int:
     inconsistent = 0
     repaired_tracks = 0
     blocked_labels: list[str] = []
+    sources_blocked = False
 
     for cache_path in cache_paths:
         try:
@@ -1343,8 +1344,9 @@ def run_consistency_check() -> int:
                 if repaired:
                     meta = plugin.get_saved_mix_metadata(cache_path)
                     readiness = get_repair_readiness_for_consistency(plugin.get_consistency_status(meta), label)
-            elif auto_repair and readiness.get("status") == "update_library_before_repair":
+            elif auto_repair and readiness.get("status") in ("update_library_before_repair", "update_sources_before_repair"):
                 blocked_labels.append(label)
+                sources_blocked = sources_blocked or readiness.get("status") == "update_sources_before_repair"
 
             meta["repair_readiness"] = readiness
             save_json_file(mix_meta_path_from_cache_path(cache_path), meta)
@@ -1356,15 +1358,16 @@ def run_consistency_check() -> int:
         f"automatic repair {'enabled' if auto_repair else 'disabled'}, repaired {repaired_tracks} track(s)."
     )
     if blocked_labels:
-        notify_repair_waiting_for_library(blocked_labels)
+        notify_repair_waiting_for_library(blocked_labels, sources_blocked)
     return inconsistent
 
 
-def notify_repair_waiting_for_library(labels: list[str]) -> None:
+def notify_repair_waiting_for_library(labels: list[str], sources_blocked: bool = False) -> None:
+    action = "Check the Kodi music sources" if sources_blocked else "Update the Kodi music library"
     if len(labels) == 1:
-        message = f"Mix '{labels[0]}' has missing tracks. Update the Kodi music library to allow automatic repair."
+        message = f"Mix '{labels[0]}' has missing tracks. {action} to allow automatic repair."
     else:
-        message = f"{len(labels)} mixes have missing tracks. Update the Kodi music library to allow automatic repair."
+        message = f"{len(labels)} mixes have missing tracks. {action} to allow automatic repair."
     log_info(f"Consistency check: notifying that automatic repair is waiting for a library update: {labels!r}")
     try:
         xbmcgui.Dialog().notification(ADDON.getAddonInfo("name"), message, xbmcgui.NOTIFICATION_WARNING)
