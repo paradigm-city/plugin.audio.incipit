@@ -29,7 +29,7 @@ GitHub Actions runs them on every push and pull request (`.github/workflows/test
 | `test_main_discovery.py` | Discovery mode from the plugin: start, stop, next, mix from the current song |
 | `test_repair_matching.py` | repair hints, candidate scoring, candidate selection, foreground and automatic repair |
 | `test_service_discovery.py` | Discovery mode in the service: commands, playlist buffer, auto-skip, player events, main loop |
-| `test_service_metadata.py` | background metadata refresh, delayed view refresh, service repair readiness |
+| `test_service_metadata.py` | background consistency check and automatic repair, background metadata refresh, delayed view refresh, service repair readiness |
 | `test_shared_helpers.py` | helpers duplicated in `main.py` and `service.py` behave the same |
 | `test_context_mix.py` | the "Create MusicIP mix" library context menu entry |
 | `test_findings.py` | `docs/findings.md` lists exactly the known-issue tests that still fail |

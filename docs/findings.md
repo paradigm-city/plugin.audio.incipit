@@ -12,19 +12,6 @@ Last reviewed: 2026-10-10
 
 ## Open
 
-### F1 · The background consistency check and automatic repair never run
-
-`run_consistency_check()` in `service.py` only logs "Consistency service check skipped in this build branch." So saved mixes are never checked in the background, and `repair_saved_mix_automatic_only()` is never called.
-
-- The settings `consistency_enabled`, `consistency_interval_minutes` and `service_auto_repair_enabled` are shown to users but have no effect.
-- The repair-readiness message tells users to "wait for the consistency service to run again", which never happens. Mixes are only checked through the manual **Check consistency** action or during a repair.
-
-The unused building blocks are kept on purpose for re-enabling this: `repair_saved_mix_automatic_only()` and `choose_repair_candidate_automatic_only()` in `main.py`, and `is_service_auto_repair_enabled()` and `get_repair_readiness_for_consistency()` in `service.py`.
-
-Confirmed again on 2026-10-10 in `kodi.log`: after "MusicIP service started", the service logs "Consistency service check skipped in this build branch." once per check interval, and no mix is checked.
-
-**Test:** `test_service_metadata.BackgroundConsistencyCheckTest.test_background_check_records_missing_tracks`
-
 ### F2 · Cancelling the filter input clears the mix filter
 
 In the generate-mix dialog, `edit_mix_generation_parameter()` in `main.py` only ignores `None` from `Dialog().input()`. Kodi returns `""` when the dialog is cancelled, so cancelling replaces the filter with an empty one.
@@ -51,9 +38,17 @@ In the `start` handler, the branch that adopts an already-started playlist could
 
 `main()` in `service.py` passes a message that already starts with `[plugin.audio.musicip]` to `log()`, which adds the prefix again: `[plugin.audio.musicip] [plugin.audio.musicip] MusicIP service started. …`
 
-**Test:** `test_service_metadata.BackgroundConsistencyCheckTest.test_service_start_message_has_a_single_addon_prefix`
+**Test:** `test_service_metadata.ServiceStartupLogTest.test_service_start_message_has_a_single_addon_prefix`
 
 ## Resolved
+
+### F1 · The background consistency check and automatic repair never ran
+
+`run_consistency_check()` in `service.py` only logged "Consistency service check skipped in this build branch.", so saved mixes were never checked in the background and the consistency settings had no effect.
+
+It now runs on the configured interval: it checks every saved mix for missing files, records consistency and repair readiness in the mix's sidecar, and, with **Enable automatic mix repair** on and the library newer than the inconsistency, repairs tracks that have a unique high-confidence candidate. Covered by `test_service_metadata.BackgroundConsistencyCheckTest`.
+
+Fixed in c3b09df (2026-10-10).
 
 ### F5 · Unused code
 

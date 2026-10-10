@@ -1,5 +1,6 @@
 """Service background work: metadata refresh queue, sidecar updates, view refresh and repair readiness."""
 
+import time
 import unittest
 from unittest import mock
 
@@ -117,17 +118,120 @@ class ViewRefreshTest(KodiTestCase):
         self.assertEqual((context["is_musicip_view"], context["is_mix_view"], context["is_visible_mix"]), (True, False, True))
 
 
-class BackgroundConsistencyCheckTest(KodiTestCase):
-    @unittest.expectedFailure
-    def test_background_check_records_missing_tracks(self):
-        # Known issue F1: run_consistency_check() is a stub, so saved mixes are never checked in the background.
-        present, missing = "D:\\music\\a.mp3", "D:\\music\\gone.mp3"
-        kodi.add_media(present)
-        cache_path = self.save_mix([present, missing])
-        service.run_consistency_check()
-        sidecar = self.read_json(main.mix_meta_path_from_cache_path(cache_path))
-        self.assertEqual(sidecar.get("consistency", {}).get("status"), "inconsistent")
+def kodi_datetime(ts):
+    return time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(ts))
 
+
+class BackgroundConsistencyCheckTest(KodiTestCase):
+    PRESENT = "D:\\music\\Motorhead\\Overkill (1979)\\01 Overkill.mp3"
+    MISSING = "D:\\music\\Saxon\\Wheels of Steel (1980)\\01 Motorcycle Man.mp3"
+    MOVED = "E:\\moved\\01 Motorcycle Man.mp3"
+
+    def setUp(self):
+        super().setUp()
+        self.clock = self.use_clock()
+        kodi.add_media(self.PRESENT)
+        kodi.library.add_song(self.MOVED, title="Motorcycle Man", artist="Saxon")
+        kodi.library_properties = {"songsmodified": kodi_datetime(self.clock.now - 3600)}
+        self.cache_path = self.save_mix([self.PRESENT, self.MISSING])
+
+    def sidecar(self):
+        return self.read_json(main.mix_meta_path_from_cache_path(self.cache_path))
+
+    def library_updated(self):
+        self.clock.advance(600)
+        kodi.library_properties = {"songsmodified": kodi_datetime(self.clock.now)}
+        self.clock.advance(600)
+
+    def test_records_missing_tracks_and_readiness(self):
+        self.assertEqual(service.run_consistency_check(), 1)
+        sidecar = self.sidecar()
+        self.assertEqual(sidecar["consistency"]["status"], "inconsistent")
+        self.assertEqual(sidecar["consistency"]["missing"][0]["path"], self.MISSING)
+        self.assertEqual(sidecar["repair_readiness"]["status"], "update_library_before_repair")
+        self.assertEqual(self.read_mix(self.cache_path), [self.PRESENT, self.MISSING])
+
+    def test_consistent_mix(self):
+        kodi.add_media(self.MISSING)
+        self.assertEqual(service.run_consistency_check(), 0)
+        self.assertEqual(self.sidecar()["consistency"]["status"], "ok")
+
+    def test_repairs_automatically_once_library_is_newer(self):
+        kodi.settings["service_auto_repair_enabled"] = "true"
+        service.run_consistency_check()
+        self.assertEqual(self.read_mix(self.cache_path)[1], self.MISSING)  # library older than the inconsistency
+
+        self.library_updated()
+        self.assertEqual(service.run_consistency_check(), 1)
+        self.assertEqual(self.read_mix(self.cache_path), [self.PRESENT, self.MOVED])
+        sidecar = self.sidecar()
+        self.assertEqual(sidecar["consistency"]["status"], "ok")
+        self.assertEqual(sidecar["repair_readiness"]["status"], "not_needed")
+
+        self.assertEqual(service.run_consistency_check(), 0)
+
+    def test_no_repair_when_automatic_repair_is_off(self):
+        service.run_consistency_check()
+        self.library_updated()
+        service.run_consistency_check()
+        self.assertEqual(self.read_mix(self.cache_path), [self.PRESENT, self.MISSING])
+        self.assertEqual(self.sidecar()["repair_readiness"]["status"], "ready")
+
+    def test_ambiguous_candidates_are_never_guessed(self):
+        kodi.settings["service_auto_repair_enabled"] = "true"
+        kodi.library.add_song("F:\\other\\01 Motorcycle Man.mp3", title="Motorcycle Man", artist="Saxon")
+        service.run_consistency_check()
+        self.library_updated()
+        service.run_consistency_check()
+        self.assertEqual(self.read_mix(self.cache_path), [self.PRESENT, self.MISSING])
+        self.assertEqual(kodi.dialog_calls, [])
+
+    def test_one_broken_mix_does_not_stop_the_check(self):
+        other = self.save_mix([self.MISSING, self.PRESENT])
+        original = main.analyze_mix_consistency
+
+        def fail_for_first(cache_path):
+            if cache_path == self.cache_path:
+                raise RuntimeError("unreadable")
+            return original(cache_path)
+
+        with mock.patch.object(main, "analyze_mix_consistency", fail_for_first):
+            self.assertEqual(service.run_consistency_check(), 1)
+        self.assertEqual(self.read_json(main.mix_meta_path_from_cache_path(other))["consistency"]["status"], "inconsistent")
+        self.assertIn("Consistency check failed for", kodi.log_text())
+
+    def test_summary_is_logged_with_extended_logging(self):
+        kodi.settings["service_extended_logging"] = "true"
+        service.run_consistency_check()
+        log_text = kodi.log_text()
+        self.assertIn("Consistency check: '01 Overkill' has 1 missing track(s).", log_text)
+        self.assertIn("Repair readiness: repair not available for '01 Overkill'; status=update_library_before_repair", log_text)
+        self.assertIn("Consistency check: checked 1 mix(es), 1 inconsistent, automatic repair disabled, repaired 0 track(s).", log_text)
+        self.assertNotIn("skipped in this build branch", log_text)
+
+    def test_service_loop_runs_the_check(self):
+        service.main()
+        self.assertEqual(self.sidecar()["consistency"]["status"], "inconsistent")
+
+    def test_service_loop_respects_the_setting(self):
+        kodi.settings["consistency_enabled"] = "false"
+        service.main()
+        self.assertNotIn("consistency", self.sidecar())
+
+    def test_service_loop_waits_for_the_interval(self):
+        kodi.abort_after_waits = 3
+        with mock.patch.object(service, "run_consistency_check", wraps=service.run_consistency_check) as check:
+            with mock.patch.object(service.xbmc.Monitor, "waitForAbort", side_effect=self.wait_one_minute, autospec=True):
+                service.main()
+        self.assertEqual(check.call_count, 1)  # three one-minute waits, 60-minute interval
+
+    def wait_one_minute(self, monitor, timeout=0):
+        self.clock.advance(60)
+        kodi.waits += 1
+        return kodi.waits >= kodi.abort_after_waits
+
+
+class ServiceStartupLogTest(KodiTestCase):
     @unittest.expectedFailure
     def test_service_start_message_has_a_single_addon_prefix(self):
         # Known issue F7: the start message adds the add-on id itself, and log() adds it again.
