@@ -1,5 +1,46 @@
 # Testing and Quality Notes
 
+## Automated tests
+
+The tests in `tests/` cover the plugin (`main.py`), the service (`service.py`) and the context menu entry (`context_mix.py`). They use only the Python standard library and run without Kodi:
+
+```
+python -m unittest discover -s tests -v
+```
+
+GitHub Actions runs them on every push and pull request (`.github/workflows/tests.yml`) on Windows with Python 3.8, the interpreter bundled with Kodi, and the latest Python 3.
+
+### Test environment
+
+- `tests/fake_kodi.py` replaces Kodi's `xbmc`, `xbmcaddon`, `xbmcgui`, `xbmcplugin` and `xbmcvfs` modules. It provides add-on settings (defaults read from `resources/settings.xml`), a temporary `special://profile` folder, a music library that answers `AudioLibrary.GetSongs` filters like Kodi, the player and music playlist, dialogs with scripted answers, and plugin directory listings. A music file only "exists" if the test adds it, so the real disk is never consulted.
+- `tests/fake_musicip.py` runs a local HTTP server for `/server/reload` and `/api/mix`.
+- `tests/support.py` loads the add-on modules and provides `KodiTestCase` (fresh Kodi state per test, `run_plugin(...)` to call the router, a controllable clock) and `MusicIPServerTestCase`.
+
+### Test files
+
+| File | Covers |
+| --- | --- |
+| `test_packaging.py` | addon.xml, settings.xml vs. setting IDs used in code, keymap, Python 3.8 syntax |
+| `test_main_mix_parameters.py` | settings, mix parameters, the generate-mix dialog, MusicIP query building |
+| `test_main_musicip_client.py` | server reload, mix requests, HTTP and connection errors, response decoding |
+| `test_main_saved_mixes.py` | saved mix files and sidecars, ordering, date groups, cleanup, remove/more/less like this, consistency, repair readiness, keymap install |
+| `test_main_metadata.py` | library lookups, SQLite metadata cache, sidecar snapshots, refresh queue, track labels |
+| `test_main_plugin_routes.py` | every `router()` action: listings, context menus, playback, error handling, script entry point |
+| `test_main_discovery.py` | Discovery mode from the plugin: start, stop, next, mix from the current song |
+| `test_repair_matching.py` | repair hints, candidate scoring, candidate selection, foreground and automatic repair |
+| `test_service_discovery.py` | Discovery mode in the service: commands, playlist buffer, auto-skip, player events, main loop |
+| `test_service_metadata.py` | background metadata refresh, delayed view refresh, service repair readiness |
+| `test_shared_helpers.py` | helpers duplicated in `main.py` and `service.py` behave the same |
+| `test_context_mix.py` | the "Create MusicIP mix" library context menu entry |
+
+### Known issues
+
+Tests marked `@unittest.expectedFailure` describe known issues. When one is fixed, the test reports an unexpected success; remove the decorator then.
+
+- Cancelling the filter input in the generate-mix dialog clears the filter (`test_main_mix_parameters.py`).
+- "Unknown date" is listed first instead of last among recent mix dates (`test_main_saved_mixes.py`).
+- A track without artist is labelled `1. - Title` with Kodi's default track format (`test_main_metadata.py`).
+
 ## Discovery mode tests
 
 Recommended tests:

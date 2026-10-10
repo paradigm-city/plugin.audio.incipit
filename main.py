@@ -2683,6 +2683,15 @@ def normalize_repair_text(value: object) -> str:
     return text
 
 
+REPAIR_BROAD_TERMS = {"music", "modernrock", "rock", "compilations", "various artists"}
+
+
+def repair_match_key(value: object) -> str:
+    # Comparison only: "Motörhead" equals "Motorhead". Kodi queries keep the diacritics.
+    text = unicodedata.normalize("NFKD", normalize_repair_text(value))
+    return "".join(char for char in text if not unicodedata.combining(char))
+
+
 def add_unique_text(values: list[str], value: object) -> None:
     text = normalize_repair_text(value)
     if text and len(text) >= 3 and text not in values:
@@ -2699,14 +2708,33 @@ def extract_year_hint(value: str) -> int:
         return 0
 
 
-def extract_track_number_hint(value: str) -> int:
-    match = re.match(r"^\s*(\d{1,3})\s*[\.\-_\)]", value or "")
-    if not match:
-        return 0
-    try:
-        return int(match.group(1))
-    except (TypeError, ValueError):
-        return 0
+def split_leading_track_number(stem: str) -> tuple[int, int, str, str]:
+    """
+    Split a leading track number off a filename stem.
+
+    Returns (track_number, possible_track_number, stem_without_number, ambiguous_stem).
+    "03 - Title", "3. Title", "03 Title" and "1-03 Title" carry a reliable track number.
+    An unpadded number followed only by a space ("12 Title") may also be part of the
+    title ("99 Luftballons"), so it is only reported as possible_track_number and the
+    unstripped stem is returned as ambiguous_stem.
+    """
+    text = (stem or "").strip()
+
+    match = re.match(r"^\d{1,2}-(\d{2,3})\s*[\.\-_\)]?\s+(\S.*)$", text)
+    if match:
+        return int(match.group(1)), 0, match.group(2).strip(), ""
+
+    match = re.match(r"^(\d{1,3})\s*[\.\-_\)]\s*(.*)$", text)
+    if match:
+        return int(match.group(1)), 0, match.group(2).strip(), ""
+
+    match = re.match(r"^(\d{1,3})\s+(\S.*)$", text)
+    if match:
+        if match.group(1).startswith("0"):
+            return int(match.group(1)), 0, match.group(2).strip(), ""
+        return 0, int(match.group(1)), match.group(2).strip(), text
+
+    return 0, 0, text, ""
 
 
 def split_artist_title_hints(stem: str) -> list[tuple[str, str]]:
@@ -2730,8 +2758,12 @@ def directory_hint_values(directory: str) -> list[str]:
     result: list[str] = []
 
     for part in parts[-4:]:
-        cleaned = re.sub(r"^#+", "", part)
-        cleaned = re.sub(r"[\[\(]?\b(19|20)\d{2}\b[\]\)]?", " ", cleaned)
+        # "#genre" folders are library categories, not artist or album names.
+        if part.startswith("#"):
+            continue
+        cleaned = re.sub(r"[\[\(]?\b(19|20)\d{2}\b[\]\)]?", " ", part)
+        if normalize_repair_text(cleaned) in REPAIR_BROAD_TERMS:
+            continue
         add_unique_text(result, cleaned)
 
     return result
@@ -2767,8 +2799,8 @@ def repair_tokens(value: object) -> set[str]:
 
 
 def is_strong_text_match(expected: str, actual: str) -> bool:
-    expected_norm = normalize_repair_text(expected)
-    actual_norm = normalize_repair_text(actual)
+    expected_norm = repair_match_key(expected)
+    actual_norm = repair_match_key(actual)
     if not expected_norm or not actual_norm:
         return False
     if expected_norm == actual_norm:
@@ -2791,7 +2823,7 @@ def is_strong_text_match(expected: str, actual: str) -> bool:
 def build_repair_hints(old_path: str) -> dict:
     filename, directory = split_full_path(old_path)
     stem = strip_audio_extension(filename)
-    stem_no_track = re.sub(r"^\s*\d{1,3}\s*[\.\-_\)]\s*", "", stem or "").strip()
+    filename_track, possible_track, stem_no_track, ambiguous_stem = split_leading_track_number(stem)
     stem_no_year = re.sub(r"[\[\(]?\b(19|20)\d{2}\b[\]\)]?\s*$", "", stem_no_track).strip()
 
     structured = parse_structured_filename_hints(stem_no_year)
@@ -2816,6 +2848,9 @@ def build_repair_hints(old_path: str) -> dict:
         add_unique_text(possible_titles, stem_no_track)
         add_unique_text(search_terms, stem_no_year)
         add_unique_text(search_terms, stem_no_track)
+        if ambiguous_stem:
+            add_unique_text(possible_titles, ambiguous_stem)
+            add_unique_text(search_terms, ambiguous_stem)
 
         pairs = split_artist_title_hints(stem_no_year)
         for possible_artist, possible_title in pairs:
@@ -2826,17 +2861,17 @@ def build_repair_hints(old_path: str) -> dict:
 
     folder_hints = directory_hint_values(directory)
     for hint in folder_hints:
-        if hint not in {"music", "modernrock", "rock", "compilations", "various artists"}:
-            add_unique_text(search_terms, hint)
+        add_unique_text(search_terms, hint)
 
     year = extract_year_hint(stem) or extract_year_hint(directory)
-    track_number = int(structured.get("track_number") or 0) or extract_track_number_hint(stem)
+    track_number = int(structured.get("track_number") or 0) or filename_track
 
     return {
         "old_path": old_path,
         "filename": filename,
         "stem": stem,
         "track_number": track_number,
+        "possible_track_number": 0 if track_number else possible_track,
         "year": year,
         "possible_titles": possible_titles,
         "possible_artists": possible_artists,
@@ -2889,7 +2924,7 @@ def collect_fallback_repair_candidates(hints: dict) -> list[dict]:
         normalized_value = normalize_repair_text(value)
         if len(normalized_value) < 3:
             return
-        if normalized_value in {"music", "modernrock", "rock", "compilations", "various artists"}:
+        if normalized_value in REPAIR_BROAD_TERMS:
             log_info(f"Auto-repair fallback: skipping broad query term {normalized_value!r}")
             return
 
@@ -2947,14 +2982,17 @@ def score_repair_candidate(song: dict, hints: dict) -> tuple[int, list[str], boo
     strong_title_match = False
     strong_track_mismatch = False
 
-    candidate_title = normalize_repair_text(song.get("title"))
-    candidate_album = normalize_repair_text(song.get("album"))
-    candidate_artists = candidate_artist_values(song)
+    artist_match = False
+    album_match = False
+
+    candidate_title = repair_match_key(song.get("title"))
+    candidate_album = repair_match_key(song.get("album"))
+    candidate_artists = [repair_match_key(artist) for artist in candidate_artist_values(song)]
     candidate_file = candidate_file_stem(song)
     possible_titles = hints.get("possible_titles") or []
-    possible_artists = hints.get("possible_artists") or []
-    possible_albums = hints.get("possible_albums") or []
-    folder_hints = hints.get("folder_hints") or []
+    possible_artists = [repair_match_key(artist) for artist in hints.get("possible_artists") or []]
+    possible_albums = [repair_match_key(album) for album in hints.get("possible_albums") or []]
+    folder_hints = [repair_match_key(hint) for hint in hints.get("folder_hints") or []]
 
     def add(points: int, reason: str) -> None:
         nonlocal score
@@ -2983,16 +3021,32 @@ def score_repair_candidate(song: dict, hints: dict) -> tuple[int, list[str], boo
         for artist in possible_artists:
             if artist in candidate_artists:
                 add(35, f"artist match {artist!r}")
+                artist_match = True
                 break
         else:
             for artist in possible_artists:
                 if any(is_strong_text_match(artist, candidate_artist) for candidate_artist in candidate_artists):
                     add(20, f"artist partial match {artist!r}")
+                    artist_match = True
                     break
+
+    if not artist_match and candidate_artists:
+        for folder_hint in folder_hints:
+            if folder_hint in candidate_artists:
+                add(20, f"folder/artist hint match {folder_hint!r}")
+                artist_match = True
+                break
 
     for album in possible_albums:
         if album and candidate_album == album:
             add(25, f"album match {album!r}")
+            album_match = True
+            break
+
+    for folder_hint in folder_hints:
+        if folder_hint and candidate_album == folder_hint:
+            add(15, f"folder/album hint match {folder_hint!r}")
+            album_match = True
             break
 
     hint_year = int(hints.get("year") or 0)
@@ -3005,14 +3059,22 @@ def score_repair_candidate(song: dict, hints: dict) -> tuple[int, list[str], boo
     if hint_track and candidate_track:
         if hint_track == candidate_track:
             add(40, f"track number match {hint_track}")
-        else:
+        elif album_match:
             strong_track_mismatch = True
             subtract(80, f"track number mismatch expected {hint_track}, got {candidate_track}")
+        else:
+            # Same song on another release: a different track number is expected.
+            reasons.append(f"0 track number {candidate_track} differs from {hint_track} on another album")
+    else:
+        # Unpadded leading number ("12 Title") may be part of the title: reward a match, never penalize.
+        possible_track = int(hints.get("possible_track_number") or 0)
+        if possible_track and candidate_track and possible_track == candidate_track:
+            add(40, f"possible track number match {possible_track}")
 
-    for folder_hint in folder_hints:
-        if folder_hint and candidate_album == folder_hint:
-            add(15, f"folder/album hint match {folder_hint!r}")
-            break
+    # Year and track number alone do not identify a song.
+    if not (strong_title_match or artist_match or album_match):
+        reasons.append("no title, artist or album evidence")
+        return 0, reasons, False
 
     return score, reasons, strong_title_match and not strong_track_mismatch
 
@@ -3053,6 +3115,7 @@ def get_fallback_repair_candidates(old_path: str) -> list[dict]:
         f"albums={hints.get('possible_albums')}, "
         f"year={hints.get('year')}, "
         f"track={hints.get('track_number')}, "
+        f"possible_track={hints.get('possible_track_number')}, "
         f"terms={hints.get('search_terms')}"
     )
 
