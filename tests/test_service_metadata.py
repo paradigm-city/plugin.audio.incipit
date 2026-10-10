@@ -117,7 +117,38 @@ class ViewRefreshTest(KodiTestCase):
         self.assertEqual((context["is_musicip_view"], context["is_mix_view"], context["is_visible_mix"]), (True, False, True))
 
 
+class BackgroundConsistencyCheckTest(KodiTestCase):
+    @unittest.expectedFailure
+    def test_background_check_records_missing_tracks(self):
+        # Known issue F1: run_consistency_check() is a stub, so saved mixes are never checked in the background.
+        present, missing = "D:\\music\\a.mp3", "D:\\music\\gone.mp3"
+        kodi.add_media(present)
+        cache_path = self.save_mix([present, missing])
+        service.run_consistency_check()
+        sidecar = self.read_json(main.mix_meta_path_from_cache_path(cache_path))
+        self.assertEqual(sidecar.get("consistency", {}).get("status"), "inconsistent")
+
+    @unittest.expectedFailure
+    def test_service_start_message_has_a_single_addon_prefix(self):
+        # Known issue F7: the start message adds the add-on id itself, and log() adds it again.
+        service.main()
+        self.assertNotIn("[plugin.audio.musicip] [plugin.audio.musicip]", kodi.log_text())
+
+
 class ServiceRepairReadinessTest(KodiTestCase):
+    def test_readiness_result_is_logged_with_extended_logging(self):
+        kodi.settings["service_extended_logging"] = "true"
+        consistency = {"status": "inconsistent", "first_inconsistent_ts": 100}
+        kodi.library_properties = {"songsmodified": "2026-01-01 00:00:00"}
+        service.get_repair_readiness_for_consistency(consistency, "Rock mix")
+        kodi.library_properties = {}
+        service.get_repair_readiness_for_consistency(consistency)
+        lines = [message for message, _level in kodi.logs if "Repair readiness:" in message]
+        self.assertIn("Repair readiness: repair available for 'Rock mix'; status=ready", lines[0])
+        self.assertIn("Repair readiness: repair not available; status=update_library_before_repair, "
+                      "reason='Kodi audio library freshness could not be determined.'", lines[1])
+        self.assertIn("Library freshness: Kodi library property songsmodified=", kodi.log_text())
+
     def test_matches_plugin_readiness(self):
         consistency = {"status": "inconsistent", "first_inconsistent_ts": 100, "missing": [{"first_missing_ts": 150}]}
         for properties in ({}, {"songsmodified": "1970-01-01 00:02:00"}, {"songsmodified": "2026-01-01 00:00:00"}):

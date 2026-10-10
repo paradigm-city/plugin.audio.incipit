@@ -219,6 +219,36 @@ class RepairReadinessTest(KodiTestCase):
         meta = main.get_saved_mix_metadata(self.cache_path)
         return main.get_mix_repair_readiness(meta)
 
+    def test_readiness_result_is_logged_with_extended_logging(self):
+        kodi.settings["plugin_extended_logging"] = "true"
+        kodi.library_properties = {"librarylastupdated": "2026-10-04 08:00:00"}
+        self.readiness()
+        kodi.library_properties = {"songsmodified": "2026-10-05 13:00:00"}
+        self.readiness()
+        main.get_mix_repair_readiness({"label": "Fine mix"})
+
+        lines = [message for message, _level in kodi.logs if "Repair readiness:" in message]
+        self.assertEqual(len(lines), 3)
+        self.assertIn("Repair readiness: repair not available for '01 Song 1'; status=update_library_before_repair, "
+                      "reason='Kodi audio library has not been updated since the latest detected inconsistency.', "
+                      "required_library_ts=", lines[0])
+        self.assertIn("library_freshest_ts=2026-10-04", lines[0])
+        self.assertIn("Repair readiness: repair available for '01 Song 1'; status=ready, "
+                      "reason='Kodi audio library is newer than the latest detected inconsistency.'", lines[1])
+        self.assertIn("Repair readiness: repair not available for 'Fine mix'; status=not_needed, "
+                      "reason='Mix is not inconsistent.'", lines[2])
+
+    def test_readiness_is_not_logged_without_extended_logging(self):
+        self.readiness()
+        self.assertNotIn("Repair readiness:", kodi.log_text())
+
+    def test_library_timestamps_are_logged_as_library_freshness(self):
+        kodi.settings["plugin_extended_logging"] = "true"
+        kodi.library_properties = {"librarylastupdated": "2026-10-04 08:00:00"}
+        main.get_audio_library_freshness()
+        self.assertIn("Library freshness: Kodi library property librarylastupdated='2026-10-04 08:00:00'", kodi.log_text())
+        self.assertNotIn("Repair readiness:", kodi.log_text())
+
     def test_library_not_updated_since_inconsistency(self):
         kodi.library_properties = {"librarylastupdated": "2026-10-04 08:00:00"}
         readiness = self.readiness()

@@ -19,7 +19,11 @@ Last reviewed: 2026-10-10
 - The settings `consistency_enabled`, `consistency_interval_minutes` and `service_auto_repair_enabled` are shown to users but have no effect.
 - The repair-readiness message tells users to "wait for the consistency service to run again", which never happens. Mixes are only checked through the manual **Check consistency** action or during a repair.
 
-The unused building blocks are kept on purpose for re-enabling this: `repair_saved_mix_automatic_only()` and `choose_repair_candidate_automatic_only()` in `main.py`, and `is_service_auto_repair_enabled()` in `service.py`.
+The unused building blocks are kept on purpose for re-enabling this: `repair_saved_mix_automatic_only()` and `choose_repair_candidate_automatic_only()` in `main.py`, and `is_service_auto_repair_enabled()` and `get_repair_readiness_for_consistency()` in `service.py`.
+
+Confirmed again on 2026-10-10 in `kodi.log`: after "MusicIP service started", the service logs "Consistency service check skipped in this build branch." once per check interval, and no mix is checked.
+
+**Test:** `test_service_metadata.BackgroundConsistencyCheckTest.test_background_check_records_missing_tracks`
 
 ### F2 · Cancelling the filter input clears the mix filter
 
@@ -42,6 +46,12 @@ The service runs Discovery mode: once the plugin has started playback and writte
 The service also still reads `start`, `stop` and `next` commands from `discovery_mode_command.json` in `run_discovery_tick()`, but the plugin no longer writes that file: it starts, stops and skips directly (its `write_discovery_command` was removed with F5). So this command handling never runs.
 
 In the `start` handler, the branch that adopts an already-started playlist could not run anyway, because `state["queue"]` is emptied just before `existing_queue` is read from it.
+
+### F7 · The service start message shows the add-on prefix twice
+
+`main()` in `service.py` passes a message that already starts with `[plugin.audio.musicip]` to `log()`, which adds the prefix again: `[plugin.audio.musicip] [plugin.audio.musicip] MusicIP service started. …`
+
+**Test:** `test_service_metadata.BackgroundConsistencyCheckTest.test_service_start_message_has_a_single_addon_prefix`
 
 ## Resolved
 
