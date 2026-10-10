@@ -1768,15 +1768,35 @@ def is_inside_music_source(path: str, source_keys: list[str]) -> bool:
     return any(key == source_key or key.startswith(source_key + "/") for source_key in source_keys)
 
 
-def search_missing_files_outside_sources(missing_paths: list[str], sources: list[str]) -> dict:
-    """Look for missing files below the virtual library roots, outside the music sources.
+def music_source_has_library_content(source: str) -> bool:
+    """Has this music source been scanned into the library? Configured sources can be left unscanned."""
+    try:
+        result = execute_jsonrpc(
+            "AudioLibrary.GetSongs",
+            {
+                "properties": [],
+                "limits": {"start": 0, "end": 1},
+                "filter": {"field": "path", "operator": "startswith", "value": source},
+            },
+        )
+    except Exception:
+        return True  # Unknown: treat it as part of the library, as before.
+    return bool(result.get("songs")) or int((result.get("limits") or {}).get("total") or 0) > 0
 
-    Used only to tell the user where a missing file is; whether to add that location to the library is
-    the user's decision (some folders are left out on purpose).
+
+def search_missing_files_outside_sources(missing_paths: list[str], sources: list[str]) -> dict:
+    """Look for missing files below the virtual library roots, outside the music library.
+
+    Folders inside music sources that have been scanned into the library are skipped: the library already
+    covers them. Music sources without library content (never scanned) are searched like other folders.
+
+    found_outside_sources: files outside every music source; only reported to the user, since some folders
+    are left out of the library on purpose.
+    found_in_unscanned_sources: files inside a configured source that was never scanned into the library;
+    unscanned_sources lists those sources, which the user can be offered to scan.
 
     A file matches when its name and its folder name both match the missing file, which keeps moved albums
-    and rejects unrelated files with common names. Folders inside music sources are skipped: the library
-    already covers them.
+    and rejects unrelated files with common names.
     """
     wanted: dict[tuple[str, str], list[str]] = {}
     for missing in missing_paths:
@@ -1785,7 +1805,9 @@ def search_missing_files_outside_sources(missing_paths: list[str], sources: list
         if filename and folder_name:
             wanted.setdefault((folder_name.casefold(), filename.casefold()), []).append(missing)
 
-    source_keys = [key for key in (canonical_audio_path(source) for source in sources) if key]
+    library_sources = [source for source in sources if music_source_has_library_content(source)]
+    unscanned_sources = [source for source in sources if source not in library_sources]
+    library_keys = [key for key in (canonical_audio_path(source) for source in library_sources) if key]
     roots = get_virtual_library_roots(sources)
     found: dict[str, str] = {}
     started = time.time()
@@ -1798,7 +1820,7 @@ def search_missing_files_outside_sources(missing_paths: list[str], sources: list
             complete = False
             break
         folder = pending.pop()
-        if is_inside_music_source(folder, source_keys):
+        if is_inside_music_source(folder, library_keys):
             continue
         try:
             directories, files = xbmcvfs.listdir(folder)
@@ -1816,10 +1838,24 @@ def search_missing_files_outside_sources(missing_paths: list[str], sources: list
                 continue
             pending.append(folder + name + separator)
 
+    outside: dict[str, str] = {}
+    in_unscanned: dict[str, str] = {}
+    found_unscanned_sources: list[str] = []
+    for missing, location in found.items():
+        source = find_covering_music_source(location, unscanned_sources)
+        if source:
+            in_unscanned[missing] = location
+            if source not in found_unscanned_sources:
+                found_unscanned_sources.append(source)
+        else:
+            outside[missing] = location
+
     return {
         "checked_ts": int(time.time()),
         "roots": roots,
-        "found_outside_sources": found,
+        "found_outside_sources": outside,
+        "found_in_unscanned_sources": in_unscanned,
+        "unscanned_sources": sorted(found_unscanned_sources),
         "complete": complete,
         "folders_searched": folders_searched,
     }
@@ -1837,15 +1873,19 @@ def missing_file_search_is_current(search: object, consistency: dict) -> bool:
 def repair_readiness_action_label(readiness: dict) -> str:
     if str(readiness.get("status") or "") == "update_sources_before_repair":
         return "Check music sources before repair"
+    if str(readiness.get("status") or "") == "scan_source_before_repair":
+        return "Scan music source before repair"
     return "Update library before repair"
 
 
-def evaluate_repair_readiness(consistency: dict) -> dict:
+def evaluate_repair_readiness(consistency: dict, search: dict | None = None) -> dict:
     """Repair is ready once Kodi's music sources are available and the library no longer lists any of
     the mix's missing files.
 
-    A source that no longer exists cannot provide the moved files. A library that still lists a missing
-    file has not caught up with the move or deletion yet, so its repair candidates cannot be trusted.
+    A source that no longer exists cannot provide the moved files. A missing file found (by the service's
+    disk search) in a music source that was never scanned into the library cannot reach the library until
+    that source is scanned. A library that still lists a missing file has not caught up with the move or
+    deletion yet, so its repair candidates cannot be trusted.
     Shared by the plugin and the service.
     """
     consistency = consistency if isinstance(consistency, dict) else {}
@@ -1894,6 +1934,18 @@ def evaluate_repair_readiness(consistency: dict) -> dict:
             )
             return readiness
 
+    unscanned = unscanned_sources_holding_missing_files(consistency, search, missing_paths)
+    if unscanned:
+        found = search.get("found_in_unscanned_sources") or {}
+        readiness["status"] = "scan_source_before_repair"
+        readiness["unscanned_sources"] = unscanned
+        readiness["found_in_unscanned_sources"] = {old: new for old, new in found.items() if old in missing_paths}
+        readiness["reason"] = (
+            f"{len(readiness['found_in_unscanned_sources'])} missing file(s) were found in music source(s) that are "
+            f"not scanned into the library: {', '.join(unscanned)}. Scan the source into the library."
+        )
+        return readiness
+
     try:
         still_listed = find_missing_paths_still_in_library(missing_paths)
     except Exception as exc:
@@ -1915,8 +1967,24 @@ def evaluate_repair_readiness(consistency: dict) -> dict:
     return readiness
 
 
+def unscanned_sources_holding_missing_files(consistency: dict, search: object, missing_paths: list[str]) -> list[str]:
+    """Never-scanned music sources in which the disk search found this mix's missing files, still unscanned."""
+    if not isinstance(search, dict):
+        return []
+    if str(search.get("signature") or "") != str(consistency.get("missing_signature") or ""):
+        return []
+    found = search.get("found_in_unscanned_sources") if isinstance(search.get("found_in_unscanned_sources"), dict) else {}
+    if not any(old in missing_paths for old in found):
+        return []
+    return [
+        str(source)
+        for source in search.get("unscanned_sources") or []
+        if not music_source_has_library_content(str(source))
+    ]
+
+
 def get_mix_repair_readiness(meta: dict) -> dict:
-    readiness = evaluate_repair_readiness(get_consistency_status(meta))
+    readiness = evaluate_repair_readiness(get_consistency_status(meta), meta.get("missing_file_search"))
     log_repair_readiness(readiness, str(meta.get("label") or meta.get("cache_path") or ""))
     return readiness
 
@@ -1938,6 +2006,8 @@ def format_repair_readiness_log(readiness: dict, mix_label: str = "") -> str:
             f", unavailable_sources={len(readiness.get('unavailable_sources') or [])}"
             f", outside_sources={len(readiness.get('outside_sources') or [])}"
         )
+    if readiness.get("unscanned_sources"):
+        details += f", unscanned_sources={readiness.get('unscanned_sources')!r}"
     return f"Repair readiness: repair {availability}{target}; {details}"
 
 
@@ -1989,7 +2059,19 @@ def build_repair_readiness_message(readiness: dict) -> str:
         if len(still_listed) > 10:
             lines.append(f"- ... and {len(still_listed) - 10} more")
 
-    if str(readiness.get("status") or "") == "update_sources_before_repair":
+    unscanned = [str(source) for source in readiness.get("unscanned_sources") or []]
+    if unscanned:
+        lines.extend(["", "Found in music sources that are not scanned into the library:"])
+        found = readiness.get("found_in_unscanned_sources") or {}
+        lines.extend(f"- {location}" for location in list(found.values())[:10])
+        if len(found) > 10:
+            lines.append(f"- ... and {len(found) - 10} more")
+
+    if str(readiness.get("status") or "") == "scan_source_before_repair":
+        advice = "Scan these music sources into the library, then try repair again:\n" + "\n".join(
+            f"- {source}" for source in unscanned
+        )
+    elif str(readiness.get("status") or "") == "update_sources_before_repair":
         advice = (
             "Update the Kodi music sources to match the folder structure on disk, "
             "then update and clean the library, then try repair again."
@@ -2012,6 +2094,10 @@ def show_update_library_before_repair(cache_path: str) -> None:
             "Close this dialog and reopen the context menu. "
             "Auto-repair this mix should now be available.",
         )
+        return
+
+    if str(readiness.get("status") or "") == "scan_source_before_repair":
+        offer_to_scan_unscanned_sources(readiness)
         return
 
     if str(readiness.get("status") or "") == "update_sources_before_repair":
@@ -2039,6 +2125,26 @@ def show_update_library_before_repair(cache_path: str) -> None:
         return
 
     xbmcgui.Dialog().ok("Update library before repair", build_repair_readiness_message(readiness))
+
+
+def offer_to_scan_unscanned_sources(readiness: dict) -> bool:
+    """Ask whether to scan the never-scanned sources that hold missing files; start the scan on yes."""
+    sources = [str(source) for source in readiness.get("unscanned_sources") or []]
+    if not sources:
+        return False
+    found = readiness.get("found_in_unscanned_sources") or {}
+    message = (
+        f"{len(found)} missing track(s) of this mix were found in music source(s) that are set up in Kodi "
+        "but not scanned into the music library:\n"
+        + "\n".join(f"- {source}" for source in sources)
+        + "\n\nScan them into the library now?"
+    )
+    if not xbmcgui.Dialog().yesno("Scan music source before repair", message):
+        return False
+    for source in sources:
+        execute_jsonrpc("AudioLibrary.Scan", {"directory": source})
+    notify(f"Kodi music library scan started for {', '.join(sources)}.")
+    return True
 
 
 def ensure_repair_ready(cache_path: str) -> None:

@@ -246,10 +246,10 @@ def get_audio_library_freshness() -> dict:
     }
 
 
-def get_repair_readiness_for_consistency(consistency: dict, mix_label: str = "") -> dict:
+def get_repair_readiness_for_consistency(consistency: dict, mix_label: str = "", search: dict | None = None) -> dict:
     # The rule lives in the plugin module; the service only logs with its own setting.
     plugin = load_plugin_module()
-    readiness = plugin.evaluate_repair_readiness(consistency)
+    readiness = plugin.evaluate_repair_readiness(consistency, search)
     log_info(plugin.format_repair_readiness_log(readiness, mix_label))
     return readiness
 
@@ -1337,18 +1337,19 @@ def run_consistency_check() -> int:
         except Exception as exc:
             log(f"Consistency check failed for {cache_path!r}: {exc}", xbmc.LOGWARNING)
 
-    newly_found = update_missing_file_searches(plugin, checked)
+    newly_found, newly_unscanned = update_missing_file_searches(plugin, checked)
 
     for cache_path, consistency, meta, label in checked:
         try:
-            readiness = get_repair_readiness_for_consistency(consistency, label)
+            search = meta.get("missing_file_search")
+            readiness = get_repair_readiness_for_consistency(consistency, label, search)
             if auto_repair and readiness.get("status") == "ready":
                 repaired = plugin.repair_saved_mix_automatic_only(cache_path)
                 repaired_tracks += repaired
                 log_info(f"Consistency check: automatic repair of {label!r} replaced {repaired} track(s).")
                 if repaired:
                     meta = plugin.get_saved_mix_metadata(cache_path)
-                    readiness = get_repair_readiness_for_consistency(plugin.get_consistency_status(meta), label)
+                    readiness = get_repair_readiness_for_consistency(plugin.get_consistency_status(meta), label, search)
             elif auto_repair and readiness.get("status") in ("update_library_before_repair", "update_sources_before_repair"):
                 blocked_labels.append(label)
                 sources_blocked = sources_blocked or readiness.get("status") == "update_sources_before_repair"
@@ -1364,32 +1365,35 @@ def run_consistency_check() -> int:
     )
     if newly_found:
         notify_missing_files_found_outside_sources(newly_found)
+    if newly_unscanned:
+        notify_missing_files_found_in_unscanned_sources(newly_unscanned)
     if blocked_labels:
         notify_repair_waiting_for_library(blocked_labels, sources_blocked)
     return len(checked)
 
 
-def update_missing_file_searches(plugin, checked: list[tuple[str, dict, dict, str]]) -> list[str]:
+def update_missing_file_searches(plugin, checked: list[tuple[str, dict, dict, str]]) -> tuple[list[str], list[str]]:
     """Search the disks for missing files of mixes whose last search is out of date.
 
-    Stores the result in each mix's sidecar (meta["missing_file_search"]) and returns the locations of
-    missing files found outside the music sources that were not reported for those mixes before.
+    Stores the result in each mix's sidecar (meta["missing_file_search"]) and returns what was not reported
+    for those mixes before: locations of missing files found outside the music sources, and never-scanned
+    music sources in which missing files were found.
     """
     outdated = [
         entry for entry in checked
         if not plugin.missing_file_search_is_current(entry[2].get("missing_file_search"), entry[1])
     ]
     if not outdated:
-        return []
+        return [], []
     if load_discovery_state().get("enabled"):
         log_info("Consistency check: missing-file search postponed while Discovery mode is active.")
-        return []
+        return [], []
 
     try:
         sources = plugin.get_music_source_paths()
     except Exception as exc:
         log_info(f"Consistency check: missing-file search skipped, music sources unreadable: {exc}")
-        return []
+        return [], []
 
     missing_paths = sorted({
         str(item.get("path") or "")
@@ -1402,27 +1406,38 @@ def update_missing_file_searches(plugin, checked: list[tuple[str, dict, dict, st
         f"Consistency check: searched {result['folders_searched']} folder(s) below {result['roots']!r} for "
         f"{len(missing_paths)} missing file(s); found {len(result['found_outside_sources'])} outside the music sources"
         f"{'' if result['complete'] else ' (search stopped at its time limit)'}: "
-        f"{sorted(result['found_outside_sources'].values())!r}."
+        f"{sorted(result['found_outside_sources'].values())!r}; found {len(result['found_in_unscanned_sources'])} "
+        f"in music sources not scanned into the library {result['unscanned_sources']!r}."
     )
 
     newly_found: list[str] = []
+    newly_unscanned: list[str] = []
     for cache_path, consistency, meta, _label in outdated:
         own_paths = {str(item.get("path") or "") for item in consistency.get("missing") or [] if isinstance(item, dict)}
         found = {old: new for old, new in result["found_outside_sources"].items() if old in own_paths}
+        in_unscanned = {old: new for old, new in result["found_in_unscanned_sources"].items() if old in own_paths}
+        unscanned = sorted({
+            plugin.find_covering_music_source(location, result["unscanned_sources"]) for location in in_unscanned.values()
+        })
         previous = meta.get("missing_file_search") if isinstance(meta.get("missing_file_search"), dict) else {}
         reported = set((previous.get("found_outside_sources") or {}).values())
         for location in found.values():
             if location not in reported and location not in newly_found:
                 newly_found.append(location)
+        for source in unscanned:
+            if source not in (previous.get("unscanned_sources") or []) and source not in newly_unscanned:
+                newly_unscanned.append(source)
         meta["missing_file_search"] = {
             "checked_ts": result["checked_ts"],
             "signature": str(consistency.get("missing_signature") or ""),
             "roots": result["roots"],
             "found_outside_sources": found,
+            "found_in_unscanned_sources": in_unscanned,
+            "unscanned_sources": unscanned,
             "complete": result["complete"],
         }
         save_json_file(mix_meta_path_from_cache_path(cache_path), meta)
-    return newly_found
+    return newly_found, newly_unscanned
 
 
 def notify_missing_files_found_outside_sources(locations: list[str]) -> None:
@@ -1436,6 +1451,19 @@ def notify_missing_files_found_outside_sources(locations: list[str]) -> None:
         xbmcgui.Dialog().notification(ADDON.getAddonInfo("name"), message, xbmcgui.NOTIFICATION_INFO)
     except Exception as exc:
         log(f"Could not show notification about missing files outside the music sources: {exc}", xbmc.LOGWARNING)
+
+
+def notify_missing_files_found_in_unscanned_sources(sources: list[str]) -> None:
+    # The question itself is asked in the plugin ("Scan music source before repair"), not from the background.
+    if len(sources) == 1:
+        message = f"Missing file found in a music source that is not scanned into the library: {sources[0]}"
+    else:
+        message = f"Missing files found in {len(sources)} music sources that are not scanned into the library."
+    log_info(f"Consistency check: notifying about missing files in unscanned music sources: {sources!r}")
+    try:
+        xbmcgui.Dialog().notification(ADDON.getAddonInfo("name"), message, xbmcgui.NOTIFICATION_INFO)
+    except Exception as exc:
+        log(f"Could not show notification about unscanned music sources: {exc}", xbmc.LOGWARNING)
 
 
 def notify_repair_waiting_for_library(labels: list[str], sources_blocked: bool = False) -> None:
