@@ -168,6 +168,8 @@ class FakeLibrary:
             return actual == value
         if operator == "contains":
             return value.translate(_ASCII_LOWER) in actual.translate(_ASCII_LOWER)
+        if operator == "startswith":
+            return actual.translate(_ASCII_LOWER).startswith(value.translate(_ASCII_LOWER))
         raise JsonRpcError(f"Unsupported filter operator {operator!r}")
 
     def get_songs(self, params):

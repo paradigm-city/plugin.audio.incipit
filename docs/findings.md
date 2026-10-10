@@ -45,6 +45,23 @@ For **Settings** the same pattern produced `XFILE::CDirectory::GetDirectory - Er
 
 **Test:** `test_main_plugin_routes.FolderEntriesTest.test_folder_entries_end_their_directory`
 
+### F10 · A music source that was never scanned counts as part of the library
+
+Kodi's `sources.xml` (and the music database's `source` table) list every music source, including sources that were never scanned into the library. "Update library" only rescans folders already in the library, so files in such a source never reach the library.
+
+The add-on treats every configured source as library content:
+
+- The disk search for missing files skips all music sources, so a file moved into a never-scanned source is not reported.
+- Repair readiness says "ready" once the library no longer lists the old path, although the new location can never appear in the library.
+
+Seen on 2026-10-10: `Mike Stern - Give And Take - 09 - Giant Step.mp3` moved from `D:\music\#jazz\…` to `D:\music\#jazz_fusion_progressive\…`. That source is configured, but the library has 0 songs and 0 scanned folders below it (the same applies to `#jazz_general`, `#jazz_nordic_ambient` and `#compilations`). Automatic repair found only three unrelated Mike Stern tracks (score 35 each) and correctly made no replacement.
+
+Workaround: in Kodi, open the source under **Music → Files** and choose **Scan item to library**. The exact file-name lookup then finds the moved track.
+
+A fix: count a source as part of the library only if the library holds songs below it (`AudioLibrary.GetSongs` with a `path` `startswith` filter), and search the other sources like folders outside the library.
+
+**Test:** `test_repair_sources.ServiceSearchTest.test_file_moved_into_a_source_that_was_never_scanned_is_reported`
+
 ## Resolved
 
 ### F9 · Repair readiness could stay blocked although the library was up to date

@@ -250,6 +250,19 @@ class ServiceSearchTest(SourcesTestCase):
         self.assertEqual(kodi.notifications, [])
         self.assertEqual(self.meta()["missing_file_search"]["found_outside_sources"], {})
 
+    @unittest.expectedFailure
+    def test_file_moved_into_a_source_that_was_never_scanned_is_reported(self):
+        # Known issue F10: a music source that was never scanned into the library has no songs there, but the
+        # search treats every configured source as covered by the library and skips it. Seen on 2026-10-10:
+        # an album moved into D:\music\#jazz_fusion_progressive (a source with 0 songs in the library).
+        kodi.remove_media(MOVED)
+        kodi.add_music_source("D:\\music\\#jazz_fusion_progressive\\")  # configured, never scanned
+        kodi.library.add_song(PRESENT, title="Overkill")  # #metal is in the library
+        moved = "D:\\music\\#jazz_fusion_progressive\\Saxon\\Wheels of Steel (1980)\\01 Motorcycle Man.mp3"
+        kodi.add_media(moved)
+        service.run_consistency_check()
+        self.assertEqual(self.meta()["missing_file_search"]["found_outside_sources"], {MISSING: moved})
+
     def test_search_waits_while_discovery_mode_is_active(self):
         service.save_discovery_state({"enabled": True})
         service.run_consistency_check()
