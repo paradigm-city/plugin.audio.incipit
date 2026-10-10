@@ -12,6 +12,7 @@ Feature baseline: **1.0.87**
 - `concept_repair_strategy.md`
 - `concept_sidecar_metadata.md`
 - `testing_quality_notes.md`
+- `findings.md`: known problems in the code and their status
 
 ## Flow diagrams
 

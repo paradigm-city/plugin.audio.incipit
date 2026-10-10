@@ -32,13 +32,11 @@ GitHub Actions runs them on every push and pull request (`.github/workflows/test
 | `test_service_metadata.py` | background metadata refresh, delayed view refresh, service repair readiness |
 | `test_shared_helpers.py` | helpers duplicated in `main.py` and `service.py` behave the same |
 | `test_context_mix.py` | the "Create MusicIP mix" library context menu entry |
+| `test_findings.py` | `docs/findings.md` lists exactly the known-issue tests that still fail |
 
 ### Known issues
 
-Tests marked `@unittest.expectedFailure` describe known issues. When one is fixed, the test reports an unexpected success; remove the decorator then.
-
-- Cancelling the filter input in the generate-mix dialog clears the filter (`test_main_mix_parameters.py`).
-- "Unknown date" is listed first instead of last among recent mix dates (`test_main_saved_mixes.py`).
+Known issues are tracked in [findings.md](findings.md). Tests marked `@unittest.expectedFailure` reproduce open findings; `test_findings.py` keeps the two in step.
 
 ## Discovery mode tests
 
