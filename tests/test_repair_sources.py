@@ -12,7 +12,6 @@ PRESENT = "D:\\music\\#metal\\Motorhead\\Overkill (1979)\\01 Overkill.mp3"
 MISSING = "D:\\music\\#metal\\Saxon\\Wheels of Steel (1980)\\01 Motorcycle Man.mp3"
 # After a reorganization the album lives in a folder that is not a music source.
 MOVED = "D:\\music\\#soul_disco\\Saxon\\Wheels of Steel (1980)\\01 Motorcycle Man.mp3"
-SUGGESTED = "D:\\music\\#soul_disco\\"
 
 
 class SourcesTestCase(KodiTestCase):
@@ -146,17 +145,13 @@ class MissingFileSearchTest(KodiTestCase):
     def search(self, *missing):
         return main.search_missing_files_outside_sources(list(missing), main.get_music_source_paths())
 
-    def test_finds_moved_album_and_suggests_its_folder(self):
+    def test_finds_moved_album_outside_the_sources(self):
         kodi.add_media(MOVED)
         result = self.search(MISSING)
         self.assertEqual(result["roots"], ["D:\\music\\"])
         self.assertEqual(result["found_outside_sources"], {MISSING: MOVED})
-        self.assertEqual(result["suggested_sources"], [SUGGESTED])
         self.assertTrue(result["complete"])
-
-    def test_suggests_the_highest_folder_without_sources(self):
-        kodi.add_media("D:\\music\\new\\soul\\Saxon\\Wheels of Steel (1980)\\01 Motorcycle Man.mp3")
-        self.assertEqual(self.search(MISSING)["suggested_sources"], ["D:\\music\\new\\"])
+        self.assertNotIn("suggested_sources", result)
 
     def test_music_sources_are_not_searched(self):
         result = self.search(MISSING)
@@ -181,49 +176,34 @@ class MissingFileSearchTest(KodiTestCase):
     def test_network_share(self):
         kodi.music_sources = []
         kodi.add_music_source("smb://nas/music/metal/")
-        kodi.add_media("smb://nas/music/soul/Saxon/Wheels of Steel (1980)/01 Motorcycle Man.mp3")
-        result = self.search("smb://nas/music/metal/Saxon/Wheels of Steel (1980)/01 Motorcycle Man.mp3")
-        self.assertEqual(result["suggested_sources"], ["smb://nas/music/soul/"])
+        moved = "smb://nas/music/soul/Saxon/Wheels of Steel (1980)/01 Motorcycle Man.mp3"
+        kodi.add_media(moved)
+        missing = "smb://nas/music/metal/Saxon/Wheels of Steel (1980)/01 Motorcycle Man.mp3"
+        self.assertEqual(self.search(missing)["found_outside_sources"], {missing: moved})
 
 
-class ReadinessWithSearchTest(SourcesTestCase):
-    def setUp(self):
-        super().setUp()
+class ReadinessIgnoresSearchTest(SourcesTestCase):
+    def test_readiness_dialog_and_mix_info_do_not_use_the_search(self):
         kodi.add_music_source(METAL)
         meta = self.meta()
         meta["missing_file_search"] = {
             "checked_ts": 1,
             "signature": meta["consistency"]["missing_signature"],
             "found_outside_sources": {MISSING: MOVED},
-            "suggested_sources": [SUGGESTED],
             "complete": True,
         }
         self.write_json(main.mix_meta_path_from_cache_path(self.cache_path), meta)
 
-    def test_suggestion_is_added_without_blocking_repair(self):
         readiness = self.readiness()
         self.assertEqual(readiness["status"], "ready")
-        self.assertEqual(readiness["suggested_sources"], [SUGGESTED])
-        self.assertTrue(readiness["reason"].endswith(
-            f"1 missing file(s) were found outside the Kodi music sources, in: {SUGGESTED}. "
-            "Add that folder as a music source to repair from there."
-        ))
-
-    def test_message_mix_info_and_log_show_the_suggestion(self):
-        kodi.settings["plugin_extended_logging"] = "true"
-        message = main.build_repair_readiness_message(self.readiness())
-        self.assertIn("Found outside the Kodi music sources:\n- " + MOVED, message)
-        self.assertIn("Add as a music source to repair from there:\n- " + SUGGESTED, message)
-        self.assertIn(f"suggested_sources=[{SUGGESTED!r}]", kodi.log_text())
-        self.assertIn("add as a music source:\n- " + SUGGESTED, main.build_mix_info_message(self.cache_path))
-
-    def test_search_for_other_missing_files_is_ignored(self):
-        meta = self.meta()
-        meta["missing_file_search"]["signature"] = "older"
-        self.assertNotIn("suggested_sources", main.get_mix_repair_readiness(meta))
+        self.assertEqual(readiness["reason"], "Kodi music library no longer lists the missing files.")
+        self.assertNotIn(MOVED, main.build_repair_readiness_message(readiness))
+        self.assertNotIn(MOVED, main.build_mix_info_message(self.cache_path))
 
 
 class ServiceSearchTest(SourcesTestCase):
+    NOTIFICATION = f"Missing file found outside of the music sources: {MOVED}"
+
     def setUp(self):
         super().setUp()
         self.clock = self.use_clock()
@@ -234,13 +214,18 @@ class ServiceSearchTest(SourcesTestCase):
         service.run_consistency_check()
         search = self.meta()["missing_file_search"]
         self.assertEqual(search["found_outside_sources"], {MISSING: MOVED})
-        self.assertEqual(search["suggested_sources"], [SUGGESTED])
-        self.assertEqual(self.meta()["repair_readiness"]["suggested_sources"], [SUGGESTED])
-        self.assertEqual(kodi.notifications, [(
-            "MusicIP",
-            f"Missing tracks were found in {SUGGESTED}, which is not a Kodi music source. Add it to repair the mix.",
-            "info",
-        )])
+        self.assertEqual(search["signature"], self.meta()["consistency"]["missing_signature"])
+        self.assertNotIn("suggested_sources", self.meta()["repair_readiness"])
+        self.assertEqual(kodi.notifications, [("MusicIP", self.NOTIFICATION, "info")])
+
+    def test_several_files_in_one_notification(self):
+        other_missing = "D:\\music\\#metal\\Saxon\\Wheels of Steel (1980)\\02 Wheels of Steel.mp3"
+        other_moved = "D:\\music\\#soul_disco\\Saxon\\Wheels of Steel (1980)\\02 Wheels of Steel.mp3"
+        kodi.add_media(other_moved)
+        self.save_mix([PRESENT, other_missing], size=3)  # another mix (seed and size name the mix file)
+        service.run_consistency_check()
+        self.assertEqual(len(kodi.notifications), 1)
+        self.assertTrue(kodi.notification_messages()[0].startswith("2 missing files found outside of the music sources, e.g. D:\\music\\#soul_disco\\"))
 
     def test_search_is_not_repeated_while_current(self):
         service.run_consistency_check()
@@ -251,15 +236,19 @@ class ServiceSearchTest(SourcesTestCase):
         self.assertEqual(kodi.listed, [])
         self.assertEqual(kodi.notifications, [])
 
-    def test_search_is_repeated_after_a_day(self):
+    def test_search_is_repeated_after_a_day_without_repeating_the_notification(self):
         service.run_consistency_check()
         kodi.listed.clear()
         self.clock.advance(main.MISSING_FILE_SEARCH_MAX_AGE_SECONDS + 1)
         service.run_consistency_check()
         self.assertNotEqual(kodi.listed, [])
-        self.assertEqual(kodi.notification_messages(), [
-            f"Missing tracks were found in {SUGGESTED}, which is not a Kodi music source. Add it to repair the mix.",
-        ])  # not repeated: the folder was already suggested
+        self.assertEqual(kodi.notification_messages(), [self.NOTIFICATION])
+
+    def test_nothing_found_means_no_notification(self):
+        kodi.remove_media(MOVED)
+        service.run_consistency_check()
+        self.assertEqual(kodi.notifications, [])
+        self.assertEqual(self.meta()["missing_file_search"]["found_outside_sources"], {})
 
     def test_search_waits_while_discovery_mode_is_active(self):
         service.save_discovery_state({"enabled": True})
@@ -270,8 +259,7 @@ class ServiceSearchTest(SourcesTestCase):
     def test_search_is_logged_with_extended_service_logging(self):
         kodi.settings["service_extended_logging"] = "true"
         service.run_consistency_check()
-        self.assertIn("for 1 missing file(s); found 1 outside the music sources; "
-                      f"suggested sources: [{SUGGESTED!r}].", kodi.log_text())
+        self.assertIn(f"for 1 missing file(s); found 1 outside the music sources: [{MOVED!r}].", kodi.log_text())
 
 
 if __name__ == "__main__":
