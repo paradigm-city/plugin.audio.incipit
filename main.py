@@ -511,10 +511,6 @@ def discovery_state_path() -> str:
     return os.path.join(get_profile_dir(), "discovery_mode_state.json")
 
 
-def discovery_command_path() -> str:
-    return os.path.join(get_profile_dir(), "discovery_mode_command.json")
-
-
 DISCOVERY_BUFFER_SIZE = 10
 
 
@@ -4483,8 +4479,7 @@ def start_discovery_mode() -> None:
     state = start_discovery_playlist_direct(state)
 
     log(
-        f"Discovery mode: UI completed direct playlist start. "
-        f"state_path={discovery_state_path()}, command_path={discovery_command_path()}",
+        f"Discovery mode: UI completed direct playlist start. state_path={discovery_state_path()}",
         xbmc.LOGINFO,
     )
     notify("Discovery mode started.")

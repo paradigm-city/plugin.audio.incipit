@@ -384,10 +384,6 @@ def discovery_state_path() -> str:
     return os.path.join(get_profile_dir(), "discovery_mode_state.json")
 
 
-def discovery_command_path() -> str:
-    return os.path.join(get_profile_dir(), "discovery_mode_command.json")
-
-
 def get_discovery_excerpt_seconds() -> int:
     try:
         value = int(ADDON.getSetting("discovery_excerpt_seconds") or 20)
@@ -410,43 +406,6 @@ def load_discovery_state() -> dict:
 
 def save_discovery_state(state: dict) -> None:
     save_json_file(discovery_state_path(), state or {})
-
-
-def command_is_stale_for_state(command: dict, state: dict) -> bool:
-    try:
-        command_ts = int(command.get("ts") or 0)
-    except Exception:
-        command_ts = 0
-    try:
-        stopped_ts = int(state.get("stopped_ts") or 0)
-    except Exception:
-        stopped_ts = 0
-
-    if command_ts <= 0 or stopped_ts <= 0:
-        return False
-
-    return command_ts <= stopped_ts
-
-
-def read_discovery_command() -> dict:
-    path = discovery_command_path()
-    try:
-        exists = bool(xbmcvfs.exists(path))
-    except Exception:
-        exists = False
-
-    if exists:
-        log_discovery(f"command file found: {path}")
-
-    payload = load_json_file(path)
-    if payload:
-        log_discovery(f"command loaded: {payload!r}")
-        try:
-            deleted = xbmcvfs.delete(path)
-            log_discovery(f"command file delete requested. deleted={deleted!r}")
-        except Exception as exc:
-            log_discovery(f"command file delete failed: {exc}", xbmc.LOGWARNING)
-    return payload
 
 
 def discovery_song_label(song: dict) -> str:
@@ -784,69 +743,6 @@ def correct_current_playlist_offset_if_needed(state: dict) -> dict:
             log_info(f"Discovery mode: playlist offset correction failed: {exc}")
 
     return state
-
-
-def start_discovery_playlist(state: dict, song_cache: list[dict]) -> tuple[dict, list[dict]]:
-    log_discovery(
-        f"starting playlist buffer. state_path={discovery_state_path()}, "
-        f"command_path={discovery_command_path()}"
-    )
-
-    mark_discovery_internal_player_change(4.0)
-    playlist = get_music_playlist()
-    try:
-        playlist.clear()
-        log_discovery("cleared Kodi music playlist for Discovery mode.")
-    except Exception as exc:
-        log_discovery(f"could not clear Kodi music playlist: {exc}", xbmc.LOGWARNING)
-
-    state["queue"] = []
-    state["current_playlist_position"] = -1
-    state["stopped_ts"] = 0
-    state["last_error"] = ""
-    state, song_cache = ensure_discovery_queue(state, song_cache)
-
-    queue_len = len(state.get("queue") or [])
-    try:
-        playlist_size = playlist.size()
-    except Exception:
-        playlist_size = -1
-
-    log_discovery(f"playlist buffer prepared. queue_len={queue_len}, kodi_playlist_size={playlist_size}")
-
-    if not state.get("queue"):
-        state["enabled"] = False
-        state["last_error"] = "No songs found in Kodi music library or playlist buffer could not be filled."
-        save_discovery_state(state)
-        log_discovery(state["last_error"], xbmc.LOGERROR)
-        return state, song_cache
-
-    try:
-        xbmc.Player().play(playlist)
-        log_discovery("called xbmc.Player().play(playlist).")
-    except Exception as exc:
-        state["enabled"] = False
-        state["last_error"] = f"Could not start Discovery playlist: {exc}"
-        save_discovery_state(state)
-        log_discovery(state["last_error"], xbmc.LOGERROR)
-        return state, song_cache
-
-    for _i in range(20):
-        if xbmc.Player().isPlayingAudio():
-            log_discovery("Kodi reports audio playback active after starting Discovery playlist.")
-            break
-        xbmc.sleep(100)
-    else:
-        log_discovery("Kodi did not report active audio playback within 2 seconds.", xbmc.LOGWARNING)
-
-    state = update_discovery_current_from_playlist(state)
-    state = correct_current_playlist_offset_if_needed(state)
-    save_discovery_state(state)
-    log_discovery(
-        f"start complete. current_song={state.get('current_song')!r}, "
-        f"current_label={state.get('current_label')!r}, position={state.get('current_playlist_position')}"
-    )
-    return state, song_cache
 
 
 def advance_discovery_playlist(state: dict, song_cache: list[dict], reason: str) -> tuple[dict, list[dict]]:
@@ -1190,64 +1086,7 @@ def stop_discovery_due_to_external_playback(state: dict) -> dict:
 
 
 def run_discovery_tick(song_cache: list[dict]) -> list[dict]:
-    command = read_discovery_command()
     state = load_discovery_state()
-
-    if command:
-        name = str(command.get("command") or "").strip().lower()
-        log_discovery(
-            f"processing command={name!r}, command_ts={command.get('ts')}, "
-            f"state_enabled={state.get('enabled')}, stopped_ts={state.get('stopped_ts')}"
-        )
-        if name == "start" and (command_is_stale_for_state(command, state) or state.get("enabled") or state.get("startup_in_progress")):
-            log_info("Discovery mode: ignored stale or redundant start command.")
-            return song_cache
-
-        if name == "start":
-            state["enabled"] = True
-            state["excerpt_seconds"] = int(command.get("excerpt_seconds") or get_discovery_excerpt_seconds())
-            state["offset_percent"] = int(command.get("offset_percent") or get_discovery_offset_percent())
-            state["current_started_ts"] = 0
-            state["stopped_ts"] = 0
-            state["current_song"] = ""
-            state["current_label"] = ""
-            state["current_playlist_position"] = -1
-            state["stop_reason"] = ""
-            state["resume_allowed"] = True
-            state["next_requested"] = False
-            state["next_reason"] = ""
-            state["pending_player_stop"] = False
-            state["pending_player_stop_reason"] = ""
-            state["queue"] = []
-            save_discovery_state(state)
-            log_discovery("start command accepted.")
-            existing_queue = state.get("queue") if isinstance(state.get("queue"), list) else []
-            try:
-                already_playing = bool(xbmc.Player().isPlayingAudio())
-            except Exception:
-                already_playing = False
-
-            if existing_queue and already_playing:
-                log_discovery(
-                    f"direct-started playlist already active; adopting existing queue_len={len(existing_queue)}."
-                )
-                return song_cache
-
-            log_discovery("starting playlist buffer from service.")
-            state, song_cache = start_discovery_playlist(state, song_cache)
-            return song_cache
-
-        if name == "stop":
-            if not state.get("stop_reason"):
-                state["stop_reason"] = "manual_stop"
-            state["resume_allowed"] = False
-            stop_discovery_playback(state)
-            return song_cache
-
-        if name == "next":
-            if state.get("enabled"):
-                state, song_cache = advance_discovery_playlist(state, song_cache, "manual_next")
-            return song_cache
 
     if state.get("startup_in_progress"):
         log_info("Discovery mode: startup in progress; service maintenance skipped.")
@@ -1513,14 +1352,6 @@ def reset_discovery_mode_on_startup() -> None:
 
     save_discovery_state(state)
 
-    command_path = discovery_command_path()
-    try:
-        if xbmcvfs.exists(command_path):
-            deleted = xbmcvfs.delete(command_path)
-            log_discovery(f"startup reset removed stale command file. deleted={deleted!r}")
-    except Exception as exc:
-        log_discovery(f"startup reset could not remove stale command file: {exc}", xbmc.LOGWARNING)
-
     try:
         get_music_playlist().clear()
         log_discovery("startup reset cleared Kodi music playlist.")
@@ -1528,7 +1359,7 @@ def reset_discovery_mode_on_startup() -> None:
         log_discovery(f"startup reset could not clear Kodi music playlist: {exc}", xbmc.LOGWARNING)
 
     log_discovery(
-        f"startup reset completed. state_path={discovery_state_path()}, command_path={command_path}"
+        f"startup reset completed. state_path={discovery_state_path()}"
     )
 
 
@@ -2255,7 +2086,6 @@ def main() -> None:
         f"version={ADDON.getAddonInfo('version')}, "
         f"profile={get_profile_dir()}, "
         f"discovery_state={discovery_state_path()}, "
-        f"discovery_command={discovery_command_path()}, "
         f"consistency_enabled={is_consistency_service_enabled()}, "
         f"interval={get_check_interval_seconds()} seconds.",
         xbmc.LOGINFO,
