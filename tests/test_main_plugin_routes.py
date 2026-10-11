@@ -25,7 +25,7 @@ def item_by_label(label):
 class RootAndSettingsTest(KodiTestCase):
     def test_root_menu(self):
         self.run_plugin()
-        self.assertEqual(self.listed_labels(), ["Generate mix from playing audio", "Discovery mode", "Recent mixes", "Settings"])
+        self.assertEqual(self.listed_labels(), ["Generate mix from playing audio", "Discovery mode", "Radio mode", "Recent mixes", "Settings"])
         self.assertEqual(plugin_query(item_by_label("Recent mixes")[0])["action"], "saved_mixes")
         self.assertEqual(kodi.ended, [{"succeeded": True, "updateListing": False, "cacheToDisc": False}])
 
@@ -428,7 +428,7 @@ class FolderEntriesTest(MusicIPServerTestCase):
 
     def test_menus_offer_these_folders(self):
         self.assertEqual(sorted(self.folder_actions()), sorted([
-            "generate_current_mix", "discovery_mode", "saved_mixes",
+            "generate_current_mix", "discovery_mode", "radio_mode", "saved_mixes",
             "discovery_start", "discovery_mix_current", "discovery_next", "discovery_stop",
         ]))
 

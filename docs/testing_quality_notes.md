@@ -29,6 +29,7 @@ GitHub Actions runs them on every push and pull request (`.github/workflows/test
 | `test_main_discovery.py` | Discovery mode from the plugin: start, stop, next, mix from the current song |
 | `test_repair_matching.py` | repair hints, candidate scoring, candidate selection, foreground and automatic repair |
 | `test_repair_sources.py` | music sources and repair: unavailable sources, virtual library roots, disk search for moved files, notifications, and scanning never-scanned sources before repair |
+| `test_radio_mode.py` | Radio mode: menu, tuning, starting the station without a dialog, top-ups from the last queued song, backlog, stopping on Stop or other playback, service integration |
 | `test_service_discovery.py` | Discovery mode in the service: commands, playlist buffer, auto-skip, player events, main loop |
 | `test_service_metadata.py` | background consistency check and automatic repair, background metadata refresh, delayed view refresh, service repair readiness |
 | `test_shared_helpers.py` | helpers duplicated in `main.py` and `service.py` behave the same |
