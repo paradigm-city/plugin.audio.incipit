@@ -14,6 +14,10 @@ While tuning, the Radio screen offers:
 - **Next station**: jump to the next snippet
 - **Stop radio**
 
+## Starting from any song
+
+**Start MusicIP radio** in the context menu of a library song (next to **Create MusicIP mix**) starts a station with that song as seed, without tuning. It replaces any Discovery or radio playback, and the library view stays where it is. The Radio mode screen then offers **Change station** and **Stop radio** as usual.
+
 ## Playing
 
 **Start radio** asks MusicIP for a mix seeded with the current snippet's song, using the configured **Mix parameters** settings, without a dialog. The playlist is replaced by that mix and the songs play in full, starting with the seed song. Labels carry no track numbers.
@@ -34,7 +38,7 @@ The Radio screen then offers:
 - **Stop radio** stops playback and clears the playlist.
 - The player's **Stop** stops the radio. The service waits 3 seconds before deciding, so the short gap between songs does not count.
 - **Pause** pauses as usual; the radio stays on.
-- Starting other playback (another album, a mix, Discovery mode) stops the radio without touching the new playback.
+- Starting other playback (another album, a mix, Discovery mode) stops the radio without touching the new playback. The service allows 3 seconds after a station starts before checking, while the new station replaces the old one's playback.
 - If tuning stops (player stop, other playback), the radio switches off too. The service allows 3 seconds after tuning starts before checking, while the plugin starts the snippets.
 - A Kodi restart switches the radio off.
 

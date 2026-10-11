@@ -1233,7 +1233,9 @@ def run_radio_tick() -> None:
     state["queue"] = queue
     current_file = get_current_playing_file_for_discovery()
     queued = {normalize_discovery_playback_path(str(entry["file"])) for entry in queue}
-    if current_file and normalize_discovery_playback_path(current_file) not in queued:
+    just_started = now - int(state.get("playing_started_ts") or 0) < RADIO_STOP_GRACE_SECONDS
+    if current_file and normalize_discovery_playback_path(current_file) not in queued and not just_started:
+        # A new station may still be replacing the old one's playback during the grace period.
         end_radio(state, "external_playback")
         return
 

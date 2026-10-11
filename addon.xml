@@ -19,6 +19,10 @@
         <label>Create MusicIP mix</label>
         <visible>String.IsEqual(ListItem.DBTYPE,song)</visible>
       </item>
+      <item library="context_radio.py">
+        <label>Start MusicIP radio</label>
+        <visible>String.IsEqual(ListItem.DBTYPE,song)</visible>
+      </item>
     </menu>
   </extension>
 

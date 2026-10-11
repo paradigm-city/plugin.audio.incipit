@@ -4660,38 +4660,56 @@ def start_radio() -> None:
 
     # Keep the current snippet playing while MusicIP builds the station.
     set_discovery_mix_dialog_hold(seed)
+    if not start_radio_station(seed):
+        clear_discovery_mix_dialog_hold()
+    replace_with_radio_mode_menu()
+
+
+def start_radio_from_song(seed: str) -> None:
+    """Start a station from any song (library context menu), without tuning. Replaces Discovery or radio playback."""
+    seed = str(seed or "").strip()
+    if not seed:
+        notify("No song was supplied to start the radio from.", xbmcgui.NOTIFICATION_ERROR)
+        return
+    start_radio_station(seed)
+
+
+def start_radio_station(seed: str) -> bool:
+    """Play an endless MusicIP mix seeded with seed, using the configured mix parameters. False on failure."""
     try:
         tracks = fetch_mix(seed, get_playlist_size(), get_effective_mix_parameters())
     except Exception as exc:
         notify(f"Radio could not start: {exc}", xbmcgui.NOTIFICATION_ERROR)
         log(f"Radio mode: start failed for seed {seed!r}: {exc}", xbmc.LOGERROR)
-        clear_discovery_mix_dialog_hold()
-        replace_with_radio_mode_menu()
-        return
+        return False
 
     discovery = get_discovery_state()
-    discovery.update({
-        "enabled": False,
-        "stopped_ts": int(time.time()),
-        "stop_reason": "radio_started",
-        "resume_allowed": False,
-        "startup_in_progress": False,
-        "mix_dialog_active": False,
-        "mix_dialog_seed": "",
-        "mix_dialog_started_ts": 0,
-        "mix_dialog_excerpt_seconds": 0,
-    })
-    save_discovery_state(discovery)
+    if discovery.get("enabled") or discovery.get("mix_dialog_active"):
+        # The station replaces Discovery's snippets (the radio's tuning or a separate Discovery session).
+        discovery.update({
+            "enabled": False,
+            "stopped_ts": int(time.time()),
+            "stop_reason": "radio_started",
+            "resume_allowed": False,
+            "startup_in_progress": False,
+            "mix_dialog_active": False,
+            "mix_dialog_seed": "",
+            "mix_dialog_started_ts": 0,
+            "mix_dialog_excerpt_seconds": 0,
+        })
+        save_discovery_state(discovery)
 
     metadata_list = collect_mix_track_metadata(tracks, allow_live_lookup=False, include_player_metadata=False)
     now = int(time.time())
+    previous = get_radio_state()
+    started_ts = int(previous.get("started_ts") or 0) if radio_phase() != "off" else 0
     queue = [
         {"file": track, "label": format_mix_track_label(track, metadata, 0)}
         for track, metadata in zip(tracks, metadata_list)
     ]
     save_radio_state({
         "phase": "playing",
-        "started_ts": now,
+        "started_ts": started_ts or now,
         "playing_started_ts": now,
         "seed": seed,
         "seeds": [seed],
@@ -4701,6 +4719,7 @@ def start_radio() -> None:
         "current_song": tracks[0],
         "current_label": queue[0]["label"],
         "stop_reason": "",
+        "ui_refresh_requested": True,
     })
 
     try:
@@ -4710,12 +4729,11 @@ def start_radio() -> None:
         save_radio_state({"phase": "off", "stopped_ts": int(time.time()), "stop_reason": "playback_failed"})
         notify(f"Radio could not start: {exc}", xbmcgui.NOTIFICATION_ERROR)
         log(f"Radio mode: playback failed: {exc}", xbmc.LOGERROR)
-        replace_with_radio_mode_menu()
-        return
+        return False
 
     log(f"Radio mode: started from {seed!r} with {len(tracks)} song(s).", xbmc.LOGINFO)
     notify("Radio started.")
-    replace_with_radio_mode_menu()
+    return True
 
 
 def stop_radio() -> None:
@@ -5544,6 +5562,11 @@ def router() -> None:
 
     if action == "radio_retune":
         change_radio_station()
+        return
+
+    if action == "radio_start_seed":
+        # From the library context menu (context_radio.py), run as an action: the current view stays.
+        start_radio_from_song(params.get("seed", ""))
         return
 
     if action == "radio_stop":
