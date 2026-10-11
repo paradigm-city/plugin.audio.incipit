@@ -2,12 +2,13 @@
 
 import glob
 import os
+import sys
 import unittest
 from unittest import mock
 
 import fake_kodi
 from fake_kodi import kodi
-from support import MusicIPServerTestCase, main, plugin_query, service
+from support import MusicIPServerTestCase, context_radio, main, plugin_query, service
 
 SONGS = [f"D:\\music\\Artist {n}\\Album\\{n:02d} Song {n}.mp3" for n in range(1, 41)]
 
@@ -163,6 +164,87 @@ class StartRadioTest(RadioTestCase):
         self.assertEqual(self.radio().get("phase", "off"), "off")
 
 
+class StartFromAnySongTest(RadioTestCase):
+    """"Start MusicIP radio" from the library context menu: plugin action radio_start_seed."""
+
+    def start_from(self, seed):
+        self.run_plugin(action="radio_start_seed", seed=seed)
+        return self.radio()
+
+    def test_starts_a_station_without_tuning(self):
+        kodi.settings["playlist_size"] = "10"
+        radio = self.start_from(SONGS[5])
+        self.assertEqual(radio["phase"], "playing")
+        self.assertEqual(radio["seeds"], [SONGS[5]])
+        self.assertEqual(kodi.playlist_files()[0], SONGS[5])
+        self.assertEqual((kodi.player.position, kodi.player.file), (0, SONGS[5]))
+        self.assertEqual(self.musicip.mix_requests()[0]["size"], "10")
+        self.assertEqual(kodi.dialog_calls, [])
+        self.assertNotified("Radio started.")
+        self.assertFalse(main.get_discovery_state().get("enabled"))
+
+    def test_the_current_view_stays(self):
+        self.start_from(SONGS[5])
+        self.assertFalse([command for command in kodi.builtins if command.startswith("Container.Update(")])
+        self.assertTrue(self.radio()["ui_refresh_requested"])  # an open Radio screen is refreshed
+
+    def test_replaces_a_discovery_session(self):
+        self.run_plugin(action="discovery_start")
+        radio = self.start_from(SONGS[5])
+        discovery = main.get_discovery_state()
+        self.assertEqual((discovery["enabled"], discovery["stop_reason"]), (False, "radio_started"))
+        self.assertEqual(kodi.playlist_files()[0], SONGS[5])
+        self.assertEqual(radio["phase"], "playing")
+
+    def test_replaces_the_radio_while_tuning(self):
+        self.turn_on()
+        self.start_from(SONGS[5])
+        self.assertEqual(self.radio()["phase"], "playing")
+        self.assertEqual(main.get_discovery_state()["stop_reason"], "radio_started")
+
+    def test_replaces_a_playing_station(self):
+        first_seed = self.start()
+        started_ts = self.radio()["started_ts"]
+        self.clock.advance(60)
+        new_seed = SONGS[(SONGS.index(first_seed) + 20) % len(SONGS)]
+        radio = self.start_from(new_seed)
+        self.assertEqual(radio["seeds"], [new_seed])
+        self.assertEqual(radio["started_ts"], started_ts)
+        self.assertEqual(kodi.playlist_files()[0], new_seed)
+        self.assertEqual(self.tick()["phase"], "playing")
+
+    def test_new_station_is_not_mistaken_for_other_playback(self):
+        self.start()
+        # The service may look before Kodi has switched to the new station's first song.
+        main.save_radio_state(dict(self.radio(), queue=[{"file": SONGS[30], "label": "x"}], playing_started_ts=int(self.clock.now)))
+        self.assertEqual(self.tick()["phase"], "playing")
+        self.assertEqual(self.tick(service.RADIO_STOP_GRACE_SECONDS)["stop_reason"], "external_playback")
+
+    def test_from_the_context_menu_entry(self):
+        with mock.patch.object(sys, "listitem", self.selected(SONGS[7]), create=True):
+            context_radio.main()
+        self.run_plugin(**plugin_query(kodi.builtins[-1]))
+        self.assertEqual(self.radio()["seeds"], [SONGS[7]])
+        self.assertEqual(kodi.player.file, SONGS[7])
+
+    def selected(self, url):
+        item = fake_kodi.ListItem("song")
+        item.getMusicInfoTag().setURL(url)
+        return item
+
+    def test_server_error_changes_nothing(self):
+        self.musicip.mix_status = 500
+        self.start_from(SONGS[5])
+        self.assertEqual(self.radio().get("phase", "off"), "off")
+        self.assertEqual(kodi.playlist, [])
+        self.assertNotified("Radio could not start: MusicIP server returned HTTP 500.")
+
+    def test_no_seed(self):
+        self.run_plugin(action="radio_start_seed")
+        self.assertNotified("No song was supplied to start the radio from.")
+        self.assertEqual(self.musicip.mix_requests(), [])
+
+
 class ChangeStationTest(RadioTestCase):
     def test_change_station_goes_back_to_tuning(self):
         seed = self.start()
@@ -249,6 +331,7 @@ class StopRadioTest(RadioTestCase):
 
     def test_other_playback_stops_the_radio_but_keeps_playing(self):
         self.start()
+        self.tick(service.RADIO_STOP_GRACE_SECONDS)
         kodi.play_file("D:\\music\\Elsewhere\\song.mp3")
         radio = self.tick()
         self.assertEqual((radio["phase"], radio["stop_reason"]), ("off", "external_playback"))

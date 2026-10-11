@@ -9,7 +9,7 @@ import xml.etree.ElementTree as ET
 from fake_kodi import ADDON_DIR, ADDON_ID
 from support import main, service
 
-SOURCES = ("main.py", "service.py", "context_mix.py")
+SOURCES = ("main.py", "service.py", "context_mix.py", "context_radio.py")
 
 
 def read(name):

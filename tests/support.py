@@ -36,6 +36,7 @@ def load_addon_module(name):
 main = load_addon_module("main")
 service = load_addon_module("service")
 context_mix = load_addon_module("context_mix")
+context_radio = load_addon_module("context_radio")
 
 
 def plugin_query(text):

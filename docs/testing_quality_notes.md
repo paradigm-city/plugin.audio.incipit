@@ -34,6 +34,7 @@ GitHub Actions runs them on every push and pull request (`.github/workflows/test
 | `test_service_metadata.py` | background consistency check and automatic repair, background metadata refresh, delayed view refresh, service repair readiness |
 | `test_shared_helpers.py` | helpers duplicated in `main.py` and `service.py` behave the same |
 | `test_context_mix.py` | the "Create MusicIP mix" library context menu entry |
+| `test_context_radio.py` | the "Start MusicIP radio" library context menu entry |
 | `test_findings.py` | `docs/findings.md` lists exactly the known-issue tests that still fail |
 
 ### Known issues
