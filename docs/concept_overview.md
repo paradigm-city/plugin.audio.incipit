@@ -5,7 +5,7 @@ Base code: 1.0.87
 
 ## Purpose
 
-The add-on integrates a local MusicIP server with Kodi. It can create MusicIP mixes from the currently playing song, from a selected Kodi library song, or from a song discovered through Discovery mode.
+The add-on integrates a local MusicIP server with Kodi. It can create MusicIP mixes from the currently playing song, from a selected Kodi library song, or from a song discovered through Discovery mode. Radio mode plays an endless mix from a song found by tuning through random snippets.
 
 The core idea is simple: use Kodi for library browsing and playback, use MusicIP for similarity-based mix generation, and keep saved mixes stable and repairable when files are moved or renamed.
 
@@ -17,8 +17,9 @@ The core idea is simple: use Kodi for library browsing and playback, use MusicIP
 4. Mix consistency checking
 5. Automatic mix repair
 6. Discovery mode
-7. External playback takeover detection
-8. Information dialogs and sidecar metadata
+7. Radio mode (tune through snippets, then an endless mix)
+8. External playback takeover detection
+9. Information dialogs and sidecar metadata
 
 ## Important current baseline
 

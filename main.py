@@ -1005,6 +1005,7 @@ def collect_mix_track_metadata(
     tracks: list[str],
     sidecar_map: dict[str, dict] | None = None,
     allow_live_lookup: bool = True,
+    include_player_metadata: bool = True,
 ) -> list[dict]:
     sidecar_map = sidecar_map if isinstance(sidecar_map, dict) else {}
     metadata_list: list[dict] = []
@@ -1017,6 +1018,7 @@ def collect_mix_track_metadata(
                 track,
                 sidecar_snapshot=sidecar_snapshot,
                 allow_live_lookup=allow_live_lookup,
+                include_player_metadata=include_player_metadata,
             )
         )
 
@@ -3897,6 +3899,7 @@ def get_track_metadata(
     path: str,
     sidecar_snapshot: dict | None = None,
     allow_live_lookup: bool = True,
+    include_player_metadata: bool = True,
 ) -> dict[str, object]:
     metadata = build_empty_track_metadata(path)
 
@@ -3919,7 +3922,9 @@ def get_track_metadata(
                 write_track_metadata_cache(path, snapshot)
                 metadata.update(snapshot)
 
-    current_data = get_current_player_metadata(path)
+    # A Discovery snippet's player tag carries "Artist - Title" as its title, so callers building
+    # labels while a snippet plays can leave the player out.
+    current_data = get_current_player_metadata(path) if include_player_metadata else {}
     for key, value in current_data.items():
         if value:
             metadata[key] = value
@@ -4381,6 +4386,15 @@ def show_root() -> None:
         isFolder=True,
     )
 
+    radio_item = xbmcgui.ListItem(label="Radio mode", offscreen=True)
+    apply_music_metadata(radio_item, "Radio mode")
+    xbmcplugin.addDirectoryItem(
+        HANDLE,
+        addon_url(action="radio_mode"),
+        radio_item,
+        isFolder=True,
+    )
+
     recent_item = xbmcgui.ListItem(label="Recent mixes", offscreen=True)
     apply_music_metadata(recent_item, "Recent mixes")
     xbmcplugin.addDirectoryItem(
@@ -4457,8 +4471,16 @@ def show_discovery_mode_menu() -> None:
 
 
 def start_discovery_mode() -> None:
+    begin_discovery_playback()
+    notify("Discovery mode started.")
+    replace_with_discovery_mode_menu()
+
+
+def begin_discovery_playback(owner: str = "") -> dict:
+    """Start Discovery snippet playback. owner "radio" marks the radio's tuning phase."""
     state = get_discovery_state()
     state.update({
+        "owner": owner,
         "enabled": False,
         "startup_in_progress": True,
         "started_ts": int(time.time()),
@@ -4482,14 +4504,19 @@ def start_discovery_mode() -> None:
         f"Discovery mode: UI completed direct playlist start. state_path={discovery_state_path()}",
         xbmc.LOGINFO,
     )
-    notify("Discovery mode started.")
-    replace_with_discovery_mode_menu()
+    return state
 
 def stop_discovery_mode() -> None:
+    end_discovery_playback()
+    notify("Discovery mode stopped.")
+    replace_with_discovery_mode_menu()
+
+
+def end_discovery_playback(reason: str = "manual_stop") -> None:
     state = get_discovery_state()
     state["enabled"] = False
     state["stopped_ts"] = int(time.time())
-    state["stop_reason"] = "manual_stop"
+    state["stop_reason"] = reason
     state["resume_allowed"] = False
     state["startup_in_progress"] = False
     state["next_requested"] = False
@@ -4505,8 +4532,196 @@ def stop_discovery_mode() -> None:
     except Exception:
         pass
 
-    notify("Discovery mode stopped.")
-    replace_with_discovery_mode_menu()
+# --- Radio mode ------------------------------------------------------------------------------
+# Like a vintage radio set: tune through random snippets (Discovery playback), then "Start radio"
+# locks onto the current song. The station is an endless MusicIP mix with the configured mix
+# parameters; the service plays it, tops it up from the last queued song and stops it on the
+# player's Stop.
+
+
+def radio_state_path() -> str:
+    return os.path.join(get_profile_dir(), "radio_mode_state.json")
+
+
+def get_radio_state() -> dict:
+    return load_json_file(radio_state_path())
+
+
+def save_radio_state(state: dict) -> None:
+    save_json_file(radio_state_path(), state or {})
+
+
+def radio_mode_url() -> str:
+    return addon_url(action="radio_mode", nonce=new_nonce())
+
+
+def replace_with_radio_mode_menu() -> None:
+    try:
+        xbmc.executebuiltin(f"Container.Update({radio_mode_url()},replace)")
+    except Exception as exc:
+        log(f"Radio mode: could not show the Radio screen: {exc}", xbmc.LOGWARNING)
+
+
+def radio_phase() -> str:
+    phase = str(get_radio_state().get("phase") or "off")
+    return phase if phase in ("seeking", "playing") else "off"
+
+
+def add_radio_action_item(label: str, action: str) -> None:
+    # Actions, not folders: Kodi runs them without expecting a directory listing.
+    item = xbmcgui.ListItem(label=label, offscreen=True)
+    apply_music_metadata(item, label)
+    item.setProperty("IsPlayable", "false")
+    xbmcplugin.addDirectoryItem(HANDLE, addon_url(action=action, nonce=new_nonce()), item, isFolder=False)
+
+
+def show_radio_mode_menu() -> None:
+    state = get_radio_state()
+    phase = radio_phase()
+
+    if phase == "seeking":
+        current = str(get_discovery_state().get("current_label") or "").strip()
+        title = f"Radio: tuning - {current}" if current else "Radio: tuning"
+    elif phase == "playing":
+        current = str(state.get("current_label") or "").strip()
+        title = f"Radio: {current}" if current else "Radio: playing"
+    else:
+        title = "MusicIP radio"
+
+    xbmcplugin.setPluginCategory(HANDLE, title)
+    xbmcplugin.setContent(HANDLE, "files")
+
+    if phase == "seeking":
+        add_radio_action_item("Start radio", "radio_play")
+        add_radio_action_item("Next station", "radio_tune")
+        add_radio_action_item("Stop radio", "radio_stop")
+    elif phase == "playing":
+        add_radio_action_item("Stop radio", "radio_stop")
+    else:
+        add_radio_action_item("Turn on radio", "radio_on")
+
+    xbmcplugin.endOfDirectory(HANDLE, cacheToDisc=False)
+
+
+def turn_radio_on() -> None:
+    """Start tuning: random snippets, as in Discovery mode."""
+    save_radio_state({"phase": "seeking", "started_ts": int(time.time()), "stop_reason": ""})
+    discovery = begin_discovery_playback(owner="radio")
+    if not discovery.get("enabled"):
+        save_radio_state({"phase": "off", "stopped_ts": int(time.time()), "stop_reason": "tuning_failed"})
+        replace_with_radio_mode_menu()
+        return
+    notify("Radio on. Tuning in.")
+    replace_with_radio_mode_menu()
+
+
+def tune_radio() -> None:
+    if radio_phase() != "seeking":
+        replace_with_radio_mode_menu()
+        return
+    if skip_discovery_song() is None:
+        notify("No next station buffered yet.", xbmcgui.NOTIFICATION_WARNING)
+    replace_with_radio_mode_menu()
+
+
+def start_radio() -> None:
+    """Lock onto the current snippet: an endless MusicIP mix with the configured mix parameters, no dialog."""
+    if radio_phase() != "seeking":
+        replace_with_radio_mode_menu()
+        return
+
+    seed = str(get_discovery_state().get("current_song") or "").strip()
+    if not seed:
+        try:
+            seed = get_current_seed_song()
+        except Exception:
+            seed = ""
+    if not seed:
+        notify("No song is playing to start the radio from.", xbmcgui.NOTIFICATION_WARNING)
+        replace_with_radio_mode_menu()
+        return
+
+    # Keep the current snippet playing while MusicIP builds the station.
+    set_discovery_mix_dialog_hold(seed)
+    try:
+        tracks = fetch_mix(seed, get_playlist_size(), get_effective_mix_parameters())
+    except Exception as exc:
+        notify(f"Radio could not start: {exc}", xbmcgui.NOTIFICATION_ERROR)
+        log(f"Radio mode: start failed for seed {seed!r}: {exc}", xbmc.LOGERROR)
+        clear_discovery_mix_dialog_hold()
+        replace_with_radio_mode_menu()
+        return
+
+    discovery = get_discovery_state()
+    discovery.update({
+        "enabled": False,
+        "stopped_ts": int(time.time()),
+        "stop_reason": "radio_started",
+        "resume_allowed": False,
+        "startup_in_progress": False,
+        "mix_dialog_active": False,
+        "mix_dialog_seed": "",
+        "mix_dialog_started_ts": 0,
+        "mix_dialog_excerpt_seconds": 0,
+    })
+    save_discovery_state(discovery)
+
+    metadata_list = collect_mix_track_metadata(tracks, allow_live_lookup=False, include_player_metadata=False)
+    now = int(time.time())
+    queue = [
+        {"file": track, "label": format_mix_track_label(track, metadata, 0)}
+        for track, metadata in zip(tracks, metadata_list)
+    ]
+    save_radio_state({
+        "phase": "playing",
+        "started_ts": now,
+        "playing_started_ts": now,
+        "seed": seed,
+        "seeds": [seed],
+        "queue": queue,
+        "seen": [normalize_track_identity(track) for track in tracks],
+        "current_position": 0,
+        "current_song": tracks[0],
+        "current_label": queue[0]["label"],
+        "stop_reason": "",
+    })
+
+    try:
+        play_tracks_as_music_playlist(tracks, metadata_list, numbered=False)
+        enqueue_metadata_refresh_for_tracks(tracks, metadata_list=metadata_list, reason_context="radio")
+    except Exception as exc:
+        save_radio_state({"phase": "off", "stopped_ts": int(time.time()), "stop_reason": "playback_failed"})
+        notify(f"Radio could not start: {exc}", xbmcgui.NOTIFICATION_ERROR)
+        log(f"Radio mode: playback failed: {exc}", xbmc.LOGERROR)
+        replace_with_radio_mode_menu()
+        return
+
+    log(f"Radio mode: started from {seed!r} with {len(tracks)} song(s).", xbmc.LOGINFO)
+    notify("Radio started.")
+    replace_with_radio_mode_menu()
+
+
+def stop_radio() -> None:
+    phase = radio_phase()
+    if phase == "seeking":
+        end_discovery_playback(reason="radio_stopped")
+    elif phase == "playing":
+        try:
+            xbmc.Player().stop()
+        except Exception:
+            pass
+        try:
+            get_music_playlist().clear()
+        except Exception:
+            pass
+
+    state = get_radio_state()
+    state.update({"phase": "off", "stopped_ts": int(time.time()), "stop_reason": "manual_stop"})
+    save_radio_state(state)
+    if phase != "off":
+        notify("Radio stopped.")
+    replace_with_radio_mode_menu()
+
 
 def get_current_music_playlist_position(default: int = -1) -> int:
     try:
@@ -4659,6 +4874,16 @@ def update_discovery_state_for_playlist_position(state: dict, position: int) -> 
 
 
 def discovery_next_track() -> None:
+    if skip_discovery_song() is None:
+        notify("No buffered next discovery song available yet.", xbmcgui.NOTIFICATION_WARNING)
+        replace_with_discovery_mode_menu()
+        return
+    notify("Discovery mode: skipping to next song.")
+    replace_with_discovery_mode_menu()
+
+
+def skip_discovery_song() -> bool | None:
+    """Jump to the next buffered snippet. None if no next snippet is buffered yet."""
     try:
         state = get_discovery_state()
         raw_pos = state.get("current_playlist_position")
@@ -4667,19 +4892,15 @@ def discovery_next_track() -> None:
 
         queue = state.get("queue")
         if isinstance(queue, list) and target_pos >= len(queue):
-            notify("No buffered next discovery song available yet.", xbmcgui.NOTIFICATION_WARNING)
-            replace_with_discovery_mode_menu()
-            return
+            return None
 
         execute_jsonrpc("Player.GoTo", {"playerid": 0, "to": target_pos})
         log(f"Discovery mode: UI requested direct Player.GoTo({target_pos}).", xbmc.LOGINFO)
         update_discovery_state_for_playlist_position(state, target_pos)
-
+        return True
     except Exception as exc:
         log(f"Discovery mode: UI direct next failed: {exc}", xbmc.LOGWARNING)
-
-    notify("Discovery mode: skipping to next song.")
-    replace_with_discovery_mode_menu()
+        return False
 
 def discovery_mix_from_current() -> None:
     state = get_discovery_state()
@@ -5139,10 +5360,34 @@ def apply_saved_mix_info_metadata(list_item: xbmcgui.ListItem, cache_path: str) 
         pass
 
 
+def build_mix_playlist_item(track: str, metadata: dict, mix_position: int) -> xbmcgui.ListItem:
+    """A music playlist entry with the mix label and metadata. mix_position 0 leaves out the number."""
+    title = metadata.get("title") or path_to_label(track)
+    label = format_mix_track_label(track, metadata, mix_position)
+    list_item = xbmcgui.ListItem(label=label, offscreen=True)
+    list_item.setProperty("MusicIP.OriginalTitle", str(title or ""))
+    list_item.setProperty("MusicIP.DisplayTitle", str(label or ""))
+    try:
+        apply_music_metadata(
+            list_item,
+            label,
+            artist=metadata.get("artist", ""),
+            album=metadata.get("album", ""),
+            year=parse_year(metadata.get("year")),
+            duration=parse_duration_seconds(metadata.get("duration")),
+            genres=metadata.get("genre"),
+            track_number=mix_position,
+        )
+    except Exception:
+        apply_music_metadata(list_item, label, track_number=mix_position)
+    return list_item
+
+
 def play_tracks_as_music_playlist(
     tracks: list[str],
     track_metadata_list: list[dict] | None = None,
-) -> None:
+    numbered: bool = True,
+) -> list[xbmcgui.ListItem]:
     playable_tracks = [track for track in tracks if str(track or "").strip()]
     if not playable_tracks:
         raise MusicIPError("The generated mix contains no playable tracks.")
@@ -5158,31 +5403,15 @@ def play_tracks_as_music_playlist(
     playlist = xbmc.PlayList(xbmc.PLAYLIST_MUSIC)
     playlist.clear()
 
+    items: list[xbmcgui.ListItem] = []
     for index, track in enumerate(playable_tracks):
-        mix_position = index + 1
         metadata = track_metadata_list[index] if index < len(track_metadata_list) else get_track_metadata(track)
-        title = metadata.get("title") or path_to_label(track)
-        label = format_mix_track_label(track, metadata, mix_position)
-        list_item = xbmcgui.ListItem(label=label, offscreen=True)
-        list_item.setProperty("MusicIP.OriginalTitle", str(title or ""))
-        list_item.setProperty("MusicIP.DisplayTitle", str(label or ""))
-        try:
-            apply_music_metadata(
-                list_item,
-                label,
-                artist=metadata.get("artist", ""),
-                album=metadata.get("album", ""),
-                year=parse_year(metadata.get("year")),
-                duration=parse_duration_seconds(metadata.get("duration")),
-                genres=metadata.get("genre"),
-                track_number=mix_position,
-            )
-        except Exception:
-            apply_music_metadata(list_item, label, track_number=mix_position)
-
+        list_item = build_mix_playlist_item(track, metadata, index + 1 if numbered else 0)
         playlist.add(track, list_item)
+        items.append(list_item)
 
     xbmc.Player().play(playlist)
+    return items
 
 def play_track(path: str) -> None:
     metadata = get_track_metadata(path)
@@ -5278,6 +5507,26 @@ def router() -> None:
 
     if action == "discovery_mix_current":
         discovery_mix_from_current()
+        return
+
+    if action == "radio_mode":
+        show_radio_mode_menu()
+        return
+
+    if action == "radio_on":
+        turn_radio_on()
+        return
+
+    if action == "radio_tune":
+        tune_radio()
+        return
+
+    if action == "radio_play":
+        start_radio()
+        return
+
+    if action == "radio_stop":
+        stop_radio()
         return
 
     if action == "saved_mixes":

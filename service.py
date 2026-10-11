@@ -1154,6 +1154,202 @@ def load_plugin_module():
     return importlib.import_module("main")
 
 
+# --- Radio mode ------------------------------------------------------------------------------
+# The plugin turns the radio on (tuning = Discovery snippet playback) and starts it ("Start radio").
+# While it plays, the service follows the playlist, tops it up with new MusicIP mixes seeded from
+# the last queued song, prunes old songs, and stops the radio on the player's Stop or when other
+# playback takes over. Pause does not stop it.
+
+RADIO_REFILL_THRESHOLD = 3       # top up when fewer future songs remain
+RADIO_BACKLOG_SIZE = 10          # played songs kept in the playlist
+RADIO_REFILL_SEEDS = 3           # last queued songs tried as seed when a mix brings nothing new
+RADIO_REFILL_RETRY_SECONDS = 60  # wait after a failed or empty top-up
+RADIO_STOP_GRACE_SECONDS = 3     # playback must be stopped this long (gaps between songs are shorter)
+RADIO_MAX_SEEN = 5000            # songs remembered per session to avoid repeats
+
+
+def radio_state_path() -> str:
+    return os.path.join(get_profile_dir(), "radio_mode_state.json")
+
+
+def load_radio_state() -> dict:
+    return load_json_file(radio_state_path())
+
+
+def save_radio_state(state: dict) -> None:
+    save_json_file(radio_state_path(), state or {})
+
+
+def radio_is_active() -> bool:
+    return str(load_radio_state().get("phase") or "off") in ("seeking", "playing")
+
+
+def end_radio(state: dict, reason: str) -> dict:
+    state.update({
+        "phase": "off",
+        "stopped_ts": int(time.time()),
+        "stop_reason": reason,
+        "ui_refresh_requested": True,
+        "ui_refresh_ts": int(time.time()),
+    })
+    save_radio_state(state)
+    log_info(f"Radio mode stopped: {reason}.")
+    return state
+
+
+def run_radio_tick() -> None:
+    state = load_radio_state()
+    phase = str(state.get("phase") or "off")
+
+    if phase == "seeking":
+        discovery = load_discovery_state()
+        if not discovery.get("enabled") and not discovery.get("startup_in_progress"):
+            # Tuning plays Discovery snippets; when they stop (player stop, other playback), so does the radio.
+            end_radio(state, str(discovery.get("stop_reason") or "tuning_stopped"))
+        return
+
+    if phase != "playing":
+        return
+
+    now = int(time.time())
+    try:
+        playing = bool(xbmc.Player().isPlayingAudio())  # stays True while paused
+    except Exception:
+        playing = False
+
+    if not playing:
+        since = int(state.get("not_playing_since") or 0)
+        if since <= 0:
+            state["not_playing_since"] = now
+            save_radio_state(state)
+        elif now - since >= RADIO_STOP_GRACE_SECONDS and now - int(state.get("playing_started_ts") or 0) >= RADIO_STOP_GRACE_SECONDS:
+            end_radio(state, "player_stop")
+        return
+    state["not_playing_since"] = 0
+
+    queue = [entry for entry in state.get("queue") or [] if isinstance(entry, dict) and entry.get("file")]
+    state["queue"] = queue
+    current_file = get_current_playing_file_for_discovery()
+    queued = {normalize_discovery_playback_path(str(entry["file"])) for entry in queue}
+    if current_file and normalize_discovery_playback_path(current_file) not in queued:
+        end_radio(state, "external_playback")
+        return
+
+    position = player_position()
+    if 0 <= position < len(queue):
+        entry = queue[position]
+        if state.get("current_position") != position or state.get("current_song") != entry["file"]:
+            state["current_position"] = position
+            state["current_song"] = entry["file"]
+            state["current_label"] = entry.get("label") or path_to_label(entry["file"])
+            log_info(f"Radio mode: now playing {state['current_label']!r} (position {position}).")
+
+    position = prune_radio_backlog(state, position)
+
+    remaining = len(state["queue"]) - position - 1 if position >= 0 else len(state["queue"])
+    if remaining < RADIO_REFILL_THRESHOLD and now >= int(state.get("next_refill_ts") or 0):
+        refill_radio_queue(state)
+
+    save_radio_state(state)
+
+
+def prune_radio_backlog(state: dict, position: int) -> int:
+    """Remove songs played longer ago than the backlog; returns the adjusted playlist position."""
+    if position <= RADIO_BACKLOG_SIZE:
+        return position
+    removed = 0
+    for _index in range(position - RADIO_BACKLOG_SIZE):
+        try:
+            execute_jsonrpc("Playlist.Remove", {"playlistid": 0, "position": 0})
+            removed += 1
+        except Exception as exc:
+            log_info(f"Radio mode: removing an old playlist entry failed: {exc}")
+            break
+    if removed:
+        state["queue"] = state["queue"][removed:]
+        state["current_position"] = max(0, position - removed)
+        log_info(f"Radio mode: removed {removed} old song(s) from the playlist.")
+    return position - removed
+
+
+def refill_radio_queue(state: dict) -> int:
+    """Top up the station with a MusicIP mix seeded from the last queued song. Returns songs added."""
+    plugin = load_plugin_module()
+    queue = state["queue"]
+    seen = list(state.get("seen") or [])
+    seen_set = set(seen)
+    now = int(time.time())
+    new_tracks: list[str] = []
+    used_seed = ""
+
+    for entry in list(reversed(queue))[:RADIO_REFILL_SEEDS]:
+        seed = str(entry["file"])
+        try:
+            tracks = plugin.fetch_mix(seed, plugin.get_playlist_size(), plugin.get_effective_mix_parameters())
+        except plugin.MusicIPError as exc:
+            if "empty mix" in str(exc):
+                log_info(f"Radio mode: MusicIP returned no songs for {seed!r}.")
+                continue  # try the song before it
+            log(f"Radio mode: MusicIP mix for {seed!r} failed: {exc}", xbmc.LOGWARNING)
+            break  # server problem: retry later
+        except Exception as exc:
+            log(f"Radio mode: MusicIP mix for {seed!r} failed: {exc}", xbmc.LOGWARNING)
+            break
+        new_tracks = [track for track in tracks if plugin.normalize_track_identity(track) not in seen_set]
+        if new_tracks:
+            used_seed = seed
+            break
+        log_info(f"Radio mode: mix from {seed!r} brought no new songs.")
+
+    if not new_tracks:
+        state["next_refill_ts"] = now + RADIO_REFILL_RETRY_SECONDS
+        log_info(f"Radio mode: no new songs for the station; retrying in {RADIO_REFILL_RETRY_SECONDS} s.")
+        return 0
+
+    metadata_list = plugin.collect_mix_track_metadata(new_tracks, allow_live_lookup=False, include_player_metadata=False)
+    playlist = get_music_playlist()
+    for track, metadata in zip(new_tracks, metadata_list):
+        item = plugin.build_mix_playlist_item(track, metadata, 0)
+        playlist.add(track, item)
+        queue.append({"file": track, "label": item.getLabel()})
+        identity = plugin.normalize_track_identity(track)
+        seen.append(identity)
+        seen_set.add(identity)
+
+    plugin.enqueue_metadata_refresh_for_tracks(new_tracks, metadata_list=metadata_list, reason_context="radio")
+    state["seen"] = seen[-RADIO_MAX_SEEN:]
+    state["seeds"] = (list(state.get("seeds") or []) + [used_seed])[-50:]
+    state["next_refill_ts"] = 0
+    log_info(f"Radio mode: added {len(new_tracks)} song(s) seeded from {used_seed!r}.")
+    return len(new_tracks)
+
+
+def refresh_radio_menu_if_visible() -> None:
+    state = load_radio_state()
+    if not state.get("ui_refresh_requested"):
+        return
+    try:
+        container_folder = xbmc.getInfoLabel("Container.FolderPath")
+    except Exception:
+        container_folder = ""
+    if "plugin.audio.musicip" not in container_folder or "action=radio_mode" not in container_folder:
+        return
+    state["ui_refresh_requested"] = False
+    save_radio_state(state)
+    try:
+        xbmc.executebuiltin(f"Container.Update({container_folder},replace)")
+    except Exception as exc:
+        log_info(f"Radio mode: could not refresh the Radio screen: {exc}")
+
+
+def reset_radio_mode_on_startup() -> None:
+    state = load_radio_state()
+    if str(state.get("phase") or "off") != "off":
+        state.update({"phase": "off", "stopped_ts": int(time.time()), "stop_reason": "startup_reset"})
+        save_radio_state(state)
+        log_info("Radio mode: reset at service start.")
+
+
 def run_consistency_check() -> int:
     """Check all saved mixes for missing files; auto-repair when enabled and safe. Returns inconsistent mixes."""
     plugin = load_plugin_module()
@@ -1224,8 +1420,8 @@ def update_missing_file_searches(plugin, checked: list[tuple[str, dict, dict, st
     ]
     if not outdated:
         return [], []
-    if load_discovery_state().get("enabled"):
-        log_info("Consistency check: missing-file search postponed while Discovery mode is active.")
+    if load_discovery_state().get("enabled") or radio_is_active():
+        log_info("Consistency check: missing-file search postponed while Discovery or Radio mode is active.")
         return [], []
 
     try:
@@ -2093,6 +2289,7 @@ def main() -> None:
     )
 
     reset_discovery_mode_on_startup()
+    reset_radio_mode_on_startup()
 
     while not monitor.abortRequested():
         try:
@@ -2101,6 +2298,12 @@ def main() -> None:
             song_cache = run_discovery_tick(song_cache)
         except Exception as exc:
             log(f"Discovery mode tick failed: {exc}", xbmc.LOGERROR)
+
+        try:
+            run_radio_tick()
+            refresh_radio_menu_if_visible()
+        except Exception as exc:
+            log(f"Radio mode tick failed: {exc}", xbmc.LOGERROR)
 
         now_for_metadata = int(time.time())
         if last_metadata_refresh_ts <= 0 or now_for_metadata - last_metadata_refresh_ts >= METADATA_REFRESH_INTERVAL_SECONDS:

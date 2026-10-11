@@ -9,6 +9,7 @@ Feature baseline: **1.0.87**
 
 - `concept_overview.md`
 - `concept_discovery_mode.md`
+- `concept_radio_mode.md`
 - `concept_repair_strategy.md`
 - `concept_sidecar_metadata.md`
 - `testing_quality_notes.md`
