@@ -1,4 +1,6 @@
-"""Discovery mode, service side: commands, the playlist buffer, auto-skip, player events and startup reset."""
+"""Discovery mode, service side: the playlist buffer, auto-skip, player events and startup reset.
+
+The plugin starts, stops and skips Discovery mode; the service runs it through the shared state file."""
 
 import unittest
 from unittest import mock
@@ -16,22 +18,17 @@ def add_library_songs(count=len(SONGS)):
         kodi.library.add_song(file, title=title, artist=artist, duration=duration)
 
 
-def send_command(command, ts=None):
-    payload = {"command": command, "excerpt_seconds": 20, "offset_percent": 33}
-    if ts is not None:
-        payload["ts"] = ts
-    service.save_json_file(service.discovery_command_path(), payload)
-
-
 class DiscoveryServiceTestCase(KodiTestCase):
     def setUp(self):
         super().setUp()
         self.clock = self.use_clock()
+        self.song_cache = []
         add_library_songs()
 
     def start(self):
-        send_command("start", ts=int(self.clock.now))
-        self.song_cache = service.run_discovery_tick([])
+        """Start Discovery mode the way the add-on does: from the plugin."""
+        self.run_plugin(action="discovery_start")
+        self.song_cache = []
         return service.load_discovery_state()
 
     def tick(self, seconds=1):
@@ -40,56 +37,15 @@ class DiscoveryServiceTestCase(KodiTestCase):
         return service.load_discovery_state()
 
 
-class CommandTest(DiscoveryServiceTestCase):
-    def test_start_command_builds_buffer_and_plays(self):
-        state = self.start()
-        self.assertTrue(state["enabled"])
-        self.assertEqual(len(state["queue"]), service.DISCOVERY_BUFFER_SIZE)
-        self.assertEqual(kodi.playlist_files(), [entry["file"] for entry in state["queue"]])
-        self.assertEqual((kodi.player.position, state["current_playlist_position"]), (0, 0))
-        self.assertEqual(state["current_offset_seconds"], OFFSET)
-        self.assertEqual(kodi.player.time, float(OFFSET))
-        self.assertFalse(service.xbmcvfs.exists(service.discovery_command_path()))
-
-    def test_stale_or_redundant_start_is_ignored(self):
-        service.save_discovery_state({"enabled": False, "stopped_ts": int(self.clock.now)})
-        send_command("start", ts=int(self.clock.now) - 5)
-        service.run_discovery_tick([])
-        self.assertFalse(service.load_discovery_state()["enabled"])
-
-        self.clock.advance(1)
-        self.start()
-        kodi.jsonrpc_calls.clear()
-        send_command("start", ts=int(self.clock.now) + 1)
-        service.run_discovery_tick(self.song_cache)
-        self.assertNotIn("AudioLibrary.GetSongs", kodi.jsonrpc_methods())
-
-    def test_start_with_empty_library(self):
-        kodi.library.songs.clear()
-        state = self.start()
-        self.assertFalse(state["enabled"])
-        self.assertIn("No songs found", state["last_error"])
-
-    def test_stop_command(self):
-        self.start()
-        send_command("stop")
+class LeftoverCommandFileTest(DiscoveryServiceTestCase):
+    def test_command_file_from_an_older_version_is_ignored(self):
+        # Older versions controlled the service through discovery_mode_command.json (finding F6).
+        command_file = self.profile_path("discovery_mode_command.json")
+        service.get_profile_dir()
+        self.write_json(command_file, {"command": "start", "ts": int(self.clock.now)})
         state = self.tick()
-        self.assertFalse(state["enabled"])
-        self.assertEqual(state["stop_reason"], "manual_stop")
-        self.assertFalse(kodi.player.playing)
-
-    def test_next_command(self):
-        self.start()
-        send_command("next")
-        state = self.tick()
-        self.assertEqual(kodi.player.position, 1)
-        self.assertEqual(state["current_playlist_position"], 1)
-        self.assertEqual(state["last_next_reason"], "manual_next")
-
-    def test_command_is_ignored_when_stale(self):
-        self.assertTrue(service.command_is_stale_for_state({"ts": 5}, {"stopped_ts": 5}))
-        self.assertFalse(service.command_is_stale_for_state({"ts": 6}, {"stopped_ts": 5}))
-        self.assertFalse(service.command_is_stale_for_state({}, {"stopped_ts": 5}))
+        self.assertFalse(state.get("enabled"))
+        self.assertEqual(kodi.playlist, [])
 
 
 class PluginStartedSessionTest(DiscoveryServiceTestCase):
@@ -97,8 +53,7 @@ class PluginStartedSessionTest(DiscoveryServiceTestCase):
 
     def setUp(self):
         super().setUp()
-        self.run_plugin(action="discovery_start")
-        self.song_cache = []
+        self.start()
 
     def test_service_takes_over_a_plugin_started_session(self):
         state = self.tick(10)
@@ -187,9 +142,9 @@ class AutoSkipTest(DiscoveryServiceTestCase):
     def test_restart_near_song_beginning_is_moved_back_to_offset(self):
         self.start()
         kodi.player.time = 0.0  # e.g. Previous restarted the song
-        self.tick(3)  # still inside the 4 s window after the service's own playlist start
+        self.tick(1)  # the song has just started: give Kodi time to apply its start offset
         self.assertEqual(kodi.player.time, 0.0)
-        self.tick(2)
+        self.tick(1)
         self.assertEqual(kodi.player.time, float(OFFSET))
         self.assertEqual(service.load_discovery_state()["last_seek_correction_to"], OFFSET)
 
@@ -306,12 +261,10 @@ class MenuRefreshAndResetTest(KodiTestCase):
 
     def test_startup_reset(self):
         service.save_discovery_state({"enabled": True, "queue": [{"file": "x"}], "current_song": "x"})
-        send_command("start")
         kodi.playlist.append(("x", None))
         service.reset_discovery_mode_on_startup()
         state = service.load_discovery_state()
         self.assertEqual((state["enabled"], state["stop_reason"], state["queue"]), (False, "startup_reset", []))
-        self.assertFalse(service.xbmcvfs.exists(service.discovery_command_path()))
         self.assertEqual(kodi.playlist, [])
 
     def test_playback_path_normalization(self):
@@ -324,12 +277,12 @@ class ServiceMainLoopTest(KodiTestCase):
     def test_one_loop_iteration_then_abort(self):
         kodi.settings["service_extended_logging"] = "true"
         add_library_songs(3)
-        send_command("start")
+        service.save_discovery_state({"enabled": True})  # left over from before a Kodi restart
         service.main()
 
         self.assertTrue(service.xbmcvfs.exists(service.get_musicip_user_keymap_path()))
         state = service.load_discovery_state()
-        self.assertEqual(state["stop_reason"], "startup_reset")  # stale command removed at startup
+        self.assertEqual(state["stop_reason"], "startup_reset")
         self.assertFalse(state["enabled"])
         self.assertIn("MusicIP service started. version=", kodi.log_text())
         self.assertEqual(kodi.waits, 1)
@@ -342,7 +295,7 @@ class ServiceMainLoopTest(KodiTestCase):
 
         def tick_and_start(song_cache):
             if not service.load_discovery_state().get("enabled"):
-                send_command("start")
+                self.run_plugin(action="discovery_start")
             return original_tick(song_cache)
 
         with mock.patch.object(service, "run_discovery_tick", tick_and_start):

@@ -8,7 +8,7 @@ How this file is kept up to date:
 - A fixed finding moves to **Resolved**, keeping its number, with the commit that fixed it.
 - A finding reproduced by a test lists that test under **Test**. Such tests are marked `@unittest.expectedFailure`. `tests/test_findings.py` checks that every one of these tests is listed under **Open**, and that every test listed under **Open** still fails. When a fix makes such a test pass, CI fails until the decorator is removed and the finding is moved to **Resolved**.
 
-Last reviewed: 2026-10-10
+Last reviewed: 2026-10-11
 
 ## Open
 
@@ -26,16 +26,6 @@ Kodi can't tell "cancelled" apart from "cleared on purpose", so a fix needs a UX
 
 **Test:** `test_main_saved_mixes.OrderingAndCleanupTest.test_unknown_date_group_sorts_last`
 
-### F6 · The service's Discovery commands are never sent
-
-The service runs Discovery mode: once the plugin has started playback and written the shared state file (`discovery_mode_state.json`), the service tracks the playlist, refills and prunes it, skips after each excerpt, corrects the start offset and reacts to player events. `tests/test_service_discovery.py` (`PluginStartedSessionTest`) covers this hand-over.
-
-The service also still reads `start`, `stop` and `next` commands from `discovery_mode_command.json` in `run_discovery_tick()`, but the plugin no longer writes that file: it starts, stops and skips directly (its `write_discovery_command` was removed with F5). So this command handling never runs.
-
-In the `start` handler, the branch that adopts an already-started playlist could not run anyway, because `state["queue"]` is emptied just before `existing_queue` is read from it.
-
-Rechecked on 2026-10-11: still open. Nothing in the add-on writes `discovery_mode_command.json` (the plugin only mentions its path in a log message), `run_discovery_tick()` still handles the commands, and `kodi.log` shows no command being processed.
-
 ### F8 · Menu actions are folders but return no listing
 
 In the main menu and the Discovery menu, these entries are added as folders, but their actions never call `endOfDirectory()`. They switch screens with `Container.Update(…,replace)` instead:
@@ -47,7 +37,25 @@ For **Settings** the same pattern produced `XFILE::CDirectory::GetDirectory - Er
 
 **Test:** `test_main_plugin_routes.FolderEntriesTest.test_folder_entries_end_their_directory`
 
+### F11 · More unused code in main.py
+
+These plugin functions are never called:
+
+- `get_mix_style_api_value()`; the style value for MusicIP is computed in `get_effective_mix_parameters()` and `normalize_mix_parameters()` instead
+- `build_mix_parameter_summary()`; the generate-mix dialog builds its own lines
+- `add_discovery_run_action_item()`; the Discovery menu uses `add_discovery_action_item()`
+
+Found on 2026-10-11 while removing the Discovery command channel (F6). They are unrelated to that change.
+
 ## Resolved
+
+### F6 · The service's Discovery commands were never sent
+
+The service still read and handled `start`, `stop` and `next` commands from `discovery_mode_command.json`, but nothing wrote that file any more: the plugin starts, stops and skips Discovery mode directly, and the service runs it through the shared state file. Inside that dead code, the branch that would adopt an already-started playlist could never run.
+
+The command channel is removed: the command handling in `run_discovery_tick()`, `read_discovery_command()`, `command_is_stale_for_state()`, `start_discovery_playlist()`, `discovery_command_path()` in both modules, and the startup step that deleted a stale command file. A leftover command file from an older version is ignored.
+
+Fixed in bf07e7c (2026-10-11). Service tests now start Discovery mode through the plugin; `test_service_discovery.LeftoverCommandFileTest` covers the leftover file.
 
 ### F10 · A music source that was never scanned counted as part of the library
 

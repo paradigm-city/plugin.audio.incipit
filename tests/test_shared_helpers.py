@@ -108,7 +108,7 @@ class SharedLibraryLookupTest(KodiTestCase):
 
 class SharedStorageTest(KodiTestCase):
     def test_both_modules_use_the_same_profile_files(self):
-        for name in ("discovery_state_path", "discovery_command_path", "get_profile_dir"):
+        for name in ("discovery_state_path", "get_profile_dir"):
             self.assertEqual(getattr(main, name)(), getattr(service, name)())
         self.assertEqual(main.get_metadata_refresh_queue_path(), service.metadata_refresh_queue_path())
         self.assertEqual(main.get_track_metadata_cache_db_path(), service.track_metadata_cache_db_path())
