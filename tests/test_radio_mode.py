@@ -69,7 +69,7 @@ class RadioMenuTest(RadioTestCase):
         self.assertIn(("setPluginCategory", f"Radio: tuning - {snippet}"), kodi.directory_calls)
 
         self.run_plugin(action="radio_play")
-        self.assertEqual(self.menu(), ["Stop radio"])
+        self.assertEqual(self.menu(), ["Change station", "Stop radio"])
         self.assertIn(("setPluginCategory", f"Radio: {self.radio()['current_label']}"), kodi.directory_calls)
 
 
@@ -101,9 +101,15 @@ class TuningTest(RadioTestCase):
         state = main.get_discovery_state()
         state.update({"enabled": False, "stop_reason": "player_stop"})
         main.save_discovery_state(state)
-        radio = self.tick()
+        radio = self.tick(service.RADIO_STOP_GRACE_SECONDS)
         self.assertEqual((radio["phase"], radio["stop_reason"]), ("off", "player_stop"))
         self.assertTrue(radio["ui_refresh_requested"])
+
+    def test_tuning_is_given_time_to_start(self):
+        # The plugin marks the radio as tuning just before it starts the snippets.
+        main.save_radio_state({"phase": "seeking", "tuning_started_ts": int(self.clock.now)})
+        self.assertEqual(self.tick()["phase"], "seeking")
+        self.assertEqual(self.tick(service.RADIO_STOP_GRACE_SECONDS)["phase"], "off")
 
 
 class StartRadioTest(RadioTestCase):
@@ -155,6 +161,48 @@ class StartRadioTest(RadioTestCase):
         self.run_plugin(action="radio_play")
         self.assertEqual(self.musicip.mix_requests(), [])
         self.assertEqual(self.radio().get("phase", "off"), "off")
+
+
+class ChangeStationTest(RadioTestCase):
+    def test_change_station_goes_back_to_tuning(self):
+        seed = self.start()
+        started_ts = self.radio()["started_ts"]
+        self.tick(30)
+        self.run_plugin(action="radio_retune")
+
+        radio = self.radio()
+        self.assertEqual(radio["phase"], "seeking")
+        self.assertEqual(radio["started_ts"], started_ts)
+        self.assertEqual(radio["tuning_started_ts"], int(self.clock.now))
+        discovery = main.get_discovery_state()
+        self.assertEqual((discovery["enabled"], discovery["owner"]), (True, "radio"))
+        self.assertEqual(kodi.playlist_files(), [entry["file"] for entry in discovery["queue"]])
+        self.assertEqual(kodi.player.time, float(discovery["queue"][0]["offset"]))
+        self.assertNotified("Changing station. Tuning in.")
+        self.assertEqual(self.menu(), ["Start radio", "Next station", "Stop radio"])
+
+    def test_new_station_after_changing(self):
+        self.start()
+        self.run_plugin(action="radio_retune")
+        self.run_plugin(action="radio_tune")
+        new_seed = main.get_discovery_state()["current_song"]
+        self.run_plugin(action="radio_play")
+        radio = self.radio()
+        self.assertEqual(radio["phase"], "playing")
+        self.assertEqual(radio["seeds"], [new_seed])
+        self.assertEqual(kodi.playlist_files()[0], new_seed)
+
+    def test_service_keeps_the_radio_while_tuning_again(self):
+        self.start()
+        self.run_plugin(action="radio_retune")
+        for _ in range(5):
+            radio = self.tick()
+        self.assertEqual(radio["phase"], "seeking")
+
+    def test_change_station_only_while_playing(self):
+        self.run_plugin(action="radio_retune")
+        self.assertEqual(self.radio().get("phase", "off"), "off")
+        self.assertFalse(kodi.player.playing)
 
 
 class StopRadioTest(RadioTestCase):
