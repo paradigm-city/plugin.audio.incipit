@@ -34,6 +34,8 @@ The service also still reads `start`, `stop` and `next` commands from `discovery
 
 In the `start` handler, the branch that adopts an already-started playlist could not run anyway, because `state["queue"]` is emptied just before `existing_queue` is read from it.
 
+Rechecked on 2026-10-11: still open. Nothing in the add-on writes `discovery_mode_command.json` (the plugin only mentions its path in a log message), `run_discovery_tick()` still handles the commands, and `kodi.log` shows no command being processed.
+
 ### F8 · Menu actions are folders but return no listing
 
 In the main menu and the Discovery menu, these entries are added as folders, but their actions never call `endOfDirectory()`. They switch screens with `Container.Update(…,replace)` instead:
