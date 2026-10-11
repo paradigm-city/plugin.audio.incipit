@@ -24,7 +24,10 @@ The service keeps the station running:
 - Songs already played or queued in this session are skipped, so nothing repeats.
 - The playlist keeps the last 10 played songs; older ones are removed.
 
-The Radio screen then offers only **Stop radio**.
+The Radio screen then offers:
+
+- **Change station**: go back to tuning; new snippets replace the station, and **Start radio** locks onto a new one
+- **Stop radio**
 
 ## Stopping
 
@@ -32,7 +35,7 @@ The Radio screen then offers only **Stop radio**.
 - The player's **Stop** stops the radio. The service waits 3 seconds before deciding, so the short gap between songs does not count.
 - **Pause** pauses as usual; the radio stays on.
 - Starting other playback (another album, a mix, Discovery mode) stops the radio without touching the new playback.
-- If tuning stops (player stop, other playback), the radio switches off too.
+- If tuning stops (player stop, other playback), the radio switches off too. The service allows 3 seconds after tuning starts before checking, while the plugin starts the snippets.
 - A Kodi restart switches the radio off.
 
 ## Not included
@@ -45,6 +48,7 @@ The Radio screen then offers only **Stop radio**.
 The plugin and the service share `radio_mode_state.json` in the add-on profile:
 
 - `phase`: `off`, `seeking` (tuning) or `playing`
+- `started_ts`: when the radio was turned on (kept across **Change station**); `tuning_started_ts`: when tuning last started
 - `queue`: the station's playlist entries (`file`, `label`)
 - `seen`: songs already played or queued in this session (up to 5000)
 - `seeds`: the songs that seeded the station's mixes

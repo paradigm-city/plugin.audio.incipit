@@ -1202,6 +1202,8 @@ def run_radio_tick() -> None:
     phase = str(state.get("phase") or "off")
 
     if phase == "seeking":
+        if int(time.time()) - int(state.get("tuning_started_ts") or 0) < RADIO_STOP_GRACE_SECONDS:
+            return  # the plugin is still starting the snippet playback
         discovery = load_discovery_state()
         if not discovery.get("enabled") and not discovery.get("startup_in_progress"):
             # Tuning plays Discovery snippets; when they stop (player stop, other playback), so does the radio.

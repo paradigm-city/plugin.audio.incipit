@@ -4596,6 +4596,7 @@ def show_radio_mode_menu() -> None:
         add_radio_action_item("Next station", "radio_tune")
         add_radio_action_item("Stop radio", "radio_stop")
     elif phase == "playing":
+        add_radio_action_item("Change station", "radio_retune")
         add_radio_action_item("Stop radio", "radio_stop")
     else:
         add_radio_action_item("Turn on radio", "radio_on")
@@ -4603,15 +4604,31 @@ def show_radio_mode_menu() -> None:
     xbmcplugin.endOfDirectory(HANDLE, cacheToDisc=False)
 
 
-def turn_radio_on() -> None:
-    """Start tuning: random snippets, as in Discovery mode."""
-    save_radio_state({"phase": "seeking", "started_ts": int(time.time()), "stop_reason": ""})
+def begin_radio_tuning() -> bool:
+    """Tune through random snippets, as in Discovery mode. False if no snippets could be played."""
+    now = int(time.time())
+    started_ts = int(get_radio_state().get("started_ts") or 0) if radio_phase() != "off" else 0
+    save_radio_state({"phase": "seeking", "started_ts": started_ts or now, "tuning_started_ts": now, "stop_reason": ""})
     discovery = begin_discovery_playback(owner="radio")
     if not discovery.get("enabled"):
         save_radio_state({"phase": "off", "stopped_ts": int(time.time()), "stop_reason": "tuning_failed"})
+        return False
+    return True
+
+
+def turn_radio_on() -> None:
+    if begin_radio_tuning():
+        notify("Radio on. Tuning in.")
+    replace_with_radio_mode_menu()
+
+
+def change_radio_station() -> None:
+    """Leave the playing station and tune again."""
+    if radio_phase() != "playing":
         replace_with_radio_mode_menu()
         return
-    notify("Radio on. Tuning in.")
+    if begin_radio_tuning():
+        notify("Changing station. Tuning in.")
     replace_with_radio_mode_menu()
 
 
@@ -5523,6 +5540,10 @@ def router() -> None:
 
     if action == "radio_play":
         start_radio()
+        return
+
+    if action == "radio_retune":
+        change_radio_station()
         return
 
     if action == "radio_stop":
