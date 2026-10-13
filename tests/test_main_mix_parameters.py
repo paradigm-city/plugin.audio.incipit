@@ -103,15 +103,15 @@ class MixParametersTest(KodiTestCase):
 class ParameterQueryTest(KodiTestCase):
     def query(self, seed, **params):
         query = main.build_musicip_parameter_query(seed, params)
-        return query, {key: values[0] for key, values in parse_qs(query, encoding="iso-8859-1").items()}
+        return query, {key: values[0] for key, values in parse_qs(query, encoding="cp1252").items()}
 
-    def test_seed_is_encoded_as_iso_8859_1(self):
+    def test_seed_is_encoded_for_musicip(self):
         raw, parsed = self.query("D:\\Musik\\Motörhead\\Ace.mp3", size=10)
         self.assertTrue(raw.startswith("song=D%3A%5CMusik%5CMot%F6rhead%5CAce.mp3&"))
         self.assertEqual(parsed["song"], "D:\\Musik\\Motörhead\\Ace.mp3")
 
-    @unittest.expectedFailure  # F12: MusicIP on Windows expects cp1252; œ is 0x9C there and missing in ISO-8859-1
     def test_seed_outside_latin_1_is_encoded_as_cp1252(self):
+        # MusicIP on Windows expects cp1252; œ is 0x9C there and missing in ISO-8859-1 (F12).
         raw, _parsed = self.query("D:\\music\\Clin d'œil.mp3", size=10)
         self.assertTrue(raw.startswith("song=D%3A%5Cmusic%5CClin%20d%27%9Cil.mp3&"))
 

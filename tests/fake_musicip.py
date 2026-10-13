@@ -45,8 +45,8 @@ class FakeMusicIP:
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
                 parts = urlsplit(self.path)
-                # main.py percent-encodes the seed song as ISO-8859-1, like MusicIP expects.
-                query = {key: values[0] for key, values in parse_qs(parts.query, encoding="iso-8859-1").items()}
+                # main.py percent-encodes the seed song as cp1252, like MusicIP on Windows expects.
+                query = {key: values[0] for key, values in parse_qs(parts.query, encoding="cp1252").items()}
                 fake.requests.append((parts.path, query))
 
                 if parts.path == "/server/reload":

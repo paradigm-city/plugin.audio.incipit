@@ -47,17 +47,15 @@ These plugin functions are never called:
 
 Found on 2026-10-11 while removing the Discovery command channel (F6). They are unrelated to that change.
 
-### F12 · Seeds with characters outside ISO-8859-1 can't be mixed
-
-`build_musicip_parameter_query()` in `main.py` percent-encodes the seed path as ISO-8859-1 with `errors="replace"`. The MusicIP server on Windows expects the Windows code page (cp1252), which also contains characters that ISO-8859-1 lacks, such as œ, Š, ’, “ ”, –, … and €. For a seed whose path contains one of them, the add-on sends `?` instead, and MusicIP answers HTTP 500, so no mix can be created from that track.
-
-Checked against the local MusicIP server (1.9) with `D:\music\#jazzhop\Jazz Liberatorz\Clin d'œil (2007)\01 Jazz Liberatorz - Clin d'œil.mp3`: ISO-8859-1 and UTF-8 give HTTP 500, cp1252 returns a mix. MusicIP's responses are not affected (the returned paths decode correctly). Found on 2026-10-13 during the style pilot's replacement dry run.
-
-A fix would encode the seed as cp1252, falling back to ISO-8859-1 only for characters cp1252 can't represent.
-
-**Test:** `test_main_mix_parameters.ParameterQueryTest.test_seed_outside_latin_1_is_encoded_as_cp1252`
-
 ## Resolved
+
+### F12 · Seeds with characters outside ISO-8859-1 couldn't be mixed
+
+`build_musicip_parameter_query()` in `main.py` percent-encoded the seed path as ISO-8859-1 with `errors="replace"`. The MusicIP server on Windows expects the Windows code page (cp1252), which also contains characters that ISO-8859-1 lacks, such as œ, Š, ’, “ ”, –, … and €. For a seed whose path contained one of them, the add-on sent `?` instead, and MusicIP answered HTTP 500, so no mix could be created from that track. Found on 2026-10-13 during the style pilot's replacement dry run, with `Jazz Liberatorz – Clin d'œil` (ISO-8859-1 and UTF-8: HTTP 500; cp1252: a mix).
+
+The seed is now encoded as cp1252. MusicIP's responses were never affected.
+
+Fixed in 351c23a (2026-10-13). `test_main_mix_parameters.ParameterQueryTest.test_seed_outside_latin_1_is_encoded_as_cp1252` covers it; the fake MusicIP server decodes the seed as cp1252, like the real one.
 
 ### F6 · The service's Discovery commands were never sent
 
