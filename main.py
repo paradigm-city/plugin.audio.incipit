@@ -471,7 +471,8 @@ def confirm_mix_generation(params: dict) -> dict | None:
 
 def build_musicip_parameter_query(seed_song: str, params: dict) -> str:
     params = normalize_mix_parameters(params)
-    encoded_seed = quote_from_bytes(seed_song.encode("iso-8859-1", errors="replace"))
+    # MusicIP on Windows expects the seed path in the Windows code page (cp1252), which also has œ, ’, “ ”, – and …
+    encoded_seed = quote_from_bytes(seed_song.encode("cp1252", errors="replace"))
 
     query_params = {
         "size": str(int(params.get("size") or get_playlist_size())),
