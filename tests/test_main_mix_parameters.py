@@ -110,6 +110,11 @@ class ParameterQueryTest(KodiTestCase):
         self.assertTrue(raw.startswith("song=D%3A%5CMusik%5CMot%F6rhead%5CAce.mp3&"))
         self.assertEqual(parsed["song"], "D:\\Musik\\Motörhead\\Ace.mp3")
 
+    @unittest.expectedFailure  # F12: MusicIP on Windows expects cp1252; œ is 0x9C there and missing in ISO-8859-1
+    def test_seed_outside_latin_1_is_encoded_as_cp1252(self):
+        raw, _parsed = self.query("D:\\music\\Clin d'œil.mp3", size=10)
+        self.assertTrue(raw.startswith("song=D%3A%5Cmusic%5CClin%20d%27%9Cil.mp3&"))
+
     def test_optional_parameters(self):
         _raw, parsed = self.query("a.mp3", size=10, style_ui=2, variety=4)
         self.assertEqual(parsed, {

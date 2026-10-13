@@ -8,7 +8,7 @@ How this file is kept up to date:
 - A fixed finding moves to **Resolved**, keeping its number, with the commit that fixed it.
 - A finding reproduced by a test lists that test under **Test**. Such tests are marked `@unittest.expectedFailure`. `tests/test_findings.py` checks that every one of these tests is listed under **Open**, and that every test listed under **Open** still fails. When a fix makes such a test pass, CI fails until the decorator is removed and the finding is moved to **Resolved**.
 
-Last reviewed: 2026-10-11
+Last reviewed: 2026-10-13
 
 ## Open
 
@@ -46,6 +46,16 @@ These plugin functions are never called:
 - `add_discovery_run_action_item()`; the Discovery menu uses `add_discovery_action_item()`
 
 Found on 2026-10-11 while removing the Discovery command channel (F6). They are unrelated to that change.
+
+### F12 · Seeds with characters outside ISO-8859-1 can't be mixed
+
+`build_musicip_parameter_query()` in `main.py` percent-encodes the seed path as ISO-8859-1 with `errors="replace"`. The MusicIP server on Windows expects the Windows code page (cp1252), which also contains characters that ISO-8859-1 lacks, such as œ, Š, ’, “ ”, –, … and €. For a seed whose path contains one of them, the add-on sends `?` instead, and MusicIP answers HTTP 500, so no mix can be created from that track.
+
+Checked against the local MusicIP server (1.9) with `D:\music\#jazzhop\Jazz Liberatorz\Clin d'œil (2007)\01 Jazz Liberatorz - Clin d'œil.mp3`: ISO-8859-1 and UTF-8 give HTTP 500, cp1252 returns a mix. MusicIP's responses are not affected (the returned paths decode correctly). Found on 2026-10-13 during the style pilot's replacement dry run.
+
+A fix would encode the seed as cp1252, falling back to ISO-8859-1 only for characters cp1252 can't represent.
+
+**Test:** `test_main_mix_parameters.ParameterQueryTest.test_seed_outside_latin_1_is_encoded_as_cp1252`
 
 ## Resolved
 
