@@ -17,7 +17,6 @@ class SettingsTest(KodiTestCase):
         self.assertEqual(main.get_mix_variety(), 0)
         self.assertEqual(main.get_mix_reject_size(), 0)
         self.assertEqual(main.get_mix_filter(), "")
-        self.assertFalse(main.get_mix_genre_enabled())
         self.assertEqual(main.get_discovery_excerpt_seconds(), 20)
         self.assertEqual(main.get_discovery_offset_percent(), 33)
 
@@ -47,8 +46,8 @@ class SettingsTest(KodiTestCase):
     def test_bool_settings_accept_common_spellings(self):
         for value, expected in (("true", True), ("1", True), ("YES", True), ("on", True), ("false", False), ("0", False)):
             with self.subTest(value=value):
-                kodi.settings["mix_genre"] = value
-                self.assertIs(main.get_mix_genre_enabled(), expected)
+                kodi.settings["plugin_extended_logging"] = value
+                self.assertIs(main.is_plugin_extended_logging_enabled(), expected)
 
     def test_style_labels(self):
         self.assertEqual(main.get_mix_style_label(0), "ignore")
@@ -62,11 +61,11 @@ class MixParametersTest(KodiTestCase):
     def test_effective_parameters_from_settings(self):
         kodi.settings.update({
             "playlist_size": "30", "mix_style_preference": "5", "mix_variety": "3",
-            "mix_genre": "true", "mix_filter": " jazz ", "mix_reject_size": "4",
+            "mix_filter": " jazz ", "mix_reject_size": "4",
         })
         self.assertEqual(main.get_effective_mix_parameters(), {
             "size": 30, "sizetype": "tracks", "style": 100, "style_ui": 5,
-            "style_label": "medium preference", "variety": 3, "mixgenre": True,
+            "style_label": "medium preference", "variety": 3,
             "filter": "jazz", "rejectsize": 4, "rejecttype": "tracks", "content": "text",
         })
         self.assertEqual(main.get_effective_mix_parameters(size_override=7)["size"], 7)
@@ -91,11 +90,11 @@ class MixParametersTest(KodiTestCase):
         self.assertEqual(main.pop_mix_generation_parameters("seed.mp3", 20), {})
 
     def test_summary(self):
-        summary = main.build_mix_parameter_summary({"size": 25, "style_ui": 4, "rejectsize": 3, "mixgenre": True})
+        summary = main.build_mix_parameter_summary({"size": 25, "style_ui": 4, "rejectsize": 3})
         self.assertIn("Size: 25 tracks", summary)
         self.assertIn("Style: 4/10 - mild preference", summary)
         self.assertIn("MusicIP style value: 80", summary)
-        self.assertIn("Restrict to seed genre: yes", summary)
+        self.assertNotIn("Restrict to seed genre", summary)
         self.assertIn("Filter: <none>", summary)
         self.assertIn("Artist repeat: do not repeat artist within 3 tracks", summary)
 
@@ -122,8 +121,9 @@ class ParameterQueryTest(KodiTestCase):
             "variety": "4", "mixgenre": "false", "content": "text",
         })
 
+        # "Restrict to seed genre" was removed; parameters recorded by older versions may still contain it.
         _raw, parsed = self.query("a.mp3", size=10, mixgenre=True, filter="Rock", rejectsize=5)
-        self.assertEqual(parsed["mixgenre"], "true")
+        self.assertEqual(parsed["mixgenre"], "false")
         self.assertEqual(parsed["filter"], "Rock")
         self.assertEqual((parsed["rejectsize"], parsed["rejectType"]), ("5", "tracks"))
 
@@ -148,17 +148,19 @@ class ConfirmMixGenerationDialogTest(KodiTestCase):
 
     def test_edit_each_parameter_then_generate(self):
         # Kodi has no Dialog.slider(), so numeric input is used for numbers.
-        kodi.respond("select", 1, 2, 3, 4, 5, 6, 0)
+        kodi.respond("select", 1, 2, 3, 4, 5, 0)
         kodi.respond("numeric", "35", "7", "4", "12")
         kodi.respond("input", "  genre:Rock ")
         params = main.confirm_mix_generation(main.get_effective_mix_parameters())
         self.assertEqual(params["size"], 35)
         self.assertEqual((params["style_ui"], params["style"]), (7, 140))
         self.assertEqual(params["variety"], 4)
-        self.assertTrue(params["mixgenre"])
+        self.assertNotIn("mixgenre", params)
         self.assertEqual(params["filter"], "genre:Rock")
         self.assertEqual(params["rejectsize"], 12)
-        self.assertEqual(kodi.dialogs("select")[-1][1][1][6], "Artist repeat: do not repeat artist within 12 tracks")
+        choices = kodi.dialogs("select")[-1][1][1]
+        self.assertEqual(choices[5], "Artist repeat: do not repeat artist within 12 tracks")
+        self.assertFalse(any("seed genre" in choice for choice in choices))
 
     def test_numeric_input_is_clamped_or_ignored(self):
         kodi.respond("numeric", "500")
@@ -180,7 +182,7 @@ class ConfirmMixGenerationDialogTest(KodiTestCase):
         # Known issue: Kodi's Dialog.input() returns "" when cancelled, and edit_mix_generation_parameter()
         # only ignores None, so cancelling clears the filter. Remove expectedFailure once fixed.
         kodi.respond("input", "")
-        params = main.edit_mix_generation_parameter({"filter": "genre:Rock"}, 5)
+        params = main.edit_mix_generation_parameter({"filter": "genre:Rock"}, 4)
         self.assertEqual(params["filter"], "genre:Rock")
 
 
