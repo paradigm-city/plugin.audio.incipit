@@ -12,7 +12,6 @@
         <setting id="playlist_size" type="slider" label="Mix size (tracks)" default="20" range="1,1,100" option="int" />
         <setting id="mix_style_preference" type="slider" label="Style preference (0 ignore, 10 strongly prefer)" default="2" range="0,1,10" option="int" />
         <setting id="mix_variety" type="slider" label="Variety" default="0" range="0,1,9" option="int" />
-        <setting id="mix_genre" type="bool" label="Restrict to seed genre" default="false" />
         <setting id="mix_filter" type="text" label="MusicIP filter" default="" />
         <setting id="mix_reject_size" type="slider" label="Do not repeat artist within this many tracks" default="0" range="0,1,20" option="int" />
     </category>

@@ -263,10 +263,6 @@ def get_mix_filter() -> str:
     return get_setting("mix_filter", "").strip()
 
 
-def get_mix_genre_enabled() -> bool:
-    return get_setting_bool("mix_genre", False)
-
-
 def get_effective_mix_parameters(size_override: int | None = None) -> dict:
     size = max(1, int(size_override or get_playlist_size()))
     reject_size = get_mix_reject_size()
@@ -278,7 +274,6 @@ def get_effective_mix_parameters(size_override: int | None = None) -> dict:
         "style_ui": style_ui,
         "style_label": get_mix_style_label(style_ui),
         "variety": get_mix_variety(),
-        "mixgenre": get_mix_genre_enabled(),
         "filter": get_mix_filter(),
         "rejectsize": reject_size,
         "rejecttype": "tracks",
@@ -293,7 +288,9 @@ def normalize_mix_parameters(params: dict) -> dict:
     normalized["style"] = max(0, min(200, int(normalized["style_ui"]) * 20))
     normalized["style_label"] = get_mix_style_label(int(normalized["style_ui"]))
     normalized["variety"] = max(0, min(9, int(normalized.get("variety") or 0)))
-    normalized["mixgenre"] = bool(normalized.get("mixgenre"))
+    # "Restrict to seed genre" was removed: genre tags are too inconsistent to mean much.
+    # Parameters recorded by older versions may still contain it.
+    normalized.pop("mixgenre", None)
     normalized["filter"] = str(normalized.get("filter") or "").strip()
     normalized["rejectsize"] = max(0, min(20, int(normalized.get("rejectsize") or 0)))
     normalized["rejecttype"] = "tracks"
@@ -311,7 +308,6 @@ def compact_mix_generation_parameters(params: dict) -> dict:
         "style": int(normalized.get("style") or 0),
         "style_label": str(normalized.get("style_label") or ""),
         "variety": int(normalized.get("variety") or 0),
-        "mixgenre": bool(normalized.get("mixgenre")),
         "filter": str(normalized.get("filter") or ""),
         "rejectsize": int(normalized.get("rejectsize") or 0),
         "rejecttype": "tracks",
@@ -348,7 +344,6 @@ def build_mix_parameter_summary(params: dict) -> str:
         f"Style: {int(params.get('style_ui') or 0)}/10 - {params.get('style_label')}",
         f"MusicIP style value: {int(params.get('style') or 0)}",
         f"Variety: {int(params.get('variety') or 0)}",
-        f"Restrict to seed genre: {'yes' if params.get('mixgenre') else 'no'}",
         f"Filter: {filter_value}",
         f"Artist repeat: {reject_text}",
     ]
@@ -415,9 +410,6 @@ def edit_mix_generation_parameter(params: dict, option: int) -> dict:
             updated["variety"] = value
 
     elif option == 4:
-        updated["mixgenre"] = not bool(updated.get("mixgenre"))
-
-    elif option == 5:
         current = str(updated.get("filter") or "")
         try:
             value = xbmcgui.Dialog().input("MusicIP filter", defaultt=current)
@@ -426,7 +418,7 @@ def edit_mix_generation_parameter(params: dict, option: int) -> dict:
         if value is not None:
             updated["filter"] = str(value).strip()
 
-    elif option == 6:
+    elif option == 5:
         value = dialog_slider_int(int(updated["rejectsize"]), "Do not repeat artist within N tracks (0..20)", 0, 20, 1)
         if value is not None:
             updated["rejectsize"] = value
@@ -451,7 +443,6 @@ def confirm_mix_generation(params: dict) -> dict | None:
             f"Size: {int(current.get('size') or 0)} tracks",
             f"Style: {int(current.get('style_ui') or 0)}/10 - {current.get('style_label')} (API {int(current.get('style') or 0)})",
             f"Variety: {int(current.get('variety') or 0)}",
-            f"Restrict to seed genre: {'yes' if current.get('mixgenre') else 'no'}",
             f"Filter: {filter_value}",
             f"Artist repeat: {reject_label}",
         ]
@@ -479,7 +470,7 @@ def build_musicip_parameter_query(seed_song: str, params: dict) -> str:
         "sizeType": "tracks",
         "style": str(int(params.get("style") or 0)),
         "variety": str(int(params.get("variety") or 0)),
-        "mixgenre": "true" if params.get("mixgenre") else "false",
+        "mixgenre": "false",
         "content": "text",
     }
 
@@ -5304,7 +5295,6 @@ def build_mix_info_message(cache_path: str) -> str:
             f"Size: {params.get('size', 'unknown')} {params.get('sizetype', 'tracks')}",
             f"Style: {params.get('style_ui', 'unknown')}/10 - {params.get('style_label', '')} (API {params.get('style', 'unknown')})",
             f"Variety: {params.get('variety', 'unknown')}",
-            f"Restrict to seed genre: {'yes' if params.get('mixgenre') else 'no'}",
             f"Filter: {params.get('filter') or '<none>'}",
             f"Artist repeat: {reject_text}",
             f"Recorded: {format_sidecar_ts(meta.get('mix_generation_parameters_ts'))}",
