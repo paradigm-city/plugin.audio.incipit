@@ -2360,9 +2360,10 @@ def reload_musicip_server_before_mix_generation() -> None:
         raise MusicIPError(f"MusicIP server reload failed: {exc}") from exc
 
 
-def fetch_mix(seed_song: str, size: int, mix_params: dict | None = None) -> list[str]:
+def fetch_mix(seed_song: str, size: int, mix_params: dict | None = None, reload: bool = True) -> list[str]:
     params = mix_params or get_effective_mix_parameters(size_override=size)
-    reload_musicip_server_before_mix_generation()
+    if reload:
+        reload_musicip_server_before_mix_generation()
     url = build_musicip_url(seed_song, size, params)
     timeout = get_timeout()
 
@@ -5538,6 +5539,19 @@ def mix_assist_track_metadata(meta: dict) -> dict[str, dict]:
     return {str(key).replace("\\", "/").lower(): value for key, value in raw.items() if isinstance(value, dict)}
 
 
+def mix_assist_fetcher():
+    """fetch_mix for one tidy-up: MusicIP reloads its library before the first submix only (each reload takes
+    seconds, and a tidy-up may request a submix per outlier)."""
+    reloaded = []
+
+    def fetch(seed: str, size: int) -> list[str]:
+        tracks = fetch_mix(seed, size, reload=not reloaded)
+        reloaded.append(True)
+        return tracks
+
+    return fetch
+
+
 def run_mix_assist_on_saved_mix(cache_path: str) -> dict:
     """Tidy up a saved mix: replace the tracks that don't fit what it is about. Returns the applied plan."""
     tracks = load_mix_by_cache_path(cache_path)
@@ -5561,7 +5575,7 @@ def run_mix_assist_on_saved_mix(cache_path: str) -> dict:
         plan = mix_assist.tidy_up(
             tracks, store, ask,
             resolve=lambda paths: mix_assist_library.resolve(paths, execute_jsonrpc, recorded),
-            fetch_mix=lambda seed, size: fetch_mix(seed, size),
+            fetch_mix=mix_assist_fetcher(),
             intent=str(section.get("listener_intent") or ""),
             strictness=get_mix_assist_strictness(),
             artist_window=get_mix_reject_size() or mix_assist.ARTIST_WINDOW,
