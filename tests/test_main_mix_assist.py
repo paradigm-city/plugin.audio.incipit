@@ -4,7 +4,7 @@ import unittest
 from unittest import mock
 
 from fake_kodi import kodi
-from support import KodiTestCase, main
+from support import KodiTestCase, MusicIPServerTestCase, main
 
 TRACKS = [
     "D:\\music\\#jazz\\Seed.mp3",
@@ -165,6 +165,22 @@ class SavedMixMenuTest(MixAssistTestCase):
         message = main.build_mix_info_message(self.cache_path)
         self.assertIn("What this mix is about (stated by the AI): dark, abstract, instrumental", message)
         self.assertIn("Replaced: wilfried – fire walk → Medeski Martin & Wood – Think (Danceable disco, bright)", message)
+
+
+class SubmixFetcherTest(MusicIPServerTestCase):
+    def test_musicip_reloads_only_before_the_first_submix(self):
+        self.musicip.set_mix(TRACKS[1], [TRACKS[3]])
+        self.musicip.set_mix(TRACKS[0], [TRACKS[1], TRACKS[3]])
+        fetch = main.mix_assist_fetcher()
+        self.assertEqual(fetch(TRACKS[1], 15), [TRACKS[1], TRACKS[3]])
+        self.assertEqual(fetch(TRACKS[0], 45), [TRACKS[0], TRACKS[1], TRACKS[3]])
+        self.assertEqual(self.musicip.reload_count(), 1)
+        self.assertEqual([query["size"] for query in self.musicip.mix_requests()], ["15", "45"])
+
+    def test_each_tidy_up_reloads_once(self):
+        main.mix_assist_fetcher()(TRACKS[0], 15)
+        main.mix_assist_fetcher()(TRACKS[0], 15)
+        self.assertEqual(self.musicip.reload_count(), 2)
 
 
 class StrictnessSettingTest(KodiTestCase):
