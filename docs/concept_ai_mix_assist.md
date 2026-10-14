@@ -1,0 +1,316 @@
+# AI Mix Assist Concept
+
+Status: **being built** on the branch `ai-mix-assist`. The concept is backed by a pilot (`tools/style_pilot` on the
+branch `style-pilot`), which developed it under the working title *style consistency*.
+Terms are defined in [glossary_ai_mix_assist.md](glossary_ai_mix_assist.md).
+
+## In one sentence
+
+**AI Mix Assist keeps a mix true to what its first track is about:** it finds tracks that don't fit and replaces
+them with fitting ones, automatically for new mixes, Radio and "More like this", and on request for saved mixes.
+
+## How it appears to the listener
+
+| Place | Wording |
+|---|---|
+| Settings category | **AI Mix Assist** |
+| Settings | "Keep new mixes on track", "Keep Radio on track", "Keep 'More like this' on track": off · show only · fix automatically (default: fix automatically) |
+| Notification | "AI Mix Assist: 3 tracks didn't fit and were replaced" |
+| Context menu of a saved mix | "Tidy up with AI Mix Assist" |
+| The seed intent | "**What this mix is about:** dark, abstract, instrumental, …", stated by the AI, with "Edit" |
+| Undo | "Undo AI Mix Assist changes" |
+
+Internal terms (*refinement*, *style check*, *seed intent*) are kept in code and in this document; the glossary maps
+them to the wording above.
+
+## Problem
+
+MusicIP builds mixes by comparing the audio. It is good at sonic similarity (timbre, tempo, density) but blind to context: style, mood, era, scene. Depending on the seed, a mix can contain tracks that sound similar but belong somewhere else, such as Austrian disco in an avant-jazz mix or hard rock in a synth-pop mix.
+
+The add-on's existing style controls don't solve this. MusicIP's style preference helps only moderately: at its maximum, mixes are measurably closer to the seed, but on average 43 % of the tracks still deviate strongly (see *Results so far*). The files' genre tags are too inconsistent to filter by (2,079 distinct values in this library), so "Restrict to seed genre" was removed from the add-on.
+
+## Idea
+
+**The seed carries the intent of the mix.** An AI rates each unit (album or compilation track) on a few independent dimensions, from its knowledge of the music. A track is compared with the seed, weighted towards the dimensions on which the seed is unusual: those are what the seed stands for. A track that deviates strongly from the seed where it matters is an outlier and is replaced.
+
+A second, independent signal asks the AI directly: it states the seed's intent in words and judges every track against it. Only when both signals agree is a track changed without asking.
+
+Division of labour:
+
+| Layer | Covers |
+|---|---|
+| **MusicIP** | fine sonic similarity, including sub-genre distinctions such as djent vs. traditional progressive metal |
+| **8 dimensions** | the coarse musical, emotional and cultural frame |
+| **Seed-intent check** | context nobody defined: the "right values, wrong world" cases |
+
+## Principles
+
+0. **As little interaction as possible.** By default the assistant works automatically; the listener only sees
+   notifications and can undo.
+1. **Playback starts immediately.** No new mix and no radio station waits for an AI call. ("More like this" may
+   wait: its submix is checked before it is inserted.)
+2. **Saved mixes change only on demand.** Changes made while a mix is created are announced and can be undone.
+3. **Act on the available facts.** When both signals agree, the track is replaced, also when the AI knows the music only from hints (artist, titles, year). A wrongly removed track costs little: a replacement is fetched.
+4. **General.** Nothing depends on how a particular library is organized: no genre folders, no genre tags as structure.
+5. **Rated on demand, cached forever.** Only units that appear in mixes are rated, and each unit only once per prompt version.
+
+## Dimensions (version 2)
+
+Seven scales from 0 to 10 plus the sounding year. The labels are the slider steps.
+
+| Dimension | 0 | 2.5 | 5 | 7.5 | 10 |
+|---|---|---|---|---|---|
+| **energy** (calm ↔ intense) | still | gentle | steady | driving | ferocious |
+| **exploration** (conventional ↔ exploratory) | conventional | familiar | inventive | adventurous | radical |
+| **mood** (dark, tense ↔ bright, playful) | bleak | brooding | bittersweet | sunny | exuberant |
+| **making** (played by hand ↔ programmed) | hand-played | mostly played | mixed | mostly programmed | machine-made |
+| **danceability** (not for dancing ↔ made for dancing) | for listening | swaying | groovy | danceable | dancefloor |
+| **production** (raw, gritty ↔ polished) | raw | rough | natural | clean | glossy |
+| **form** (instrumental, open ↔ vocal song) | open | instrumental | loose | song | vocal-led |
+| **sounding year** | early (≤1964) | classic (1965–79) | eighties | turn of millennium (1990–2009) | contemporary (2010+) |
+
+Each step has anchor artists from the library, and each dimension says what it is not (e.g. danceability is not energy: house can be mellow, disco is played by hand). Definitions and anchors are in `tools/style_pilot/dimensions.py`.
+
+### How they were chosen
+
+The first set of 8 was a reasoned guess. It turned out to count energy three times (intensity, anthemic, presence) and mood twice (darkness, temperature), and it had nothing for production or form, which were the most frequent reasons in the AI's own judgements.
+
+A **dependency study** then rated the pilot's albums on 22 sharpened candidates (all rated with r 0.93–0.99 in a repeat) and looked for dependencies:
+
+| Independent axis | Candidates that measure it |
+|---|---|
+| energy | energy, heaviness, aggressiveness, intimacy ↔ anthemic, density, presence |
+| exploration | harmony, progressiveness, rhythmic complexity, accessibility (inverted) |
+| mood | darkness, playfulness, warmth, tension |
+| making | performance (played or programmed), timbre, danceability |
+| production | polish |
+| form | vocal role, song form, improvisation |
+| sounding year | sounding year |
+
+Version 2 takes one dimension per axis, rated directly as one concept each (they agree with their axes at r 0.90–0.97), and adds **danceability** as its own dimension: it parts from "programmed" exactly where it matters, in hand-played dance music such as disco. Version 2 behaves like 5.7 independent dimensions out of 8; the first set like 4.4.
+
+## Results so far
+
+| Test | Result | Consequence |
+|---|---|---|
+| **Stability** | Repeated ratings agree with r 0.90–0.99, also for music the AI doesn't know. | Ratings made at different times can share one cache. |
+| **Compression** | The AI avoids the ends of the scales: most albums land in the middle three steps. | Place slider labels by **library percentiles**, not at fixed values. |
+| **Genre tags** | Without them, unknown music is rated about as before on average, but about 5 % is misread as a different style altogether. | Keep the genre tag as a rating hint. |
+| **Dry runs on 5 real mixes** | The weighted misfit and the seed-intent check agree closely: AUC 0.95–1.00 (holistic outlier vs. fits) per mix. On the first mix, against the user's verdicts: 0.97. | The dimensions reproduce the holistic judgement. |
+| **Threshold** | A fixed misfit threshold doesn't transfer between mixes; 1.2 × the mix's median misfit does (33 of 47 holistic outliers caught, 1 of 70 fitting tracks flagged). | Flag relative to the mix. |
+| **Seed weighting** | Unweighted, the new dimensions agree worse with the user's verdicts (0.78) than weighted (1.00). | Weighting by the seed is essential. |
+| **MusicIP's style preference** | 6 seeds at style 0, 100 and 200: mixes get closer to the seed with higher values (misfit 1.68 → 1.39; tracks far from the seed 54 % → 43 %; from the seed's genre folder 11 % → 29 %). Genre tags play no visible role (tracks sharing the seed's tag: 8 % → 13 %). | Keep the setting as it is; it improves the raw material that refinement works on. |
+| **Replacement** | In four mixes, all 19 outliers were replaced (12 from neighbour submixes, 7 from the master seed's submix); the user found the refined mixes' consistency convincing. With submixes seeded from merely non-outlier neighbours, 3 gaps had stayed empty. | Seed submixes only from clearly fitting tracks; keep the master-seed fallback. |
+
+The pilot also used this library's genre folders as ground truth (38 % of albums nearest to their own folder, chance 2 %). That is a development tool, not part of the design.
+
+## Rating
+
+### Units and keys
+
+- A **normal album** is one unit; all its tracks share the rating.
+- A **compilation track** is its own unit, because its album says little about it.
+- The **unit key** is the MusicBrainz release-group ID (album) or recording ID (track). Release-group IDs merge editions and remasters, and both kinds of ID absorb spelling variants of artist names. Without IDs, the key is the normalized artist and title.
+
+### Input and output
+
+- **Input:** artist, album or track title, year, up to 15 track titles (albums), and the genre tag as a hint. Never file paths, folders or audio.
+- **Output:** the 8 values, familiarity (0–2) and a short description (15 words at present).
+- Structured output enforces the format. Values are clamped to their ranges.
+
+### Cache
+
+- SQLite in the add-on profile, keyed by unit key (a JSON file in the pilot).
+- Each entry stores the values, familiarity, description, model, prompt version and rating time.
+- When the dimension definitions change, the prompt version changes, and old entries are re-rated when next needed.
+
+### Routes
+
+| Route | Use | Cost (pilot figures) |
+|---|---|---|
+| **Subscription** (Claude Code CLI, claude.ai login) | rating on demand on the machine running Kodi | counts towards the plan's usage limits (~$0.15 list-price equivalent per 20 albums) |
+| **API direct** | rating on demand where no CLI is available | standard price, about $0.003 per unit |
+| **API batch** | bulk rating, experiments | half price, about $0.0016 per unit; takes up to an hour |
+
+The subscription route must not pass `ANTHROPIC_API_KEY` to the CLI, or the calls are billed to the API account. It must not use the CLI's `--bare` mode either, which forces API-key billing.
+
+## Fit
+
+### Weighted misfit against the seed
+
+1. **Reference:** the seed's style vector. Finished mixes are always judged against the seed (drift 0; see *Drift*).
+2. **Seed weights:** each dimension is weighted by how far the seed is from the library average, in library standard deviations, scaled to average 1. For an avant-jazz seed: form 2.1 (instrumental), exploration 2.0, sounding year 1.3, but energy 0.3, because the seed's energy is ordinary.
+3. **Spread:** the mix's robust spread per dimension sets the scale, with a floor of 1 point (5 years for the sounding year).
+4. **Misfit:** the weighted deviations combined, corrected for the remaining overlap between dimensions. The largest weighted deviations give the reason shown to the user, e.g. "exploration: familiar vs. adventurous; form: vocal-led vs. open".
+5. **Relative misfit:** misfit divided by the mix's median misfit (at least 1.0). **Strictness** is the threshold on it; 1.2 is calibrated on five mixes.
+
+### Signals and decisions
+
+| Signal | Source | Cost |
+|---|---|---|
+| **Vector misfit** | rating cache | arithmetic only |
+| **Seed-intent check** | an AI call: it first states the seed's intent as 5–8 musical qualities (not instrumentation or scene), then judges each track against it, with the rest of the mix as context only | one call per mix |
+
+- **Flagged:** one signal reports an outlier. The track is shown, not changed.
+- **Clearly inconsistent:** both signals agree. Such tracks are replaced during refinement without asking, also when they are **guessed units** (rated from hints alone).
+
+For a guessed unit the two signals are not independent: the seed-intent check reads the description written in the same rating. The decision is deliberate (principle 3): both guessed outliers in the first mix were right, and a wrong removal is cheap.
+
+**Dimension weights** (per dimension: off, or how much it counts) and **target values** (the seed's value replaced by a slider position) remain possible user settings.
+
+## Changing mixes
+
+| Context | What happens | Automatic |
+|---|---|---|
+| **New mix**, including "More like this" | Plays at once. Refinement runs in the background, patches the not-yet-played part of the playlist and the saved mix, and shows a notification ("Mix refined: 2 tracks replaced"). | yes, if enabled |
+| **Radio, first refill** | Same as a new mix. | yes, if enabled |
+| **Radio, later refills** | Refined before they are queued; there are minutes before they play. Nothing needs patching. | yes, if enabled |
+| **Saved mix** | **Style check** from the context menu: flagged tracks with reasons and candidates; the user decides per track. | never |
+
+```mermaid
+flowchart TD
+    A[New mix or refill] --> B[Play immediately]
+    A --> C[Over-fetch from MusicIP]
+    C --> D{Units in rating cache?}
+    D -- No --> E[Rate missing units in the background]
+    E --> F[Weighted misfit against the seed]
+    D -- Yes --> F
+    F --> G[Seed-intent check]
+    G --> H{Both signals agree?}
+    H -- No --> I[Flag only, or nothing]
+    H -- Yes --> K[Find candidates from the outlier's neighbours]
+    K --> L{One clear candidate?}
+    L -- Yes --> M[Replace outside the protected zone]
+    L -- No --> N[Remove if the mix is long enough, otherwise flag]
+    M --> O[Notify; keep original for undo]
+    N --> O
+```
+
+### Rules for patching a playing mix
+
+- The **protected zone** (the playing track and the next one) is never changed. Kodi may already be preparing the next file.
+- Patch only if the playlist still belongs to this mix. The add-on already detects when other playback takes over (as in Radio mode).
+- While the check runs, only the first track or two play, and the first track is the seed. Once the cache covers the part of the library that gets played, the vector part needs no AI call; the seed-intent check remains one call per mix.
+
+### Replacement: a submix, like "More like this"
+
+Replacing an outlier works like "More like this": a **submix** is created and inserted into the master mix, and the **same consistency mechanisms apply to the submix**, measured against the master mix.
+
+1. **Submix seed:** the nearest earlier track that **clearly fits** (misfit within the strictness and the seed-intent check says *fits*), at worst the master seed. A submix inherits its seed's direction, so a borderline neighbour would pass its drift on.
+2. **Submix:** about 15 tracks from MusicIP. Tracks already in the mix and repeats are dropped.
+3. **Check against the master mix:** the master seed's weights, the master mix's spread and median misfit, and the master's stated seed intent (one AI call covers all candidates of a mix).
+4. **Choice:** the candidate with the lowest misfit that passes both signals and does not repeat an artist within the add-on's artist window (5 tracks). Artist names are compared loosely ("&" = "and").
+5. **Fallback:** if a gap's submix yields nothing, a larger submix from the **master seed** (3× the size) serves all such gaps. If that fails too, the outlier is removed.
+6. If MusicIP rejects a submix seed, the next clearly fitting track further back is tried.
+
+**When much of a mix fails** (in the first mix, half the tracks failed the seed's intent), patching turns into rebuilding: over-fetch more and keep only what fits.
+
+### Undo and decisions
+
+- The sidecar keeps the track list before each change, so refinement and style checks can be undone.
+- In a style check, "keep" is remembered: the track is not flagged again in that mix.
+- All decisions (replace, remove, keep) are recorded. Over time they show which dimensions and thresholds match the listener's ears.
+
+### Relation to repair and "Less like this"
+
+- **Repair** remains the recovery of moved or deleted files. Style changes are curation, not recovery, so they follow the stricter rule for saved mixes.
+- **"Less like this"** removes tracks similar to one the user dislikes. A style check removes tracks that don't match the seed. They complement each other and can share the decision record.
+
+## Drift
+
+Drift answers a different question than the style check: not *does this track belong to the mix?* but *which track should come next?* It applies when tracks are chosen one after another (Radio refills, journeys), not when a finished mix is judged.
+
+> reference = (1 − drift) × previous reference + drift × the track that just played
+
+| Drift | Reference | Effect |
+|---|---|---|
+| 0 | stays at the seed | every track must fit the start: strict |
+| ~0.2 | moves slowly | gradual drift, like a radio programme |
+| 1 | the predecessor | chain: only the step to the previous track counts |
+
+The same idea in two plainer controls:
+
+- **Step size:** how different consecutive tracks may be.
+- **Leash:** how far the mix may move from the seed in total.
+
+Judging a finished MusicIP mix with drift above 0 was tested and does not work: MusicIP's track order jumps between clusters, so a gradual judgement accepted almost everything, and a chain judgement flagged the tracks *after* each jump, including the best-fitting ones. Finished mixes are therefore always judged at drift 0; transitions are a matter of ordering (see *Deferred*).
+
+## Sidecar `style` section (sketch)
+
+```json
+{
+  "style": {
+    "model": "claude-opus-5-5",
+    "dimension_version": 2,
+    "prompt_version": "…",
+    "checked_ts": 1770000000,
+    "settings": {"strictness": 1.2, "weights": {}, "targets": {}},
+    "seed_intent": "Freely improvised, open-ended structure; …",
+    "tracks": [{"path": "…", "unit_key": "…", "misfit": 1.41, "flagged": true, "guessed": true,
+                "verdict": "outlier", "reason": "exploration: familiar vs. adventurous; form: vocal-led vs. open"}],
+    "changes": [
+      {"ts": 1770000000, "kind": "refinement", "action": "replace", "position": 7,
+       "old": "…", "new": "…", "reason": "exploration: familiar vs. adventurous"}
+    ],
+    "kept": ["…"],
+    "previous_tracks": ["…"]
+  }
+}
+```
+
+## Known gaps
+
+| Gap | Seen where | Status |
+|---|---|---|
+| **Acoustic ↔ electric sound** | The user rejected Crosby, Stills & Nash, Isabelle Mayereau and The Doors as "acoustic, not electronic, handmade". *Making* only distinguishes played from programmed, and timbre did not form an axis of its own in the study. | Kept in mind; axes unchanged for now. Candidate fix: *sound* (acoustic ↔ electric ↔ electronic) instead of or next to *making*. |
+| **Sub-genre resolution** | In a metalcore mix, the vectors also flag pop-metalcore and djent tracks that the seed-intent check accepts. | Below the resolution of 8 coarse dimensions; the "both signals" rule prevents changes there. |
+| **Threshold in failing mixes** | When half a mix is off target, the mix median is inflated and the relative threshold catches fewer outliers. | Rebuild rather than patch such mixes. |
+| **Album units** | Tracks from the seed's own album share its rating, so their misfit is 0 and they always fit. | Acceptable; the artist window keeps them from landing next to the same artist. |
+| **MusicIP must know the paths** | Moved files that MusicIP hasn't rescanned can't seed a submix (HTTP 500); for the first mix this blocked the master-seed fallback. | Rescan MusicIP after moving files; the replacement step skips to an earlier seed. |
+
+## Deferred
+
+| Idea | Reason |
+|---|---|
+| **Context tags** from a fixed list of settings and scenes | First step if the dry runs show context misses. |
+| **Colour vector** (embedding of the description) | Needs an embedding model that Kodi can't run; likely re-encodes genre; the seed-intent check covers the same ground. |
+| **MusicBrainz community genres** as a rating hint | Cleaner than the genre tag, but often missing for obscure music. Worth a pilot comparison. |
+| **Folder signal** | Only for libraries organized by genre; not general. |
+| **A mix like an album** | A mix now has a seed, a statement of what it is about, a mood, replaced tracks, perhaps a title: almost like the sleeve text of an album. Kodi could present a mix like a "Various Artists" album, with that text and with artwork (e.g. a collage of the albums' covers). Idea from 2026-10-14; later. |
+| **Seed weights for narrow libraries** | Seed weights measure "unusual within this library". In a narrow library, the dimensions that define the listener's taste become ordinary and lose weight (simulated metal-only library: a metal seed's energy weight drops from 1.1 to 0.4), while small quirks gain weight. Remedies: measure "unusual" against a fixed, genre-balanced reference instead of the library, and raise the weight floor (e.g. 0.5). Backlog; the seed-intent check and MusicIP's library-bound candidates limit the effect meanwhile. |
+| **Journey, arc, smooth ordering, map** | Build on the same reference mechanics; later. |
+
+## Build decisions (2026-10-14)
+
+| Decision | Choice |
+|---|---|
+| Name | **AI Mix Assist**, branch `ai-mix-assist` from `main` |
+| Automatic by default | new mixes, Radio, "More like this" ("More like this" may wait for the check) |
+| On demand | saved mixes, from the context menu |
+| Seed intent | stated by the AI by default; the listener can edit it |
+| Description length | 15 words (unchanged) |
+| Slider labels | fixed placement for now; percentile placement with the advanced sliders, later |
+| Rating route | the Claude Code CLI on the listener's subscription (see *Running Claude from Kodi*); an API key as an alternative later |
+| Build order | core (cache, CLI route, fit, checks) → saved mixes on demand (smallest complete slice) → new mixes → "More like this" → Radio |
+
+## Running Claude from Kodi (spike, 2026-10-14)
+
+Tested from Kodi 21's Python (3.8.15) on Windows, inside the running add-on:
+
+- Starting the Claude Code CLI with `subprocess` works; with `CREATE_NO_WINDOW` no console window appears (watched
+  in Kodi: only the add-on's own notifications).
+- Login: the claude.ai subscription (Pro). **Kodi's environment contains `ANTHROPIC_API_KEY`** (a user environment
+  variable), so every call must remove it, or it is billed to the API account.
+- Timing: `--version` 0.1 s, `auth status` 0.3 s, a rating call for 1–3 albums 5.5–6.6 s.
+- The CLI was only available inside the VS Code extension, whose folder name contains the version (it changed from
+  2.1.296 to 2.1.299 during the pilot). The add-on searches the known places (newest version first) and offers a
+  path setting.
+- `auth status` prints the account's e-mail address; the add-on logs only whether the CLI is logged in.
+
+## Next steps
+
+1. **Fix F12 in the add-on** (seed paths must be sent as cp1252), so every track can seed a mix or submix.
+2. **Rebuild instead of patch:** a dry run for mixes where much fails (the first mix: 14 outliers and 19 flagged tracks of 49), after MusicIP has rescanned the moved files.
+3. **Calibrate** slider labels by library percentiles.
+4. **Decide the description length** (15 words now; about 40 would keep later context features possible without re-rating).
+5. **Then the add-on:** rating cache and routes in the service, style check for saved mixes, refinement for new mixes and Radio.

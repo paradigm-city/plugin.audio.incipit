@@ -12,6 +12,8 @@ Feature baseline: **1.0.87**
 - `concept_radio_mode.md`
 - `concept_repair_strategy.md`
 - `concept_sidecar_metadata.md`
+- `concept_ai_mix_assist.md`: AI Mix Assist, which keeps mixes true to their seed (being built)
+- `glossary_ai_mix_assist.md`: terms used for AI Mix Assist
 - `testing_quality_notes.md`
 - `findings.md`: known problems in the code and their status
 
