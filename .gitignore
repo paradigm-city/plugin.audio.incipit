@@ -1,2 +1,4 @@
 __pycache__/
 *.pyc
+tools/style_pilot/data/
+tools/style_pilot/.venv/
