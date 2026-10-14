@@ -581,6 +581,19 @@ class Dialog:
         kodi.notifications.append((heading, message, icon))
 
 
+class DialogProgressBG:
+    """Records create/update/close as dialog calls named progress.*."""
+
+    def create(self, heading, message=""):
+        kodi.dialog_calls.append(("progress.create", (heading, message), {}))
+
+    def update(self, percent=0, heading=None, message=None):
+        kodi.dialog_calls.append(("progress.update", (percent, heading, message), {}))
+
+    def close(self):
+        kodi.dialog_calls.append(("progress.close", (), {}))
+
+
 def _getCurrentWindowId():
     return kodi.window_id
 
@@ -682,7 +695,7 @@ def install():
     xbmcaddon.Addon = Addon
 
     xbmcgui = types.ModuleType("xbmcgui")
-    xbmcgui.ListItem, xbmcgui.Dialog = ListItem, Dialog
+    xbmcgui.ListItem, xbmcgui.Dialog, xbmcgui.DialogProgressBG = ListItem, Dialog, DialogProgressBG
     xbmcgui.NOTIFICATION_INFO = NOTIFICATION_INFO
     xbmcgui.NOTIFICATION_WARNING = NOTIFICATION_WARNING
     xbmcgui.NOTIFICATION_ERROR = NOTIFICATION_ERROR
