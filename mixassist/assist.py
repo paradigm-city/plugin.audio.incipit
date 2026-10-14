@@ -110,8 +110,11 @@ def pick(candidates: Sequence[dict], strictness: float, taken: set, blocked: set
 
 def tidy_up(paths: Sequence[str], cache: RatingCache, ask: Ask, resolve: Resolve, fetch_mix: FetchMix,
             intent: str = "", strictness: float = DEFAULT_STRICTNESS, artist_window: int = ARTIST_WINDOW,
-            model: str = "", progress: Optional[Callable[[str], None]] = None) -> dict:
-    """A plan for the mix: the intent, every track's status, and the replacements to make."""
+            model: str = "", progress: Optional[Callable[[str], None]] = None,
+            find_replacements: bool = True) -> dict:
+    """A plan for the mix: the intent, every track's status, and the replacements to make.
+
+    With find_replacements=False only the tracks that don't fit are found ("show only")."""
     def step(text: str) -> None:
         if progress:
             progress(text)
@@ -135,10 +138,10 @@ def tidy_up(paths: Sequence[str], cache: RatingCache, ask: Ask, resolve: Resolve
 
     analysis = analyze(units, entries, verdicts, cache.library(), strictness)
     rows = analysis["rows"]
-    plan = {"intent": intent, "intent_source": intent_source, "rows": rows, "changes": [], "removed": [],
-            "paths": paths, "rebuild_suggested": False}
     outliers = [row["position"] for row in rows if row.get("status") == "outlier"]
-    if not analysis["ready"] or not outliers:
+    plan = {"intent": intent, "intent_source": intent_source, "rows": rows, "outliers": outliers, "changes": [],
+            "removed": [], "paths": paths, "rebuild_suggested": False}
+    if not analysis["ready"] or not outliers or not find_replacements:
         return plan
     plan["rebuild_suggested"] = len(outliers) > REBUILD_SHARE * (len(paths) - 1)
 

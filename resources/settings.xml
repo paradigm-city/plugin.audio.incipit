@@ -17,6 +17,7 @@
     </category>
 
     <category label="AI Mix Assist">
+        <setting id="mix_assist_new_mixes" type="enum" label="Keep new mixes on track" values="Off|Show only|Fix automatically" default="2" />
         <setting id="mix_assist_strictness" type="enum" label="Strictness" values="Lenient|Relaxed|Normal|Strict|Very strict" default="2" />
         <setting id="mix_assist_cli_path" type="text" label="Claude Code CLI (empty: find it automatically)" default="" />
     </category>

@@ -12,6 +12,7 @@ import os
 import random
 import re
 import sqlite3
+import threading
 import time
 import urllib.parse
 import unicodedata
@@ -2272,6 +2273,33 @@ def run_metadata_refresh_tick(max_items: int = METADATA_REFRESH_BATCH_SIZE) -> i
     return refreshed
 
 
+# --- AI Mix Assist ---------------------------------------------------------------------------
+# The plugin queues new mixes; the service tidies them up one at a time in a background thread, so the
+# service loop (Discovery, Radio, consistency) keeps running while Claude and MusicIP are busy.
+
+MIX_ASSIST_WORKER: threading.Thread | None = None
+
+
+def run_mix_assist_tick() -> None:
+    global MIX_ASSIST_WORKER
+    if MIX_ASSIST_WORKER is not None and MIX_ASSIST_WORKER.is_alive():
+        return
+    plugin = load_plugin_module()
+    entry = plugin.pop_mix_assist_request()
+    if not entry:
+        return
+    log_info(f"AI Mix Assist: tidying up {entry.get('cache_path')!r} ({entry.get('mode')}).")
+    MIX_ASSIST_WORKER = threading.Thread(target=run_mix_assist_request, args=(plugin, entry), daemon=True)
+    MIX_ASSIST_WORKER.start()
+
+
+def run_mix_assist_request(plugin, entry: dict) -> None:
+    try:
+        plugin.process_mix_assist_request(entry)
+    except Exception as exc:
+        log(f"AI Mix Assist: tidying up {entry.get('cache_path')!r} failed: {exc}", xbmc.LOGERROR)
+
+
 def main() -> None:
     monitor = xbmc.Monitor()
     playback_monitor = DiscoveryPlaybackMonitor()
@@ -2308,6 +2336,11 @@ def main() -> None:
             refresh_radio_menu_if_visible()
         except Exception as exc:
             log(f"Radio mode tick failed: {exc}", xbmc.LOGERROR)
+
+        try:
+            run_mix_assist_tick()
+        except Exception as exc:
+            log(f"AI Mix Assist tick failed: {exc}", xbmc.LOGERROR)
 
         now_for_metadata = int(time.time())
         if last_metadata_refresh_ts <= 0 or now_for_metadata - last_metadata_refresh_ts >= METADATA_REFRESH_INTERVAL_SECONDS:
