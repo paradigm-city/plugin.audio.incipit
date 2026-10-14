@@ -15,6 +15,7 @@ import re
 import sys
 import time
 import unicodedata
+from functools import partial
 from urllib.parse import parse_qsl, quote_from_bytes, urlencode, unquote
 from urllib.request import urlopen
 from urllib.error import URLError, HTTPError
@@ -24,6 +25,11 @@ import xbmcaddon
 import xbmcgui
 import xbmcplugin
 import xbmcvfs
+
+from mixassist import assist as mix_assist
+from mixassist import cache as mix_assist_cache
+from mixassist import claude as mix_assist_claude
+from mixassist import library as mix_assist_library
 
 
 ADDON = xbmcaddon.Addon()
@@ -4333,6 +4339,10 @@ def add_saved_mix_item(cache_path: str) -> None:
                 repair_readiness_action_label(repair_readiness),
                 build_update_library_before_repair_action(cache_path),
             ))
+    context_items.append(("Tidy up with AI Mix Assist", build_mix_assist_action("mix_assist_tidy_up", cache_path)))
+    context_items.append(("Edit what this mix is about", build_mix_assist_action("mix_assist_edit_intent", cache_path)))
+    if get_mix_assist_section(meta).get("previous_tracks"):
+        context_items.append(("Undo AI Mix Assist changes", build_mix_assist_action("mix_assist_undo", cache_path)))
     context_items.append(("Cleanup this mix", build_cleanup_saved_mix_action(cache_path)))
     list_item.addContextMenuItems(context_items)
 
@@ -5320,6 +5330,7 @@ def build_mix_info_message(cache_path: str) -> str:
             f"Checked: {format_sidecar_ts(readiness.get('checked_ts'))}",
         ])
 
+    lines.extend(build_mix_assist_info_lines(meta))
     return "\n".join(lines)
 
 
@@ -5482,6 +5493,181 @@ def open_settings() -> None:
         pass
 
 
+# ---------------------------------------------------------------------------
+# AI Mix Assist (docs/concept_ai_mix_assist.md): tidying up saved mixes on demand.
+# ---------------------------------------------------------------------------
+
+# "Strictness" setting: lenient … very strict, as multiples of a mix's median misfit (1.2 = calibrated default).
+MIX_ASSIST_STRICTNESS = (1.5, 1.35, 1.2, 1.1, 1.0)
+MIX_ASSIST_SECTION = "mix_assist"
+MIX_ASSIST_MESSAGES = {
+    mix_assist_claude.NOT_FOUND: "AI Mix Assist needs the Claude Code CLI. Install it, or set its path in the settings.",
+    mix_assist_claude.NOT_LOGGED_IN: "AI Mix Assist: Claude Code is not logged in. Run \"claude\" once and log in.",
+    mix_assist_claude.USAGE_LIMIT: "AI Mix Assist: Claude's usage limit is reached. Please try again later.",
+    mix_assist_claude.TIMEOUT: "AI Mix Assist: Claude did not answer in time.",
+    mix_assist_claude.FAILED: "AI Mix Assist: Claude could not judge this mix.",
+}
+
+
+def get_mix_assist_strictness() -> float:
+    index = max(0, min(len(MIX_ASSIST_STRICTNESS) - 1, get_setting_int("mix_assist_strictness", 2)))
+    return MIX_ASSIST_STRICTNESS[index]
+
+
+def mix_assist_cache_path() -> str:
+    return os.path.join(get_profile_dir(), "mixassist", "ratings.db")
+
+
+def mix_assist_ask():
+    cli = mix_assist_claude.find_cli(get_setting("mix_assist_cli_path", "").strip())
+    if not cli:
+        raise mix_assist_claude.ClaudeError(mix_assist_claude.NOT_FOUND, "The Claude CLI was not found.")
+    return partial(mix_assist_claude.ask, cli)
+
+
+def get_mix_assist_section(meta: dict) -> dict:
+    section = meta.get(MIX_ASSIST_SECTION)
+    return dict(section) if isinstance(section, dict) else {}
+
+
+def mix_assist_track_metadata(meta: dict) -> dict[str, dict]:
+    """Recorded track metadata, keyed the way mixassist.library looks it up."""
+    raw = meta.get("track_metadata_by_path")
+    if not isinstance(raw, dict):
+        return {}
+    return {str(key).replace("\\", "/").lower(): value for key, value in raw.items() if isinstance(value, dict)}
+
+
+def run_mix_assist_on_saved_mix(cache_path: str) -> dict:
+    """Tidy up a saved mix: replace the tracks that don't fit what it is about. Returns the applied plan."""
+    tracks = load_mix_by_cache_path(cache_path)
+    if len(tracks) < 2:
+        raise MusicIPError("This mix is too short to tidy up.")
+    meta = get_saved_mix_metadata(cache_path, tracks)
+    section = get_mix_assist_section(meta)
+    recorded = mix_assist_track_metadata(meta)
+    ask = mix_assist_ask()
+    store = mix_assist_cache.RatingCache(mix_assist_cache_path())
+    progress = xbmcgui.DialogProgressBG()
+    progress.create("AI Mix Assist", "Starting")
+    steps = ["Looking up the tracks", "Rating new music", "Working out what this mix is about",
+             "Finding replacements", "Checking the replacements"]
+
+    def show(text: str) -> None:
+        percent = int(100 * (steps.index(text) + 1) / (len(steps) + 1)) if text in steps else 0
+        progress.update(percent, "AI Mix Assist", text)
+
+    try:
+        plan = mix_assist.tidy_up(
+            tracks, store, ask,
+            resolve=lambda paths: mix_assist_library.resolve(paths, execute_jsonrpc, recorded),
+            fetch_mix=lambda seed, size: fetch_mix(seed, size),
+            intent=str(section.get("listener_intent") or ""),
+            strictness=get_mix_assist_strictness(),
+            artist_window=get_mix_reject_size() or mix_assist.ARTIST_WINDOW,
+            model=mix_assist_claude.DEFAULT_MODEL,
+            progress=show,
+        )
+    finally:
+        progress.close()
+        store.close()
+
+    changed = bool(plan["changes"] or plan["removed"])
+    if changed:
+        save_mix_by_cache_path(cache_path, plan["paths"])
+    meta = get_saved_mix_metadata(cache_path, plan["paths"])
+    section = get_mix_assist_section(meta)
+    labels = {row["position"]: row["unit"]["label"] for row in plan["rows"]}
+    section.update({
+        "checked_ts": int(time.time()),
+        "intent": plan["intent"],
+        "intent_source": plan["intent_source"],
+        "replaced": [
+            {"old": change["old"], "old_label": change["old_label"], "new": change["new"],
+             "new_label": change["new_label"], "reason": change["reason"]}
+            for change in plan["changes"]
+        ],
+        "removed": [labels.get(position, "") for position in plan["removed"]],
+        "rebuild_suggested": bool(plan["rebuild_suggested"]),
+    })
+    if changed:
+        section["previous_tracks"] = list(tracks)
+    meta[MIX_ASSIST_SECTION] = section
+    save_json_file(mix_meta_path_from_cache_path(cache_path), meta)
+    return plan
+
+
+def mix_assist_result_message(plan: dict) -> str:
+    replaced, removed = len(plan["changes"]), len(plan["removed"])
+    if not replaced and not removed:
+        return "AI Mix Assist: every track fits."
+    parts = []
+    if replaced:
+        parts.append(f"{replaced} track{'s' if replaced != 1 else ''} didn't fit and {'were' if replaced != 1 else 'was'} replaced")
+    if removed:
+        parts.append(f"{removed} without a fitting replacement {'were' if removed != 1 else 'was'} removed")
+    return "AI Mix Assist: " + ", ".join(parts) + "."
+
+
+def undo_mix_assist_on_saved_mix(cache_path: str) -> int:
+    meta = get_saved_mix_metadata(cache_path, load_mix_by_cache_path(cache_path))
+    section = get_mix_assist_section(meta)
+    previous = section.get("previous_tracks")
+    if not isinstance(previous, list) or not previous:
+        raise MusicIPError("There are no AI Mix Assist changes to undo.")
+    save_mix_by_cache_path(cache_path, [str(track) for track in previous])
+    meta = get_saved_mix_metadata(cache_path, previous)
+    section = get_mix_assist_section(meta)
+    for key in ("previous_tracks", "replaced", "removed"):
+        section.pop(key, None)
+    meta[MIX_ASSIST_SECTION] = section
+    save_json_file(mix_meta_path_from_cache_path(cache_path), meta)
+    return len(previous)
+
+
+def edit_mix_assist_intent(cache_path: str) -> bool:
+    """Let the listener write what the mix is about; an empty text goes back to the AI's statement."""
+    meta = get_saved_mix_metadata(cache_path, load_mix_by_cache_path(cache_path))
+    section = get_mix_assist_section(meta)
+    current = str(section.get("listener_intent") or section.get("intent") or "")
+    try:
+        value = xbmcgui.Dialog().input("What is this mix about?", defaultt=current)
+    except TypeError:
+        value = xbmcgui.Dialog().input("What is this mix about?", current)
+    if value is None or value == current:
+        return False
+    value = str(value).strip()
+    if value:
+        section["listener_intent"] = value
+    else:
+        section.pop("listener_intent", None)
+    meta[MIX_ASSIST_SECTION] = section
+    save_json_file(mix_meta_path_from_cache_path(cache_path), meta)
+    return True
+
+
+def build_mix_assist_info_lines(meta: dict) -> list[str]:
+    section = get_mix_assist_section(meta)
+    if not section:
+        return []
+    lines = ["", "AI Mix Assist:"]
+    intent = section.get("listener_intent") or section.get("intent")
+    if intent:
+        source = "your words" if section.get("listener_intent") else "stated by the AI"
+        lines.append(f"What this mix is about ({source}): {intent}")
+    if section.get("checked_ts"):
+        lines.append(f"Last tidied up: {format_sidecar_ts(section.get('checked_ts'))}")
+    for change in section.get("replaced") or []:
+        lines.append(f"Replaced: {change.get('old_label', '')} → {change.get('new_label', '')} ({change.get('reason', '')})")
+    for label in section.get("removed") or []:
+        lines.append(f"Removed: {label}")
+    return lines
+
+
+def build_mix_assist_action(action: str, cache_path: str) -> str:
+    return f"RunPlugin({addon_url(action=action, cache_path=cache_path, nonce=new_nonce())})"
+
+
 def router() -> None:
     ensure_musicip_keymap_installed()
     params = parse_args()
@@ -5635,6 +5821,28 @@ def router() -> None:
             return
 
         show_update_library_before_repair(cache_path)
+        xbmc.executebuiltin("Container.Refresh")
+        return
+
+    if action in ("mix_assist_tidy_up", "mix_assist_undo", "mix_assist_edit_intent"):
+        cache_path = params.get("cache_path", "").strip()
+        if not cache_path:
+            notify("No saved mix was selected.", xbmcgui.NOTIFICATION_ERROR)
+            return
+        try:
+            if action == "mix_assist_tidy_up":
+                notify(mix_assist_result_message(run_mix_assist_on_saved_mix(cache_path)))
+            elif action == "mix_assist_undo":
+                undo_mix_assist_on_saved_mix(cache_path)
+                notify("AI Mix Assist: the changes were undone.")
+            elif edit_mix_assist_intent(cache_path):
+                notify("Saved. Tidy up the mix to apply it.")
+        except mix_assist_claude.ClaudeError as exc:
+            log(f"AI Mix Assist: {exc.kind}: {exc}", xbmc.LOGERROR)
+            notify(MIX_ASSIST_MESSAGES.get(exc.kind, str(exc)), xbmcgui.NOTIFICATION_ERROR)
+        except MusicIPError as exc:
+            log(f"AI Mix Assist: {exc}", xbmc.LOGERROR)
+            notify(str(exc), xbmcgui.NOTIFICATION_ERROR)
         xbmc.executebuiltin("Container.Refresh")
         return
 

@@ -16,6 +16,11 @@
         <setting id="mix_reject_size" type="slider" label="Do not repeat artist within this many tracks" default="0" range="0,1,20" option="int" />
     </category>
 
+    <category label="AI Mix Assist">
+        <setting id="mix_assist_strictness" type="enum" label="Strictness" values="Lenient|Relaxed|Normal|Strict|Very strict" default="2" />
+        <setting id="mix_assist_cli_path" type="text" label="Claude Code CLI (empty: find it automatically)" default="" />
+    </category>
+
     <category label="Discovery mode">
         <setting id="discovery_excerpt_seconds" type="slider" label="Excerpt length (seconds)" default="20" range="5,1,60" option="int" />
         <setting id="discovery_offset_percent" type="slider" label="Start offset into song (%)" default="33" range="0,1,90" option="int" />
