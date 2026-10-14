@@ -407,6 +407,8 @@ class KodiState:
                 t = value["time"]
                 self.player.time = float(t.get("hours", 0) * 3600 + t.get("minutes", 0) * 60 + t.get("seconds", 0))
             return {"time": value.get("time", {})}
+        if method == "Playlist.GetItems":
+            return {"items": [{"file": url, "type": "song"} for url, _item in self.playlist]}
         if method == "Playlist.Remove":
             position = int(params["position"])
             if position == self.player.position or not 0 <= position < len(self.playlist):
