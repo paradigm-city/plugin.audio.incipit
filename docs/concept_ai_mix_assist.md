@@ -165,7 +165,7 @@ For a guessed unit the two signals are not independent: the seed-intent check re
 | **New mix**, including "More like this" | Plays at once. Refinement runs in the background, patches the not-yet-played part of the playlist and the saved mix, and shows a notification ("Mix refined: 2 tracks replaced"). | yes, if enabled |
 | **Radio, first refill** | Same as a new mix. | yes, if enabled |
 | **Radio, later refills** | Refined before they are queued; there are minutes before they play. Nothing needs patching. | yes, if enabled |
-| **Saved mix** | **Style check** from the context menu: flagged tracks with reasons and candidates; the user decides per track. | never |
+| **Saved mix** | "Tidy up with AI Mix Assist" from the context menu: replaces the tracks that don't fit, records what changed in the mix information, and can be undone. | never |
 
 ```mermaid
 flowchart TD
@@ -292,6 +292,16 @@ Judging a finished MusicIP mix with drift above 0 was tested and does not work: 
 | Slider labels | fixed placement for now; percentile placement with the advanced sliders, later |
 | Rating route | the Claude Code CLI on the listener's subscription (see *Running Claude from Kodi*); an API key as an alternative later |
 | Build order | core (cache, CLI route, fit, checks) → saved mixes on demand (smallest complete slice) → new mixes → "More like this" → Radio |
+
+## Build progress
+
+| Slice | State |
+|---|---|
+| Core: rating cache, CLI route, fit, seed-intent check, tidy-up plan | built and tested |
+| Saved mixes on demand: tidy up, undo, edit what the mix is about | built, tested live in Kodi (5 replacements, 138 s) |
+| New mixes: queued when saved, tidied up by the service in a background thread; "show only" lists the tracks that don't fit in the mix information | built and tested; live test pending |
+| "More like this" | next |
+| Radio | after "More like this" |
 
 ## Running Claude from Kodi (spike, 2026-10-14)
 
