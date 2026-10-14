@@ -178,6 +178,7 @@ class SubmixFetcherTest(MusicIPServerTestCase):
         self.assertEqual([query["size"] for query in self.musicip.mix_requests()], ["15", "45"])
 
     def test_each_tidy_up_reloads_once(self):
+        self.musicip.set_mix(TRACKS[0], [TRACKS[1]])
         main.mix_assist_fetcher()(TRACKS[0], 15)
         main.mix_assist_fetcher()(TRACKS[0], 15)
         self.assertEqual(self.musicip.reload_count(), 2)
