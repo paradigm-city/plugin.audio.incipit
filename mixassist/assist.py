@@ -102,10 +102,34 @@ def nearby_artists(artists: Sequence[str], position: int, window: int) -> set:
 
 
 def pick(candidates: Sequence[dict], strictness: float, taken: set, blocked: set) -> Optional[dict]:
-    passing = [c for c in candidates
-               if c.get("relative") is not None and c["relative"] <= strictness and c.get("verdict") == "fits"
+    passing = [c for c in candidates if passes(c, strictness)
                and path_key(c["path"]) not in taken and artist_key(c.get("artist", "")) not in blocked]
     return min(passing, key=lambda c: c["relative"]) if passing else None
+
+
+def score_candidates(candidate_paths: Sequence[str], units: Sequence[dict], entries: Sequence[Optional[dict]],
+                     intent: str, analysis: Dict[str, object], cache: RatingCache, ask: Ask, resolve: Resolve,
+                     model: str = "") -> Dict[str, dict]:
+    """Both signals for candidate tracks, measured against the master mix (one AI call for all of them).
+    Keyed by path: label, artist, the AI's verdict and reason, and the relative misfit if the track is rated."""
+    candidates = resolve(candidate_paths)
+    rate_missing(candidates, cache, ask, model=model)
+    candidate_entries = [cache.get(unit["key"]) for unit in candidates]
+    verdicts = checks.judge(intent, units[0], entries[0], candidates, candidate_entries, ask)
+    scored: Dict[str, dict] = {}
+    for number, (unit, entry) in enumerate(zip(candidates, candidate_entries), start=1):
+        verdict = verdicts.get(number, {})
+        candidate = {"path": unit["path"], "label": unit["label"], "artist": unit.get("artist", ""),
+                     "verdict": verdict.get("verdict", ""), "reason": verdict.get("reason", "")}
+        if entry:
+            misfit, _ = fit.misfit(entry, entries[0], analysis["spreads"], analysis["inverse"])
+            candidate["relative"] = misfit / analysis["typical"]
+        scored[unit["path"]] = candidate
+    return scored
+
+
+def passes(candidate: Optional[dict], strictness: float) -> bool:
+    return bool(candidate) and candidate.get("relative") is not None and candidate["relative"] <= strictness         and candidate.get("verdict") == "fits"
 
 
 def tidy_up(paths: Sequence[str], cache: RatingCache, ask: Ask, resolve: Resolve, fetch_mix: FetchMix,
@@ -171,24 +195,10 @@ def tidy_up(paths: Sequence[str], cache: RatingCache, ask: Ask, resolve: Resolve
         return result
 
     def evaluate(candidate_paths: List[str]) -> Dict[str, dict]:
-        """Both signals for the candidates, measured against the master mix (one AI call for all of them)."""
         if not candidate_paths:
             return {}
         step("Checking the replacements")
-        candidates = resolve(candidate_paths)
-        rate_missing(candidates, cache, ask, model=model)
-        candidate_entries = [cache.get(unit["key"]) for unit in candidates]
-        candidate_verdicts = checks.judge(intent, units[0], entries[0], candidates, candidate_entries, ask)
-        scored: Dict[str, dict] = {}
-        for number, (unit, entry) in enumerate(zip(candidates, candidate_entries), start=1):
-            verdict = candidate_verdicts.get(number, {})
-            candidate = {"path": unit["path"], "label": unit["label"], "artist": unit.get("artist", ""),
-                         "verdict": verdict.get("verdict", ""), "reason": verdict.get("reason", "")}
-            if entry:
-                misfit, _ = fit.misfit(entry, entries[0], analysis["spreads"], analysis["inverse"])
-                candidate["relative"] = misfit / analysis["typical"]
-            scored[unit["path"]] = candidate
-        return scored
+        return score_candidates(candidate_paths, units, entries, intent, analysis, cache, ask, resolve, model)
 
     taken = {path_key(path) for path in paths}
     artists = [unit.get("artist", "") for unit in units]
@@ -254,3 +264,63 @@ def tidy_up(paths: Sequence[str], cache: RatingCache, ask: Ask, resolve: Resolve
         plan["removed"].append(position)
     plan["paths"] = [path for path in new_paths if path]
     return plan
+
+
+def choose_additions(paths: Sequence[str], candidates: Sequence[str], count: int, cache: RatingCache, ask: Ask,
+                     resolve: Resolve, intent: str = "", insert_at: Optional[int] = None,
+                     strictness: float = DEFAULT_STRICTNESS, artist_window: int = ARTIST_WINDOW, model: str = "",
+                     progress: Optional[Callable[[str], None]] = None, apply: bool = True) -> dict:
+    """"More like this": which of MusicIP's candidates (closest first) to add to a mix, checked like replacements
+    against what the mix is about. With apply=False ("show only") the first `count` candidates are kept and the
+    ones that don't fit are only reported.
+
+    Returns intent, intent_source ("given" or "ai"), chosen (paths), not_fitting ([{path, label, reason}]) and
+    checked (False if the mix couldn't be measured; then the first candidates are taken unchecked)."""
+    def step(text: str) -> None:
+        if progress:
+            progress(text)
+
+    paths, candidates = list(paths), list(candidates)
+    step("Looking up the tracks")
+    units = resolve(paths)
+    step("Rating new music")
+    rate_missing(units, cache, ask, model=model)
+    entries = [cache.get(unit["key"]) for unit in units]
+    if intent:
+        verdicts: Dict[int, dict] = {}
+        intent_source = "given"
+    else:
+        step("Working out what this mix is about")
+        intent, verdicts = checks.state_intent(units, entries, ask)
+        intent_source = "ai"
+    analysis = analyze(units, entries, verdicts, cache.library(), strictness)
+    result = {"intent": intent, "intent_source": intent_source, "chosen": [], "not_fitting": [],
+              "checked": bool(analysis["ready"])}
+    if not analysis["ready"]:
+        result["chosen"] = candidates[:count]
+        return result
+
+    insert_at = len(paths) if insert_at is None else insert_at
+    blocked = set()
+    if artist_window > 0:
+        blocked = {artist_key(unit.get("artist", "")) for unit in
+                   units[max(0, insert_at - artist_window):insert_at + artist_window] if unit.get("artist")}
+    batches = [candidates[:count]] if not apply else [candidates[:3 * count], candidates[3 * count:6 * count]]
+    for batch in batches:
+        if not batch or (apply and len(result["chosen"]) >= count):
+            break
+        step("Checking the new tracks")
+        scored = score_candidates(batch, units, entries, intent, analysis, cache, ask, resolve, model)
+        for path in batch:
+            candidate = scored.get(path)
+            fits = passes(candidate, strictness)
+            if not fits:
+                result["not_fitting"].append({"path": path, "label": candidate["label"] if candidate else path,
+                                              "reason": (candidate or {}).get("reason") or "doesn't match the mix"})
+            if not apply:
+                result["chosen"].append(path)
+            elif fits and len(result["chosen"]) < count and artist_key(candidate["artist"]) not in blocked:
+                result["chosen"].append(path)
+                if artist_window > 0:
+                    blocked.add(artist_key(candidate["artist"]))
+    return result

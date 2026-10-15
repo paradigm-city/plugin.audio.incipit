@@ -2640,7 +2640,10 @@ def find_track_position(tracks: list[str], index: int, path: str) -> int:
     return len(tracks) - 1
 
 
-def insert_more_like_this_into_mix(seed: str, size: int, index: int, path: str, cache_path: str = "") -> int:
+def insert_more_like_this_into_mix(seed: str, size: int, index: int, path: str, cache_path: str = "",
+                                   report: dict | None = None) -> int:
+    """Insert tracks like the selected one after it. AI Mix Assist (if on) checks them against what the mix is
+    about first; `report` receives how many were skipped or may not fit."""
     if not path:
         raise MusicIPError("No seed track was supplied for More like this.")
 
@@ -2654,7 +2657,9 @@ def insert_more_like_this_into_mix(seed: str, size: int, index: int, path: str, 
         raise MusicIPError("Could not locate the selected track in the source mix.")
 
     target_count = get_more_like_this_target_size()
-    submix_tracks = fetch_mix_with_defaults(path, get_playlist_size())
+    mode = get_mix_assist_more_like_this_mode()
+    request_size = mix_assist.MUSICIP_MAX_MIX if mode != MIX_ASSIST_OFF else get_playlist_size()
+    submix_tracks = fetch_mix_with_defaults(path, request_size)
     existing = {
         normalize_track_identity(track)
         for track in source_tracks
@@ -2671,16 +2676,37 @@ def insert_more_like_this_into_mix(seed: str, size: int, index: int, path: str, 
         existing.add(normalized)
         new_tracks.append(cleaned)
 
-        if len(new_tracks) >= target_count:
+        if mode == MIX_ASSIST_OFF and len(new_tracks) >= target_count:
             break
 
+    insert_at = insert_after + 1
+    result = None
+    if new_tracks and mode != MIX_ASSIST_OFF:
+        result = check_more_like_this(target_cache_path, source_tracks, insert_at, new_tracks, target_count,
+                                      apply=mode == MIX_ASSIST_FIX)
+    new_tracks = result["chosen"] if result else new_tracks[:target_count]
+
     if not new_tracks:
+        if result and result["not_fitting"]:
+            raise MusicIPError("AI Mix Assist: none of MusicIP's tracks for this song fits the mix.")
         raise MusicIPError("No new tracks found for this song.")
 
-    insert_at = insert_after + 1
     updated_tracks = source_tracks[:insert_at] + new_tracks + source_tracks[insert_at:]
     save_mix_by_cache_path(target_cache_path, updated_tracks)
+    if result:
+        record_more_like_this_check(target_cache_path, updated_tracks, result, applied=mode == MIX_ASSIST_FIX)
+        if report is not None:
+            report["skipped" if mode == MIX_ASSIST_FIX else "not_fitting"] = len(result["not_fitting"])
     return len(new_tracks)
+
+
+def more_like_this_message(inserted: int, report: dict) -> str:
+    message = f"Inserted {inserted} track(s)."
+    if report.get("skipped"):
+        message += f" AI Mix Assist skipped {report['skipped']} that didn't fit."
+    if report.get("not_fitting"):
+        message += f" {report['not_fitting']} may not fit (see the mix information)."
+    return message
 
 
 
@@ -5723,6 +5749,77 @@ def get_mix_assist_new_mix_mode() -> int:
     return max(MIX_ASSIST_OFF, min(MIX_ASSIST_FIX, get_setting_int("mix_assist_new_mixes", 2)))
 
 
+def get_mix_assist_more_like_this_mode() -> int:
+    return max(MIX_ASSIST_OFF, min(MIX_ASSIST_FIX, get_setting_int("mix_assist_more_like_this", 2)))
+
+
+def report_automatic_mix_assist_error(exc: Exception) -> None:
+    """Automatic checks stay quiet without the Claude CLI (AI Mix Assist is optional); other problems are shown."""
+    kind = getattr(exc, "kind", "")
+    log(f"AI Mix Assist: {kind}: {exc}", xbmc.LOGWARNING if kind == mix_assist_claude.NOT_FOUND else xbmc.LOGERROR)
+    if kind != mix_assist_claude.NOT_FOUND:
+        notify(MIX_ASSIST_MESSAGES.get(kind, str(exc)), xbmcgui.NOTIFICATION_WARNING)
+
+
+MORE_LIKE_THIS_STEPS = ["Looking up the tracks", "Rating new music", "Working out what this mix is about",
+                        "Checking the new tracks"]
+
+
+def check_more_like_this(cache_path: str, tracks: list[str], insert_at: int, candidates: list[str], count: int,
+                         apply: bool) -> dict | None:
+    """AI Mix Assist for "More like this" (the listener waits, with a progress bar). None if it couldn't run;
+    then the first candidates are inserted unchecked."""
+    meta = get_saved_mix_metadata(cache_path, tracks)
+    section = get_mix_assist_section(meta)
+    progress = xbmcgui.DialogProgressBG()
+    progress.create("AI Mix Assist", "Checking the new tracks")
+
+    def show(text: str) -> None:
+        step = MORE_LIKE_THIS_STEPS.index(text) + 1 if text in MORE_LIKE_THIS_STEPS else 0
+        progress.update(int(100 * step / (len(MORE_LIKE_THIS_STEPS) + 1)), "AI Mix Assist", text)
+
+    try:
+        ask = mix_assist_ask()
+        store = mix_assist_cache.RatingCache(mix_assist_cache_path())
+        try:
+            return mix_assist.choose_additions(
+                tracks, candidates, count, store, ask,
+                resolve=lambda paths: mix_assist_library.resolve(paths, execute_jsonrpc, mix_assist_track_metadata(meta)),
+                intent=str(section.get("listener_intent") or section.get("intent") or ""),
+                insert_at=insert_at,
+                strictness=get_mix_assist_strictness(),
+                artist_window=get_mix_reject_size() or mix_assist.ARTIST_WINDOW,
+                model=mix_assist_claude.DEFAULT_MODEL,
+                progress=show,
+                apply=apply,
+            )
+        finally:
+            store.close()
+    except mix_assist_claude.ClaudeError as exc:
+        report_automatic_mix_assist_error(exc)
+        return None
+    finally:
+        progress.close()
+
+
+def record_more_like_this_check(cache_path: str, tracks: list[str], result: dict, applied: bool) -> None:
+    """Keep the stated intent (so the next check needs no extra AI call) and, in "show only", the new tracks that
+    may not fit."""
+    meta = get_saved_mix_metadata(cache_path, tracks)
+    section = get_mix_assist_section(meta)
+    if result.get("intent_source") == "ai" and result.get("intent"):
+        section.update({"intent": result["intent"], "intent_source": "ai"})
+    if not applied and result.get("not_fitting"):
+        known = {entry.get("label") for entry in section.get("not_fitting") or []}
+        section["not_fitting"] = list(section.get("not_fitting") or []) + [
+            {"label": entry["label"], "reason": entry["reason"]}
+            for entry in result["not_fitting"] if entry["label"] not in known
+        ]
+    if section:
+        meta[MIX_ASSIST_SECTION] = section
+        save_json_file(mix_meta_path_from_cache_path(cache_path), meta)
+
+
 def mix_assist_queue_path() -> str:
     return os.path.join(get_profile_dir(), "mixassist", "queue.json")
 
@@ -5810,8 +5907,7 @@ def process_mix_assist_request(entry: dict) -> None:
             return
         changed = record_mix_assist_result(cache_path, original, plan, applied=fix)
     except mix_assist_claude.ClaudeError as exc:
-        log(f"AI Mix Assist: {exc.kind}: {exc}", xbmc.LOGERROR)
-        notify(MIX_ASSIST_MESSAGES.get(exc.kind, str(exc)), xbmcgui.NOTIFICATION_WARNING)
+        report_automatic_mix_assist_error(exc)
         return
     except MusicIPError as exc:
         log(f"AI Mix Assist: {exc}", xbmc.LOGWARNING)
@@ -6122,13 +6218,14 @@ def router() -> None:
 
         try:
             ensure_remove_allowed_from_addon_container()
-            inserted = insert_more_like_this_into_mix(seed, size, index, path, cache_path=cache_path)
+            report: dict = {}
+            inserted = insert_more_like_this_into_mix(seed, size, index, path, cache_path=cache_path, report=report)
         except MusicIPError as exc:
             notify(str(exc), xbmcgui.NOTIFICATION_WARNING if "cancelled" in str(exc).lower() else xbmcgui.NOTIFICATION_ERROR)
             log(str(exc), xbmc.LOGERROR)
             return
 
-        notify(f"Inserted {inserted} track(s).")
+        notify(more_like_this_message(inserted, report))
         if cache_path:
             refresh_mix_container(build_saved_browse_url(cache_path, focus_index=index))
         else:
