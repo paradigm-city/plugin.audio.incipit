@@ -140,8 +140,12 @@ def score_candidates(candidate_paths: Sequence[str], units: Sequence[dict], entr
     return scored
 
 
-def passes(candidate: Optional[dict], strictness: float) -> bool:
-    return bool(candidate) and candidate.get("relative") is not None and candidate["relative"] <= strictness         and candidate.get("verdict") == "fits"
+def passes(candidate: Optional[dict], strictness: float, accept_borderline: bool = False) -> bool:
+    """Both signals say the candidate fits: its misfit is within the strictness and the AI says "fits" (or
+    "borderline", when bolder steps are wanted)."""
+    verdicts = ("fits", "borderline") if accept_borderline else ("fits",)
+    return bool(candidate) and candidate.get("relative") is not None and candidate["relative"] <= strictness \
+        and candidate.get("verdict") in verdicts
 
 
 def tidy_up(paths: Sequence[str], cache: RatingCache, ask: Ask, resolve: Resolve, fetch_mix: FetchMix,
@@ -283,14 +287,16 @@ def tidy_up(paths: Sequence[str], cache: RatingCache, ask: Ask, resolve: Resolve
 def choose_additions(selected: str, candidates: Sequence[str], count: int, cache: RatingCache, ask: Ask,
                      resolve: Resolve, neighbours: Sequence[str] = (), strictness: float = DEFAULT_STRICTNESS,
                      artist_window: int = ARTIST_WINDOW, model: str = "",
-                     progress: Optional[Callable[..., None]] = None, reference: Optional[dict] = None) -> dict:
+                     progress: Optional[Callable[..., None]] = None, reference: Optional[dict] = None,
+                     accept_borderline: bool = False) -> dict:
     """"More like this" (and Radio refills): the selected song and MusicIP's candidates for it form a small mix with the selected song
     as its seed. New tracks are held to the same rule as replacements: both signals must say a candidate fits what
     the selected song is about. The first `count` fitting candidates (closest first) are chosen, without repeating
     an artist of the `neighbours` (the tracks around the insertion point) or of each other.
 
     `reference` (a rating, e.g. a Radio station's drifting profile) replaces the selected song's own rating in the
-    vector part; the AI still judges against the selected song.
+    vector part; the AI still judges against the selected song. accept_borderline also takes candidates the AI
+    calls borderline (Radio's bold steps).
 
     Returns intent (the selected song's), chosen (paths), entries (the chosen tracks' ratings by path), seed_entry
     (the selected song's rating), not_fitting ([{path, label, reason}]) and checked (False if the candidates
@@ -335,7 +341,7 @@ def choose_additions(selected: str, candidates: Sequence[str], count: int, cache
             if len(result["chosen"]) >= count:
                 break
             path = row["unit"]["path"]
-            if not passes(row, strictness):
+            if not passes(row, strictness, accept_borderline):
                 result["not_fitting"].append({"path": path, "label": row["unit"]["label"],
                                               "reason": row.get("reason") or row.get("why", "")})
                 continue
@@ -349,15 +355,18 @@ def choose_additions(selected: str, candidates: Sequence[str], count: int, cache
     return result
 
 
-def drift_reference(reference: dict, added: Sequence[Optional[dict]], drift: float) -> dict:
-    """A Radio station's profile after a refill: (1 − drift) × profile + drift × the added tracks' average.
-    Drift 0 keeps the picked song's profile; higher values let the station wander."""
-    rated = [entry for entry in added if entry]
-    if not rated or drift <= 0:
-        return dict(reference)
+def drift_reference(reference: dict, added: Sequence[Optional[dict]], half_life: float) -> dict:
+    """A Radio station's profile after songs were added: it moves towards each added song in turn, so that it has
+    gone half the way to where the station went after `half_life` songs, whatever the refill size. Later songs
+    count more. half_life 0 keeps the picked song's profile."""
     moved = dict(reference)
-    for key in dimensions.ALL_KEYS:
-        values = [float(entry[key]) for entry in rated if isinstance(entry.get(key), (int, float))]
-        if values and isinstance(reference.get(key), (int, float)):
-            moved[key] = (1 - drift) * float(reference[key]) + drift * sum(values) / len(values)
+    if not half_life or half_life <= 0:
+        return moved
+    step = 1 - 0.5 ** (1 / half_life)
+    for entry in added:
+        if not entry:
+            continue
+        for key in dimensions.ALL_KEYS:
+            if isinstance(entry.get(key), (int, float)) and isinstance(moved.get(key), (int, float)):
+                moved[key] = (1 - step) * float(moved[key]) + step * float(entry[key])
     return moved

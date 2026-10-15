@@ -1169,6 +1169,7 @@ RADIO_STOP_GRACE_SECONDS = 3     # playback must be stopped this long (gaps betw
 RADIO_MAX_SEEN = 5000            # songs remembered per session to avoid repeats
 RADIO_CHECKED_THRESHOLD = 6      # with AI Mix Assist: top up earlier, the check takes a minute or two
 RADIO_CHECK_SIZE = 75            # MusicIP candidates per checked refill (MusicIP's maximum)
+RADIO_CHECKED_BATCH = 8          # songs per checked refill (20-50 minutes): small steps for a smooth meander
 
 # One AI Mix Assist check at a time, in a background thread; the radio tick applies its result.
 RADIO_CHECK: dict = {"thread": None, "station": 0, "kind": "", "result": None, "fallback": [], "seed": ""}
@@ -1441,15 +1442,16 @@ def refill_radio_queue(state: dict, checked: bool = False) -> int:
         return 0
 
     if checked:
-        drift = plugin.get_radio_drift()
-        reference_song = used_seed if drift > 0 else str(state.get("seed") or used_seed)
+        drifting = plugin.get_radio_drift_half_life() > 0
+        reference_song = used_seed if drifting else str(state.get("seed") or used_seed)
         reference = state.get("reference") if isinstance(state.get("reference"), dict) else None
         neighbours = [str(entry["file"]) for entry in queue]
-        candidates, fallback = list(new_tracks), list(new_tracks[:size])
+        candidates, fallback = list(new_tracks), list(new_tracks[:RADIO_CHECKED_BATCH])
         log_info(f"Radio mode: AI Mix Assist checks {len(candidates)} song(s) seeded from {used_seed!r}.")
         start_radio_check(
             state, "refill",
-            lambda check: plugin.check_radio_refill(reference_song, candidates, size, reference, neighbours, check=check),
+            lambda check: plugin.check_radio_refill(reference_song, candidates, RADIO_CHECKED_BATCH, reference, neighbours,
+                                                    check=check),
             fallback=fallback, seed=used_seed)
         return 0
 

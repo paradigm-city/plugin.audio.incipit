@@ -6156,10 +6156,13 @@ def process_mix_assist_request(entry: dict) -> None:
 # --- AI Mix Assist for Radio: the service checks a station's songs in a background thread ------------------
 # The station's first songs (a plain MusicIP mix) lose the ones that clearly don't fit the picked song. Refills are
 # checked before they are queued: against a profile that starts as the picked song and drifts with the station
-# (setting "Station drift"), and by the AI against the song the refill is seeded from (or the picked song when the
-# station stays close).
+# ("Station drift": how far), and by the AI against the song the refill is seeded from, or the picked song when the
+# station stays close ("Station steps": how surprising each song may be).
 
-RADIO_DRIFT = (0.0, 0.2, 0.5)  # "Station drift": stay close to the picked song, drift slowly, wander freely
+# "Station drift": the profile has moved half the way to where the station went after this many songs.
+RADIO_DRIFT_HALF_LIFE = (0, 60, 20)  # stay close to the picked song, drift slowly (~4 h), wander freely (~1 h 20)
+# "Station steps": strictness relative to the mix setting (higher = stricter), and whether "borderline" songs count.
+RADIO_STEPS = ((1, False), (0, False), (-2, True))  # small, medium, bold
 
 
 def mix_assist_for_radio() -> bool:
@@ -6179,9 +6182,16 @@ def mix_assist_available(max_age: float = 600) -> bool:
     return MIX_ASSIST_AVAILABLE["found"]
 
 
-def get_radio_drift() -> float:
-    index = max(0, min(len(RADIO_DRIFT) - 1, get_setting_int("mix_assist_radio_drift", 1)))
-    return RADIO_DRIFT[index]
+def get_radio_drift_half_life() -> int:
+    index = max(0, min(len(RADIO_DRIFT_HALF_LIFE) - 1, get_setting_int("mix_assist_radio_drift", 1)))
+    return RADIO_DRIFT_HALF_LIFE[index]
+
+
+def get_radio_steps() -> tuple[float, bool]:
+    """(strictness, accept borderline) for a station's songs: "Station steps" relative to the mix strictness."""
+    offset, borderline = RADIO_STEPS[max(0, min(len(RADIO_STEPS) - 1, get_setting_int("mix_assist_radio_steps", 1)))]
+    base = max(0, min(len(MIX_ASSIST_STRICTNESS) - 1, get_setting_int("mix_assist_strictness", 2)))
+    return MIX_ASSIST_STRICTNESS[max(0, min(len(MIX_ASSIST_STRICTNESS) - 1, base + offset))], borderline
 
 
 def radio_check_progress(check=None):
@@ -6201,7 +6211,7 @@ def check_radio_start(tracks: list[str], check=None) -> dict:
             tracks, store, mix_assist_ask(),
             resolve=lambda paths: mix_assist_library.resolve(paths, execute_jsonrpc, {}),
             fetch_mix=lambda *_args: [],
-            strictness=get_mix_assist_strictness(),
+            strictness=get_radio_steps()[0],
             artist_window=get_mix_reject_size() or mix_assist.ARTIST_WINDOW,
             model=mix_assist_claude.DEFAULT_MODEL,
             progress=radio_check_progress(check),
@@ -6221,21 +6231,23 @@ def check_radio_refill(reference_song: str, candidates: list[str], count: int, r
     store = mix_assist_cache.RatingCache(mix_assist_cache_path())
     try:
         window = get_mix_reject_size() or mix_assist.ARTIST_WINDOW
+        strictness, borderline = get_radio_steps()
         result = mix_assist.choose_additions(
             reference_song, candidates, count, store, mix_assist_ask(),
             resolve=lambda paths: mix_assist_library.resolve(paths, execute_jsonrpc, {}),
             neighbours=neighbours[-window:],
-            strictness=get_mix_assist_strictness(),
+            strictness=strictness,
             artist_window=window,
             model=mix_assist_claude.DEFAULT_MODEL,
             progress=radio_check_progress(check),
             reference=reference,
+            accept_borderline=borderline,
         )
     finally:
         store.close()
     base = reference or result.get("seed_entry")
     result["reference"] = mix_assist.drift_reference(
-        base, [result["entries"].get(path) for path in result["chosen"]], get_radio_drift()) if base else None
+        base, [result["entries"].get(path) for path in result["chosen"]], get_radio_drift_half_life()) if base else None
     return result
 
 
