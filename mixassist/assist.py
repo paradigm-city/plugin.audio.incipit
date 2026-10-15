@@ -269,12 +269,11 @@ def tidy_up(paths: Sequence[str], cache: RatingCache, ask: Ask, resolve: Resolve
 def choose_additions(selected: str, candidates: Sequence[str], count: int, cache: RatingCache, ask: Ask,
                      resolve: Resolve, neighbours: Sequence[str] = (), strictness: float = DEFAULT_STRICTNESS,
                      artist_window: int = ARTIST_WINDOW, model: str = "",
-                     progress: Optional[Callable[[str], None]] = None, apply: bool = True) -> dict:
+                     progress: Optional[Callable[[str], None]] = None) -> dict:
     """"More like this": the selected song and MusicIP's candidates for it form a small mix with the selected song
     as its seed. New tracks are held to the same rule as replacements: both signals must say a candidate fits what
     the selected song is about. The first `count` fitting candidates (closest first) are chosen, without repeating
     an artist of the `neighbours` (the tracks around the insertion point) or of each other.
-    With apply=False ("show only") the first `count` candidates are kept and the misfits among them reported.
 
     Returns intent (the selected song's), chosen (paths), not_fitting ([{path, label, reason}]) and checked (False
     if the candidates couldn't be measured; then the first ones are taken unchecked)."""
@@ -292,9 +291,8 @@ def choose_additions(selected: str, candidates: Sequence[str], count: int, cache
         blocked.add(artist_key(selected_unit.get("artist", "")))
         blocked.discard("")
     batch_size = max(3 * count, 10)
-    batches = [candidates[:batch_size]] if not apply else [candidates[:batch_size], candidates[batch_size:2 * batch_size]]
-    for batch in batches:
-        if not batch or (apply and len(result["chosen"]) >= count):
+    for batch in (candidates[:batch_size], candidates[batch_size:2 * batch_size]):
+        if not batch or len(result["chosen"]) >= count:
             break
         units = [selected_unit] + resolve(batch)
         step("Rating new music")
@@ -320,10 +318,9 @@ def choose_additions(selected: str, candidates: Sequence[str], count: int, cache
             if not passes(row, strictness):
                 result["not_fitting"].append({"path": path, "label": row["unit"]["label"],
                                               "reason": row.get("reason") or row.get("why", "")})
-                if apply:
-                    continue
+                continue
             artist = artist_key(row["unit"].get("artist", ""))
-            if apply and artist in blocked:
+            if artist in blocked:
                 continue
             result["chosen"].append(path)
             if artist_window > 0:

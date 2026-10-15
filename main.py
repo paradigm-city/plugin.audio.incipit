@@ -2702,8 +2702,8 @@ def insert_more_like_this_into_mix(seed: str, size: int, index: int, path: str, 
         raise MusicIPError("Could not locate the selected track in the source mix.")
 
     target_count = get_more_like_this_target_size()
-    mode = get_mix_assist_more_like_this_mode()
-    request_size = mix_assist.MUSICIP_MAX_MIX if mode != MIX_ASSIST_OFF else get_playlist_size()
+    checking = mix_assist_for_more_like_this()
+    request_size = mix_assist.MUSICIP_MAX_MIX if checking else get_playlist_size()
     submix_tracks = fetch_mix_with_defaults(path, request_size, progress=progress)
     existing = {
         normalize_track_identity(track)
@@ -2721,14 +2721,14 @@ def insert_more_like_this_into_mix(seed: str, size: int, index: int, path: str, 
         existing.add(normalized)
         new_tracks.append(cleaned)
 
-        if mode == MIX_ASSIST_OFF and len(new_tracks) >= target_count:
+        if not checking and len(new_tracks) >= target_count:
             break
 
     insert_at = insert_after + 1
     result = None
-    if new_tracks and mode != MIX_ASSIST_OFF:
+    if new_tracks and checking:
         result = check_more_like_this(target_cache_path, source_tracks, insert_after, new_tracks, target_count,
-                                      apply=mode == MIX_ASSIST_FIX)
+                                      progress=progress)
     new_tracks = result["chosen"] if result else new_tracks[:target_count]
 
     if not new_tracks:
@@ -2738,21 +2738,18 @@ def insert_more_like_this_into_mix(seed: str, size: int, index: int, path: str, 
 
     updated_tracks = source_tracks[:insert_at] + new_tracks + source_tracks[insert_at:]
     save_mix_by_cache_path(target_cache_path, updated_tracks)
+    skipped = [{"track": entry["label"], "reason": entry["reason"]} for entry in (result or {}).get("not_fitting") or []]
     record_mix_history(target_cache_path, "more_like_this", song=mix_track_labels(target_cache_path, [path])[0],
-                       added=mix_track_labels(target_cache_path, new_tracks))
-    if result:
-        record_more_like_this_check(target_cache_path, updated_tracks, result, applied=mode == MIX_ASSIST_FIX)
-        if report is not None:
-            report["skipped" if mode == MIX_ASSIST_FIX else "not_fitting"] = len(result["not_fitting"])
+                       added=mix_track_labels(target_cache_path, new_tracks), skipped=skipped)
+    if report is not None and skipped:
+        report["skipped"] = len(skipped)
     return len(new_tracks)
 
 
 def more_like_this_message(inserted: int, report: dict) -> str:
     message = f"Inserted {inserted} track(s)."
     if report.get("skipped"):
-        message += f" AI Mix Assist skipped {report['skipped']} that didn't fit."
-    if report.get("not_fitting"):
-        message += f" {report['not_fitting']} may not fit (see the mix information)."
+        message += f" AI Mix Assist skipped {report['skipped']} that didn't fit (see the mix history)."
     return message
 
 
@@ -5425,7 +5422,12 @@ def format_history_removed(event: dict) -> list[str]:
 
 def format_history_more_like_this(event: dict) -> list[str]:
     added = event.get("added") or []
-    return [f"\"More like this\" for {event.get('song', '?')} added {len(added)} track(s):"] + history_list("+", added)
+    lines = [f"\"More like this\" for {event.get('song', '?')} added {len(added)} track(s):"] + history_list("+", added)
+    skipped = event.get("skipped") or []
+    if skipped:
+        lines.append(f"AI Mix Assist skipped {len(skipped)} that didn't fit:")
+        lines += [f"× {entry.get('track', '?')} ({entry.get('reason', '')})" for entry in skipped]
+    return lines
 
 
 def format_history_less_like_this(event: dict) -> list[str]:
@@ -5441,7 +5443,30 @@ def format_history_repaired(event: dict) -> list[str]:
         [f"{entry.get('old', '?')} → {entry.get('new', '?')}" for entry in replaced]
 
 
+def format_history_ai_tidy_up(event: dict) -> list[str]:
+    who = "AI Mix Assist checked the new mix" if event.get("automatic") else "AI Mix Assist tidied up the mix"
+    replaced, removed = event.get("replaced") or [], event.get("removed") or []
+    if not replaced and not removed:
+        return [f"{who}: every track fits"]
+    lines = [f"{who}: {len(replaced)} replaced, {len(removed)} removed"]
+    lines += [f"{entry.get('old', '?')} → {entry.get('new', '?')} ({entry.get('reason', '')})" for entry in replaced]
+    lines += [f"− {entry.get('track', '?')} ({entry.get('reason', '')})" for entry in removed]
+    return lines
+
+
+def format_history_ai_undone(event: dict) -> list[str]:
+    return ["You undid the AI Mix Assist changes"]
+
+
+def format_history_intent_edited(event: dict) -> list[str]:
+    text = event.get("text") or ""
+    return [f"You described the mix: \"{text}\""] if text else ["You removed your description; the AI's is used again"]
+
+
 MIX_HISTORY_FORMATTERS = {
+    "ai_tidy_up": format_history_ai_tidy_up,
+    "ai_undone": format_history_ai_undone,
+    "intent_edited": format_history_intent_edited,
     "created": format_history_created,
     "removed": format_history_removed,
     "more_like_this": format_history_more_like_this,
@@ -5540,7 +5565,6 @@ def build_mix_info_message(cache_path: str) -> str:
             f"Checked: {format_sidecar_ts(readiness.get('checked_ts'))}",
         ])
 
-    lines.extend(build_mix_assist_info_lines(meta))
     return "\n".join(lines)
 
 
@@ -5551,7 +5575,7 @@ def mix_info_pages(cache_path: str) -> list[tuple[str, str]]:
     return [
         ("Overview", build_mix_info_message(cache_path)),
         (f"History ({len(events)})", build_mix_history_text(meta)),
-    ]
+    ] + ([("AI Mix Assist", "\n".join(build_mix_assist_info_lines(meta)))] if get_mix_assist_section(meta) else [])
 
 
 def show_mix_info(cache_path: str) -> None:
@@ -5778,6 +5802,22 @@ def mix_assist_fetcher():
     return fetch
 
 
+MIX_ASSIST_STEPS = ["Looking up the tracks", "Rating new music", "Working out what this mix is about",
+                    "Finding replacements", "Checking the replacements"]
+
+
+def mix_assist_step_reporter(progress, steps: list[str], start: int = 0, end: int = 100, check=None):
+    """progress(text) for mixassist that moves a BackgroundProgress bar from start to end % along the steps.
+    check() runs first at every step (e.g. to stop when Kodi shuts down)."""
+    def report(text: str) -> None:
+        if check:
+            check()
+        if progress:
+            step = steps.index(text) + 1 if text in steps else 0
+            progress(start + (end - start) * step // (len(steps) + 1), text)
+    return report
+
+
 def compute_mix_assist_plan(tracks: list[str], meta: dict, progress=None, find_replacements: bool = True) -> dict:
     """The AI Mix Assist plan for a mix (changes nothing). progress(text) is called at each step."""
     section = get_mix_assist_section(meta)
@@ -5800,15 +5840,16 @@ def compute_mix_assist_plan(tracks: list[str], meta: dict, progress=None, find_r
         store.close()
 
 
-def record_mix_assist_result(cache_path: str, original: list[str], plan: dict, applied: bool) -> bool:
-    """Save the plan's track list (if applied and anything changed) and record the result in the sidecar.
+def record_mix_assist_result(cache_path: str, original: list[str], plan: dict, automatic: bool) -> bool:
+    """Save the plan's track list (if anything changed), record the result in the sidecar and the history.
     Returns whether the saved mix changed."""
-    changed = applied and bool(plan["changes"] or plan["removed"])
+    changed = bool(plan["changes"] or plan["removed"])
     if changed:
         save_mix_by_cache_path(cache_path, plan["paths"])
     meta = get_saved_mix_metadata(cache_path, plan["paths"] if changed else original)
     section = get_mix_assist_section(meta)
     rows = {row["position"]: row for row in plan["rows"]}
+    removed = [rows[position] for position in plan["removed"] if position in rows]
     section.update({
         "checked_ts": int(time.time()),
         "intent": plan["intent"],
@@ -5817,20 +5858,21 @@ def record_mix_assist_result(cache_path: str, original: list[str], plan: dict, a
             {"old": change["old"], "old_label": change["old_label"], "new": change["new"],
              "new_label": change["new_label"], "reason": change["reason"]}
             for change in plan["changes"]
-        ] if applied else [],
-        "removed": [rows[position]["unit"]["label"] for position in plan["removed"] if position in rows]
-        if applied else [],
-        "not_fitting": [] if applied else [
-            {"label": rows[position]["unit"]["label"],
-             "reason": rows[position].get("reason") or rows[position].get("why", "")}
-            for position in plan.get("outliers") or [] if position in rows
         ],
+        "removed": [row["unit"]["label"] for row in removed],
         "rebuild_suggested": bool(plan["rebuild_suggested"]),
     })
+    section.pop("not_fitting", None)
     if changed:
         section["previous_tracks"] = list(original)
     meta[MIX_ASSIST_SECTION] = section
     save_json_file(mix_meta_path_from_cache_path(cache_path), meta)
+    record_mix_history(
+        cache_path, "ai_tidy_up", automatic=automatic, intent=plan["intent"],
+        replaced=[{"old": change["old_label"], "new": change["new_label"], "reason": change["reason"]}
+                  for change in plan["changes"]],
+        removed=[{"track": row["unit"]["label"], "reason": row.get("reason") or row.get("why", "")} for row in removed],
+    )
     return changed
 
 
@@ -5840,20 +5882,9 @@ def run_mix_assist_on_saved_mix(cache_path: str) -> dict:
     if len(tracks) < 2:
         raise MusicIPError("This mix is too short to tidy up.")
     meta = get_saved_mix_metadata(cache_path, tracks)
-    progress = xbmcgui.DialogProgressBG()
-    progress.create("AI Mix Assist", "Starting")
-    steps = ["Looking up the tracks", "Rating new music", "Working out what this mix is about",
-             "Finding replacements", "Checking the replacements"]
-
-    def show(text: str) -> None:
-        percent = int(100 * (steps.index(text) + 1) / (len(steps) + 1)) if text in steps else 0
-        progress.update(percent, "AI Mix Assist", text)
-
-    try:
-        plan = compute_mix_assist_plan(tracks, meta, progress=show)
-    finally:
-        progress.close()
-    record_mix_assist_result(cache_path, tracks, plan, applied=True)
+    with BackgroundProgress("AI Mix Assist") as progress:
+        plan = compute_mix_assist_plan(tracks, meta, progress=mix_assist_step_reporter(progress, MIX_ASSIST_STEPS))
+    record_mix_assist_result(cache_path, tracks, plan, automatic=False)
     return plan
 
 
@@ -5882,6 +5913,7 @@ def undo_mix_assist_on_saved_mix(cache_path: str) -> int:
         section.pop(key, None)
     meta[MIX_ASSIST_SECTION] = section
     save_json_file(mix_meta_path_from_cache_path(cache_path), meta)
+    record_mix_history(cache_path, "ai_undone", tracks=len(previous))
     return len(previous)
 
 
@@ -5902,26 +5934,30 @@ def edit_mix_assist_intent(cache_path: str) -> bool:
         section.pop("listener_intent", None)
     meta[MIX_ASSIST_SECTION] = section
     save_json_file(mix_meta_path_from_cache_path(cache_path), meta)
+    record_mix_history(cache_path, "intent_edited", text=value)
     return True
 
 
 def build_mix_assist_info_lines(meta: dict) -> list[str]:
+    """The AI Mix Assist page of the mix information."""
     section = get_mix_assist_section(meta)
-    if not section:
-        return []
-    lines = ["", "AI Mix Assist:"]
+    lines = []
     intent = section.get("listener_intent") or section.get("intent")
     if intent:
-        source = "your words" if section.get("listener_intent") else "stated by the AI"
-        lines.append(f"What this mix is about ({source}): {intent}")
+        source = "in your words" if section.get("listener_intent") else "as the AI put it"
+        lines += [f"What this mix is about ({source}):", intent, ""]
     if section.get("checked_ts"):
-        lines.append(f"Last checked: {format_sidecar_ts(section.get('checked_ts'))}")
-    for entry in section.get("not_fitting") or []:
-        lines.append(f"Doesn't fit: {entry.get('label', '')} ({entry.get('reason', '')})")
-    for change in section.get("replaced") or []:
-        lines.append(f"Replaced: {change.get('old_label', '')} → {change.get('new_label', '')} ({change.get('reason', '')})")
-    for label in section.get("removed") or []:
-        lines.append(f"Removed: {label}")
+        lines.append(f"Last tidied up: {format_sidecar_ts(section.get('checked_ts'))}")
+    replaced, removed = section.get("replaced") or [], section.get("removed") or []
+    if replaced or removed:
+        lines += ["", "Changes of the last tidy-up:"]
+        lines += [f"{change.get('old_label', '')} → {change.get('new_label', '')} ({change.get('reason', '')})"
+                  for change in replaced]
+        lines += [f"Removed: {label}" for label in removed]
+    elif section.get("checked_ts"):
+        lines.append("Every track fitted.")
+    lines += ["", "Context menu of the mix: \"Edit what this mix is about\" to put it in your own words, "
+              "\"Undo AI Mix Assist changes\" to restore the mix. All changes are in the History page."]
     return lines
 
 
@@ -5931,16 +5967,14 @@ def build_mix_assist_action(action: str, cache_path: str) -> str:
 
 # --- AI Mix Assist for new mixes: queued by the plugin, done by the service in the background ---------------
 
-# "Keep new mixes on track" setting.
-MIX_ASSIST_OFF, MIX_ASSIST_SHOW, MIX_ASSIST_FIX = 0, 1, 2
+def mix_assist_for_new_mixes() -> bool:
+    """Setting "Keep new mixes on track"."""
+    return get_setting_bool("mix_assist_auto_new_mixes", True)
 
 
-def get_mix_assist_new_mix_mode() -> int:
-    return max(MIX_ASSIST_OFF, min(MIX_ASSIST_FIX, get_setting_int("mix_assist_new_mixes", 2)))
-
-
-def get_mix_assist_more_like_this_mode() -> int:
-    return max(MIX_ASSIST_OFF, min(MIX_ASSIST_FIX, get_setting_int("mix_assist_more_like_this", 2)))
+def mix_assist_for_more_like_this() -> bool:
+    """Setting "Keep 'More like this' on track"."""
+    return get_setting_bool("mix_assist_auto_more_like_this", True)
 
 
 def report_automatic_mix_assist_error(exc: Exception) -> None:
@@ -5955,19 +5989,12 @@ MORE_LIKE_THIS_STEPS = ["Looking up the tracks", "Rating new music", "Checking t
 
 
 def check_more_like_this(cache_path: str, tracks: list[str], selected: int, candidates: list[str], count: int,
-                         apply: bool) -> dict | None:
+                         progress=None) -> dict | None:
     """AI Mix Assist for "More like this": the candidates are measured against the selected song (tracks[selected]),
-    not the whole mix. The listener waits, with a progress bar. None if it couldn't run; then the first candidates
-    are inserted unchecked."""
+    not the whole mix. progress is the action's BackgroundProgress (this is its second half). None if it couldn't
+    run; then the first candidates are inserted unchecked."""
     meta = get_saved_mix_metadata(cache_path, tracks)
     window = get_mix_reject_size() or mix_assist.ARTIST_WINDOW
-    progress = xbmcgui.DialogProgressBG()
-    progress.create("AI Mix Assist", "Checking the new tracks")
-
-    def show(text: str) -> None:
-        step = MORE_LIKE_THIS_STEPS.index(text) + 1 if text in MORE_LIKE_THIS_STEPS else 0
-        progress.update(int(100 * step / (len(MORE_LIKE_THIS_STEPS) + 1)), "AI Mix Assist", text)
-
     try:
         ask = mix_assist_ask()
         store = mix_assist_cache.RatingCache(mix_assist_cache_path())
@@ -5979,31 +6006,13 @@ def check_more_like_this(cache_path: str, tracks: list[str], selected: int, cand
                 strictness=get_mix_assist_strictness(),
                 artist_window=window,
                 model=mix_assist_claude.DEFAULT_MODEL,
-                progress=show,
-                apply=apply,
+                progress=mix_assist_step_reporter(progress, MORE_LIKE_THIS_STEPS, start=60),
             )
         finally:
             store.close()
     except mix_assist_claude.ClaudeError as exc:
         report_automatic_mix_assist_error(exc)
         return None
-    finally:
-        progress.close()
-
-
-def record_more_like_this_check(cache_path: str, tracks: list[str], result: dict, applied: bool) -> None:
-    """In "show only", note the new tracks that may not fit."""
-    meta = get_saved_mix_metadata(cache_path, tracks)
-    section = get_mix_assist_section(meta)
-    if not applied and result.get("not_fitting"):
-        known = {entry.get("label") for entry in section.get("not_fitting") or []}
-        section["not_fitting"] = list(section.get("not_fitting") or []) + [
-            {"label": entry["label"], "reason": entry["reason"]}
-            for entry in result["not_fitting"] if entry["label"] not in known
-        ]
-    if section:
-        meta[MIX_ASSIST_SECTION] = section
-        save_json_file(mix_meta_path_from_cache_path(cache_path), meta)
 
 
 def mix_assist_queue_path() -> str:
@@ -6012,14 +6021,12 @@ def mix_assist_queue_path() -> str:
 
 def queue_mix_assist_for_new_mix(cache_path: str, tracks: list[str]) -> None:
     """Ask the service to tidy up a mix that was just created (unless switched off)."""
-    mode = get_mix_assist_new_mix_mode()
-    if mode == MIX_ASSIST_OFF or len(tracks) < 2:
+    if not mix_assist_for_new_mixes() or len(tracks) < 2:
         return
     try:
         queue = [entry for entry in load_json_file(mix_assist_queue_path()).get("entries", [])
                  if entry.get("cache_path") != cache_path]
-        queue.append({"cache_path": cache_path, "tracks": list(tracks),
-                      "mode": "fix" if mode == MIX_ASSIST_FIX else "show", "queued_ts": int(time.time())})
+        queue.append({"cache_path": cache_path, "tracks": list(tracks), "queued_ts": int(time.time())})
         os.makedirs(os.path.dirname(mix_assist_queue_path()), exist_ok=True)
         save_json_file(mix_assist_queue_path(), {"entries": queue})
     except Exception as exc:
@@ -6069,7 +6076,7 @@ def patch_playlist_for_mix(original: list[str], plan: dict) -> int:
 
 
 def process_mix_assist_request(entry: dict) -> None:
-    """Tidy up a newly created mix in the background (run by the service)."""
+    """Tidy up a newly created mix in the background (run by the service), with a small progress bar."""
     cache_path = str(entry.get("cache_path") or "")
     original = [str(track) for track in entry.get("tracks") or []]
     if not cache_path or not original:
@@ -6079,19 +6086,20 @@ def process_mix_assist_request(entry: dict) -> None:
         return
     monitor = xbmc.Monitor()
 
-    def check_abort(_text: str) -> None:
+    def check_abort() -> None:
         if monitor.abortRequested():
             raise MusicIPError("Kodi is shutting down.")
 
-    fix = entry.get("mode") == "fix"
     try:
-        plan = compute_mix_assist_plan(original, get_saved_mix_metadata(cache_path, original), progress=check_abort,
-                                       find_replacements=fix)
-        check_abort("")
+        with BackgroundProgress("AI Mix Assist: new mix") as progress:
+            plan = compute_mix_assist_plan(
+                original, get_saved_mix_metadata(cache_path, original),
+                progress=mix_assist_step_reporter(progress, MIX_ASSIST_STEPS, check=check_abort))
+        check_abort()
         if load_mix_by_cache_path(cache_path) != original:
             log_info(f"AI Mix Assist: {cache_path!r} changed while it was checked; not applied.")
             return
-        changed = record_mix_assist_result(cache_path, original, plan, applied=fix)
+        changed = record_mix_assist_result(cache_path, original, plan, automatic=True)
     except mix_assist_claude.ClaudeError as exc:
         report_automatic_mix_assist_error(exc)
         return
@@ -6099,11 +6107,6 @@ def process_mix_assist_request(entry: dict) -> None:
         log(f"AI Mix Assist: {exc}", xbmc.LOGWARNING)
         return
 
-    if not fix:
-        count = len(plan.get("outliers") or [])
-        if count:
-            notify(f"AI Mix Assist: {count} track{'s' if count != 1 else ''} may not fit. See the mix information.")
-        return
     if not changed:
         return
     patched = patch_playlist_for_mix(original, plan)
