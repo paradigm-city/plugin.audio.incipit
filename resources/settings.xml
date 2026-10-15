@@ -1,30 +1,108 @@
 <?xml version="1.0" encoding="utf-8" standalone="yes"?>
-<settings>
-    <category label="General">
-                <setting id="plugin_extended_logging" type="bool" label="Extended plugin logging" default="false" />
-<setting id="timeout" type="number" label="HTTP timeout (seconds)" default="10" />
-    </category>
-    <category label="MusicIP server">
-        <setting id="host" type="text" label="Host" default="localhost" />
-        <setting id="port" type="number" label="Port" default="10002" />
-    </category>
-    <category label="Mix parameters">
-        <setting id="playlist_size" type="slider" label="Mix size (tracks)" default="20" range="1,1,100" option="int" />
-        <setting id="mix_style_preference" type="slider" label="Style preference (0 ignore, 10 strongly prefer)" default="2" range="0,1,10" option="int" />
-        <setting id="mix_variety" type="slider" label="Variety" default="0" range="0,1,9" option="int" />
-        <setting id="mix_filter" type="text" label="MusicIP filter" default="" />
-        <setting id="mix_reject_size" type="slider" label="Do not repeat artist within this many tracks" default="0" range="0,1,20" option="int" />
-    </category>
-
-    <category label="Discovery mode">
-        <setting id="discovery_excerpt_seconds" type="slider" label="Excerpt length (seconds)" default="20" range="5,1,60" option="int" />
-        <setting id="discovery_offset_percent" type="slider" label="Start offset into song (%)" default="33" range="0,1,90" option="int" />
-    </category>
-
-    <category label="Consistency check">
-        <setting id="consistency_enabled" type="bool" label="Enable saved-mix consistency service" default="true" />
-        <setting id="consistency_interval_minutes" type="number" label="Check interval (minutes)" default="60" />
-        <setting id="service_extended_logging" type="bool" label="Extended service logging" default="false" />
-        <setting id="service_auto_repair_enabled" type="bool" label="Enable automatic mix repair" default="false" />
-    </category>
+<settings version="1">
+    <section id="plugin.audio.musicip">
+        <category id="general" label="30100">
+            <group id="1">
+                <setting id="plugin_extended_logging" type="boolean" label="30101" help="30102">
+                    <level>0</level>
+                    <default>false</default>
+                    <control type="toggle"/>
+                </setting>
+                <setting id="timeout" type="integer" label="30103" help="30104">
+                    <level>0</level>
+                    <default>10</default>
+                    <control type="edit" format="integer"><heading>30103</heading></control>
+                </setting>
+            </group>
+        </category>
+        <category id="server" label="30200">
+            <group id="1">
+                <setting id="host" type="string" label="30201" help="30202">
+                    <level>0</level>
+                    <default>localhost</default>
+                    <constraints><allowempty>true</allowempty></constraints>
+                    <control type="edit" format="string"><heading>30201</heading></control>
+                </setting>
+                <setting id="port" type="integer" label="30203" help="30204">
+                    <level>0</level>
+                    <default>10002</default>
+                    <control type="edit" format="integer"><heading>30203</heading></control>
+                </setting>
+            </group>
+        </category>
+        <category id="mix" label="30300">
+            <group id="1">
+                <setting id="playlist_size" type="integer" label="30301" help="30302">
+                    <level>0</level>
+                    <default>20</default>
+                    <constraints><minimum>1</minimum><step>1</step><maximum>100</maximum></constraints>
+                    <control type="slider" format="integer"><popup>false</popup></control>
+                </setting>
+                <setting id="mix_style_preference" type="integer" label="30303" help="30304">
+                    <level>0</level>
+                    <default>2</default>
+                    <constraints><minimum>0</minimum><step>1</step><maximum>10</maximum></constraints>
+                    <control type="slider" format="integer"><popup>false</popup></control>
+                </setting>
+                <setting id="mix_variety" type="integer" label="30305" help="30306">
+                    <level>0</level>
+                    <default>0</default>
+                    <constraints><minimum>0</minimum><step>1</step><maximum>9</maximum></constraints>
+                    <control type="slider" format="integer"><popup>false</popup></control>
+                </setting>
+                <setting id="mix_filter" type="string" label="30307" help="30308">
+                    <level>0</level>
+                    <default/>
+                    <constraints><allowempty>true</allowempty></constraints>
+                    <control type="edit" format="string"><heading>30307</heading></control>
+                </setting>
+                <setting id="mix_reject_size" type="integer" label="30309" help="30310">
+                    <level>0</level>
+                    <default>0</default>
+                    <constraints><minimum>0</minimum><step>1</step><maximum>20</maximum></constraints>
+                    <control type="slider" format="integer"><popup>false</popup></control>
+                </setting>
+            </group>
+        </category>
+        <category id="discovery" label="30500">
+            <group id="1">
+                <setting id="discovery_excerpt_seconds" type="integer" label="30501" help="30502">
+                    <level>0</level>
+                    <default>20</default>
+                    <constraints><minimum>5</minimum><step>1</step><maximum>60</maximum></constraints>
+                    <control type="slider" format="integer"><popup>false</popup></control>
+                </setting>
+                <setting id="discovery_offset_percent" type="integer" label="30503" help="30504">
+                    <level>0</level>
+                    <default>33</default>
+                    <constraints><minimum>0</minimum><step>1</step><maximum>90</maximum></constraints>
+                    <control type="slider" format="integer"><popup>false</popup></control>
+                </setting>
+            </group>
+        </category>
+        <category id="consistency" label="30600">
+            <group id="1">
+                <setting id="consistency_enabled" type="boolean" label="30601" help="30602">
+                    <level>0</level>
+                    <default>true</default>
+                    <control type="toggle"/>
+                </setting>
+                <setting id="consistency_interval_minutes" type="integer" label="30603" help="30604">
+                    <level>0</level>
+                    <default>60</default>
+                    <control type="edit" format="integer"><heading>30603</heading></control>
+                </setting>
+                <setting id="service_extended_logging" type="boolean" label="30605" help="30606">
+                    <level>0</level>
+                    <default>false</default>
+                    <control type="toggle"/>
+                </setting>
+                <setting id="service_auto_repair_enabled" type="boolean" label="30607" help="30608">
+                    <level>0</level>
+                    <default>false</default>
+                    <control type="toggle"/>
+                </setting>
+            </group>
+        </category>
+    </section>
 </settings>
