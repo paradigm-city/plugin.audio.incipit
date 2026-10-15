@@ -47,6 +47,10 @@ class RadioMixAssistTest(RadioBase):
     def files(self):
         return [entry["file"] for entry in self.radio()["queue"]]
 
+    def test_a_station_starts_small(self):
+        self.start()
+        self.assertEqual(self.musicip.mix_requests()[0]["size"], str(main.RADIO_ASSISTED_START_SIZE))
+
     def test_the_first_songs_lose_the_ones_that_dont_fit(self):
         self.start()
         queue = self.files()
@@ -137,6 +141,7 @@ class RadioMixAssistTest(RadioBase):
     def test_without_the_claude_cli_radio_works_as_before(self):
         with mock.patch.object(main, "mix_assist_available", return_value=False):
             self.start()
+            self.assertEqual(self.musicip.mix_requests()[0]["size"], str(main.get_playlist_size()))
             kodi.go_to(3)
             self.tick()
         self.start_check.assert_not_called()
