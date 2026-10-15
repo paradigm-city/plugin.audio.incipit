@@ -334,30 +334,22 @@ class MoreLikeThisTest(MusicIPServerTestCase):
     def section(self):
         return self.read_json(main.mix_meta_path_from_cache_path(self.cache_path)).get("mix_assist", {})
 
-    def test_only_fitting_tracks_are_inserted(self):
-        result = {"intent": "dark, abstract", "intent_source": "ai", "chosen": [self.NEW[2], self.NEW[4]],
+    def test_only_tracks_close_to_the_selected_song_are_inserted(self):
+        result = {"intent": "dark, abstract", "chosen": [self.NEW[2], self.NEW[4]],
                   "not_fitting": [{"path": self.NEW[0], "label": "New 0", "reason": "too bright"}], "checked": True}
         choose = self.more_like_this(result)
         args, kwargs = choose.call_args
-        self.assertEqual((args[1], args[2]), (self.NEW, 2))  # all new tracks are candidates, 2 are wanted
-        self.assertEqual((kwargs["insert_at"], kwargs["apply"], kwargs["intent"]), (2, True, ""))
+        self.assertEqual((args[0], args[1], args[2]), (TRACKS[1], self.NEW, 2))  # this song, all new tracks, 2 wanted
+        self.assertTrue(kwargs["apply"])
+        self.assertEqual(kwargs["neighbours"], [TRACKS[0]] + TRACKS[2:])  # within the artist window
         self.assertEqual(self.musicip.mix_requests()[0]["size"], "75")
         self.assertEqual(self.read_mix(self.cache_path), TRACKS[:2] + [self.NEW[2], self.NEW[4]] + TRACKS[2:])
         self.assertNotified("Inserted 2 track(s). AI Mix Assist skipped 1 that didn't fit.")
-        self.assertEqual(self.section()["intent"], "dark, abstract")  # the next check needs no extra AI call
-
-    def test_the_known_intent_is_used(self):
-        sidecar = self.read_json(main.mix_meta_path_from_cache_path(self.cache_path))
-        sidecar["mix_assist"] = {"intent": "stated before", "listener_intent": "my words"}
-        self.write_json(main.mix_meta_path_from_cache_path(self.cache_path), sidecar)
-        choose = self.more_like_this({"intent": "my words", "intent_source": "given", "chosen": [self.NEW[0]],
-                                      "not_fitting": [], "checked": True})
-        self.assertEqual(choose.call_args[1]["intent"], "my words")
-        self.assertEqual(self.section()["intent"], "stated before")
+        self.assertNotIn("intent", self.section())  # the song's intent is not the mix's
 
     def test_show_only_inserts_musicips_tracks_and_records_the_misfits(self):
         kodi.settings["mix_assist_more_like_this"] = "1"
-        result = {"intent": "x", "intent_source": "ai", "chosen": self.NEW[:2],
+        result = {"intent": "x", "chosen": self.NEW[:2],
                   "not_fitting": [{"path": self.NEW[1], "label": "New 1", "reason": "too bright"}], "checked": True}
         choose = self.more_like_this(result)
         self.assertFalse(choose.call_args[1]["apply"])
@@ -366,10 +358,10 @@ class MoreLikeThisTest(MusicIPServerTestCase):
         self.assertNotified("Inserted 2 track(s). 1 may not fit (see the mix information).")
 
     def test_nothing_fits(self):
-        self.more_like_this({"intent": "x", "intent_source": "given", "chosen": [], "checked": True,
+        self.more_like_this({"intent": "x", "chosen": [], "checked": True,
                              "not_fitting": [{"path": p, "label": p, "reason": "no"} for p in self.NEW]})
         self.assertEqual(self.read_mix(self.cache_path), TRACKS)
-        self.assertNotified("none of MusicIP's tracks for this song fits the mix")
+        self.assertNotified("none of MusicIP's tracks is close enough to this song")
 
     def test_claude_problems_fall_back_to_musicips_tracks(self):
         error = main.mix_assist_claude.ClaudeError(main.mix_assist_claude.USAGE_LIMIT, "limit")

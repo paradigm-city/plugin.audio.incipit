@@ -264,33 +264,37 @@ class AssistTest(unittest.TestCase):
         self.assertEqual({change["source"] for change in plan["changes"]}, {"nearby"})
         self.assertEqual(plan["removed"], [])
 
-    def test_more_like_this_adds_fitting_candidates_in_musicips_order(self):
-        paths = ["seed"] + [f"fit{i}" for i in range(1, 9)]
-        result = assist.choose_additions(paths, ["candbad", "cand3", "cand1", "cand2"], 2, self.store, self.ask,
-                                         self.resolve, insert_at=3, artist_window=0)
-        self.assertEqual(result["chosen"], ["cand3", "cand1"])
+    def test_more_like_this_measures_against_the_selected_song(self):
+        result = assist.choose_additions("seed", ["candbad", "cand3", "cand1", "cand2"], 2, self.store, self.ask,
+                                         self.resolve, artist_window=0)
+        self.assertEqual(result["chosen"], ["cand3", "cand1"])  # MusicIP's order
         self.assertEqual([entry["path"] for entry in result["not_fitting"]], ["candbad"])
-        self.assertEqual((result["intent"], result["intent_source"], result["checked"]),
-                         ("abstract, instrumental", "ai", True))
+        self.assertEqual((result["intent"], result["checked"]), ("abstract, instrumental", True))
 
-    def test_more_like_this_respects_the_artist_window_and_a_given_intent(self):
-        messages = []
+    def test_more_like_this_respects_the_artist_window(self):
+        result = assist.choose_additions("seed", ["fit3", "cand1", "cand2", "cand3", "cand4"], 2, self.store,
+                                         self.ask, self.resolve, neighbours=["fit1", "fit2"], artist_window=5)
+        self.assertEqual(result["chosen"], ["cand1"])  # fit3: an artist next to it; cand2..4: the same artist
+
+    def test_more_like_this_looks_further_with_the_same_intent(self):
+        for index in range(1, 5):
+            self.add(f"solo{index}", exploration=9, form=1)
+        systems = []
 
         def ask(system, schema, message):
-            messages.append(system)
+            systems.append(system)
             return self.ask(system, schema, message)
 
-        paths = ["seed"] + [f"fit{i}" for i in range(1, 9)]
-        result = assist.choose_additions(paths, ["cand1", "cand2", "cand3"], 2, self.store, ask, self.resolve,
-                                         intent="my words", insert_at=3, artist_window=5)
-        self.assertEqual(result["chosen"], ["cand1"])  # cand2 and cand3 are by the same artist
-        self.assertEqual(result["intent_source"], "given")
-        self.assertNotIn(checks.SEED_INTENT_PROMPT, messages)
+        # The first 10 candidates fit but are all by artists next to the insertion point.
+        candidates = [f"cand{i}" for i in range(1, 5)] + [f"fit{i}" for i in range(1, 7)] + [f"solo{i}" for i in range(1, 5)]
+        result = assist.choose_additions("seed", candidates, 1, self.store, ask, self.resolve,
+                                         neighbours=["cand1", "fit1"], artist_window=5)
+        self.assertEqual(result["chosen"], ["solo1"])
+        self.assertEqual(systems, [checks.SEED_INTENT_PROMPT, checks.INTENT_PROMPT])
 
     def test_more_like_this_show_only_keeps_musicips_tracks(self):
-        paths = ["seed"] + [f"fit{i}" for i in range(1, 9)]
-        result = assist.choose_additions(paths, ["candbad", "cand1", "cand2"], 2, self.store, self.ask,
-                                         self.resolve, artist_window=0, apply=False)
+        result = assist.choose_additions("seed", ["candbad", "cand1", "cand2", "cand3", "cand4"], 2, self.store,
+                                         self.ask, self.resolve, artist_window=0, apply=False)
         self.assertEqual(result["chosen"], ["candbad", "cand1"])
         self.assertEqual([entry["path"] for entry in result["not_fitting"]], ["candbad"])
 
