@@ -52,6 +52,12 @@ Found on 2026-10-11 while removing the Discovery command channel (F6). They are 
 
 ## Resolved
 
+### F18 · Radio songs were labelled "(Unknown Artist)"
+
+Found by the user on 2026-10-15: a new station's playlist showed many songs as "(Unknown Artist) - <file name>". Starting a station and topping it up built the labels from the metadata cache only (`allow_live_lookup=False`), and a station's songs are mostly new to that cache. A Radio test even expected the unknown artist.
+
+Fixed in b71f766 (2026-10-15): both look the songs up in the Kodi library. `test_radio_mode.StationTest.test_songs_are_labelled_with_their_artists` and `StartRadioTest.test_labels_have_no_numbers_and_no_snippet_title` cover it.
+
 ### F13 · Saved mixes had two context menu entries for the same information
 
 The context menu of a saved mix listed both **Information** and **Show mix information**, which ran the same action. Found by the user on 2026-10-15.

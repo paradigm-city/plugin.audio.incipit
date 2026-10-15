@@ -142,7 +142,7 @@ class StartRadioTest(RadioTestCase):
         self.assertFalse(first[:1].isdigit())
         self.assertNotIn(" - Artist ", first)  # not the snippet's "Artist - Title" player title
         self.assertEqual(kodi.playlist[0][1].getLabel(), first)
-        self.assertEqual(first, f"(Unknown Artist) - {index + 1:02d} Song {index + 1}")
+        self.assertEqual(first, f"Artist {index + 1} - Song {index + 1}")  # from the library
 
     def test_station_is_not_saved_as_a_recent_mix(self):
         self.start()
@@ -359,6 +359,14 @@ class StationTest(RadioTestCase):
         self.assertEqual(kodi.playlist_files(), [entry["file"] for entry in radio["queue"]])
         self.assertEqual(len(set(kodi.playlist_files())), 9)  # nothing repeats
         self.assertFalse(kodi.playlist[-1][1].getLabel()[:1].isdigit())
+
+    def test_songs_are_labelled_with_their_artists(self):
+        self.start()
+        kodi.go_to(3)
+        radio = self.tick()  # adds songs the metadata cache has never seen
+        labels = [entry["label"] for entry in radio["queue"]]
+        self.assertTrue(all(label.startswith("Artist ") for label in labels), labels)
+        self.assertEqual([item.getLabel() for _url, item in kodi.playlist], labels)
 
     def test_current_song_is_tracked(self):
         self.start()
