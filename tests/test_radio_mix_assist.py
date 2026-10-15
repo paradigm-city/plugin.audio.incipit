@@ -1,5 +1,6 @@
 """Radio with AI Mix Assist: the station's first songs are checked, refills are checked before they are queued."""
 
+import threading
 import unittest
 from unittest import mock
 
@@ -37,12 +38,14 @@ class RadioMixAssistTest(RadioBase):
             thread.join(5)
 
     def started_station(self):
-        """A station whose start check is done (nothing removed). With 5 songs it is short, so the first refill
-        check starts right away."""
+        """A station (5 songs) whose start check is done, nothing removed, playing its third song: 2 songs are
+        left, so the first refill check starts."""
         self.start()
         self.tick()  # starts the check of the first songs
         self.finish_check()
-        return self.tick()  # applies it and starts the first refill check
+        self.tick()  # applies it
+        kodi.go_to(2)
+        return self.tick()
 
     def files(self):
         return [entry["file"] for entry in self.radio()["queue"]]
@@ -72,6 +75,11 @@ class RadioMixAssistTest(RadioBase):
         before = self.files()
         self.tick()
         self.finish_check()
+        self.tick()
+        kodi.go_to(1)
+        self.tick()
+        self.assertEqual(len(self.musicip.mix_requests()), 1)  # 3 songs left: no refill yet
+        kodi.go_to(2)
         self.tick()
         self.assertEqual(self.musicip.mix_requests()[-1]["size"], str(service.RADIO_CHECK_SIZE))
         self.assertEqual(self.files(), before)  # nothing queued while the check runs
@@ -111,6 +119,29 @@ class RadioMixAssistTest(RadioBase):
         self.tick()
         self.assertGreater(len(self.files()), len(before))
         self.assertNotified("Claude's usage limit is reached")
+
+    def test_a_slow_check_never_lets_the_station_run_dry(self):
+        release = threading.Event()
+
+        def slow(*args, **kwargs):
+            release.wait(5)
+            return self.choose_every_other(*args, **kwargs)
+
+        self.refill_check.side_effect = slow
+        self.started_station()  # the refill check now runs (and waits)
+        before = self.files()
+        kodi.go_to(len(before) - 2)
+        self.tick()
+        self.assertEqual(self.files(), before)  # one song still to come: keep waiting
+        kodi.go_to(len(before) - 1)  # the last song plays
+        self.tick()
+        fallback = self.files()[len(before):]
+        self.assertEqual(fallback, self.refill_check.call_args[0][1][:service.RADIO_CHECKED_BATCH])
+        release.set()
+        self.finish_check()
+        radio = self.tick()
+        self.assertEqual(self.files(), before + fallback)  # the check's songs are not added on top
+        self.assertEqual(radio["reference"], {"energy": 6, "sounding_year": 1984})
 
     def test_results_for_an_earlier_station_are_dropped(self):
         self.start()
