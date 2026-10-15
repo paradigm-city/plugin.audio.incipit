@@ -163,8 +163,8 @@ For a guessed unit the two signals are not independent: the seed-intent check re
 | Context | What happens | Automatic |
 |---|---|---|
 | **New mix**, including "More like this" | Plays at once. Refinement runs in the background, patches the not-yet-played part of the playlist and the saved mix, and shows a notification ("Mix refined: 2 tracks replaced"). | yes, if enabled |
-| **Radio, first refill** | Same as a new mix. | yes, if enabled |
-| **Radio, later refills** | Refined before they are queued; there are minutes before they play. Nothing needs patching. | yes, if enabled |
+| **Radio, start** | The station plays at once; in the background, its first songs (a plain MusicIP mix) lose the ones that clearly don't fit the picked song (both signals agree), never the playing song or the next one. | yes, if enabled |
+| **Radio, refills** | Start earlier (6 songs left), take 75 MusicIP candidates and are checked before they are queued; there are minutes before they play. Nothing needs patching. | yes, if enabled |
 | **Saved mix** | "Tidy up with AI Mix Assist" from the context menu: replaces the tracks that don't fit, records what changed in the mix information, and can be undone. | never |
 
 ```mermaid
@@ -232,6 +232,8 @@ The same idea in two plainer controls:
 
 - **Step size:** how different consecutive tracks may be.
 - **Leash:** how far the mix may move from the seed in total.
+
+**As built for Radio (2026-10-15):** drift moves the station's profile once per refill, not per track (a refill brings about a playlist's worth of songs): profile = (1 − drift) × profile + drift × the added songs' average, with "Station drift" = stay close to the picked song (0), drift slowly (0.2, default) or wander freely (0.5). The vector part measures candidates against that profile (the leash); the AI judges them against the song the refill is seeded from (the step), or against the picked song when the station stays close. A candidate must pass both, as replacements do. When nothing fits, the next refill seeds from an earlier song; when the check fails or the station is about to run dry, MusicIP's songs are queued unchecked.
 
 Judging a finished MusicIP mix with drift above 0 was tested and does not work: MusicIP's track order jumps between clusters, so a gradual judgement accepted almost everything, and a chain judgement flagged the tracks *after* each jump, including the best-fitting ones. Finished mixes are therefore always judged at drift 0; transitions are a matter of ordering (see *Deferred*).
 
@@ -304,7 +306,7 @@ Judging a finished MusicIP mix with drift above 0 was tested and does not work: 
 | Replacement search, second version: gaps sharing a submix seed share one submix, every MusicIP request asks for 75 tracks, a gap may use any candidate of its round, open gaps get a second round from other clearly fitting tracks | built and tested; dry run on the live-test mix: 7 of 7 gaps filled (before: 4 of 8), 40 of 40 tracks, about 4 minutes |
 | "More like this": the selected song is the reference ("more like THIS"; it may be the seed). It and MusicIP's tracks for it form a small mix; a new track must clearly fit the song (both signals, like replacements), closest first, respecting the artist window around the insertion point; "show only" inserts MusicIP's tracks and lists the misfits | built and tested; dry runs on the live-test mix: 8 of 8 tracks for a fitting song (33 s) and for an edge song (64 s, two batches); live test pending |
 | Mix history (all mixes, on `main`): created, removed by you, More/Less like this, repaired; on this branch also AI tidy-ups with reasons, tracks skipped by "More like this", undo, edited descriptions. Information as pages (Overview, History, AI Mix Assist). Progress bars for creating a mix, More/Less like this, repair and the background tidy-up | built and tested; live test pending |
-| Radio | next |
+| Radio: start check, checked refills, station drift (settings "Keep Radio on track", "Station drift"); without the Claude CLI Radio works as before | built and tested; live test pending |
 
 **Decided (2026-10-15, "More like this"):** the new tracks are measured against the selected song, not the whole mix: "More like this" refers to THIS song, which may be the seed. Measured against the whole mix, a song at the edge of the mix got no tracks at all.
 
