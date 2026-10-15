@@ -429,6 +429,17 @@ class ServiceTickTest(KodiTestCase):
             service.run_mix_assist_request(main, {"cache_path": "a.m3u"})  # must not raise
 
 
+class StepReporterTest(KodiTestCase):
+    def test_sub_steps_move_the_bar_within_their_step(self):
+        bar = []
+        report = main.mix_assist_step_reporter(lambda percent, text: bar.append((percent, text)), main.MIX_ASSIST_STEPS)
+        report("Rating new music")
+        report("Checking the replacements: rating new music (2 of 4)", 0.35)
+        report("Something else")
+        self.assertEqual(bar, [(33, "Rating new music"), (89, "Checking the replacements: rating new music (2 of 4)"),
+                               (0, "Something else")])
+
+
 class StrictnessSettingTest(KodiTestCase):
     def test_steps_map_to_thresholds(self):
         self.assertEqual(main.get_mix_assist_strictness(), 1.2)

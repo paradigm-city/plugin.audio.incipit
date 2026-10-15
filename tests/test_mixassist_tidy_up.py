@@ -220,6 +220,22 @@ class AssistTest(unittest.TestCase):
         self.assertEqual(len(plan["paths"]), len(self.paths))
         self.assertNotIn("candbad", plan["paths"])
 
+    def test_progress_reports_the_parts_of_long_steps(self):
+        reports = []
+        assist.tidy_up(self.paths, self.store, self.ask, self.resolve, self.fetch_mix, artist_window=0,
+                       progress=lambda text, fraction=None: reports.append((text, fraction)))
+        self.assertEqual(reports[:3], [("Looking up the tracks", None), ("Rating new music", None),
+                                       ("Working out what this mix is about", None)])
+        self.assertIn(("Checking the replacements: asking the AI about 5 tracks", 0.75), reports)
+
+    def test_rating_progress_counts_batches(self):
+        reports = []
+        report = assist.rating_progress(lambda text, fraction: reports.append((text, fraction)),
+                                        "Checking the replacements: rating new music", 0.7)
+        report(1, 4)
+        self.assertEqual(reports, [("Checking the replacements: rating new music (1 of 4)", 0.175)])
+        self.assertIsNone(assist.rating_progress(None, "x"))
+
     def test_the_listeners_intent_is_used_when_given(self):
         messages = []
 
