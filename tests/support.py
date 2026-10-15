@@ -74,6 +74,7 @@ class KodiTestCase(unittest.TestCase):
         patcher = mock.patch.object(main.mix_assist_claude, "find_cli", return_value="")
         patcher.start()
         self.addCleanup(patcher.stop)
+        main.MIX_ASSIST_AVAILABLE.update(checked=0.0, found=False)
 
         main.LAST_MIX_GENERATION_PARAMS.clear()
         main.AUDIO_LIBRARY_FRESHNESS_CACHE = {"fetched_ts": 0, "payload": {}}

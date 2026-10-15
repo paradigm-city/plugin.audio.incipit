@@ -308,6 +308,20 @@ class AssistTest(unittest.TestCase):
         self.assertEqual(result["chosen"], ["solo1"])
         self.assertEqual(systems, [checks.SEED_INTENT_PROMPT, checks.INTENT_PROMPT])
 
+    def test_a_radio_profile_drifts_towards_the_added_tracks(self):
+        reference = vector(energy=2, sounding_year=1980)
+        moved = assist.drift_reference(reference, [vector(energy=6, sounding_year=1990), None,
+                                                   vector(energy=8, sounding_year=2000)], 0.5)
+        self.assertEqual((moved["energy"], moved["sounding_year"]), (4.5, 1987.5))
+        self.assertEqual(moved["character"], "x")
+        self.assertEqual(assist.drift_reference(reference, [vector(energy=9)], 0), reference)
+
+    def test_more_like_this_returns_the_ratings_it_used(self):
+        result = assist.choose_additions("seed", ["cand1", "cand2", "cand3", "cand4"], 1, self.store, self.ask,
+                                         self.resolve, artist_window=0)
+        self.assertEqual(result["seed_entry"]["exploration"], 9)
+        self.assertEqual(list(result["entries"]), result["chosen"])
+
     def test_a_fitting_mix_is_left_alone(self):
         paths = ["seed"] + [f"fit{i}" for i in range(1, 9)]
         plan = assist.tidy_up(paths, self.store, self.ask, self.resolve, self.fetch_mix)
