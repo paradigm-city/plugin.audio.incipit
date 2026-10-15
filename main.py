@@ -5781,7 +5781,8 @@ def open_settings() -> None:
 # AI Mix Assist (docs/concept_ai_mix_assist.md): tidying up saved mixes on demand.
 # ---------------------------------------------------------------------------
 
-# "Mix strictness" and "Station strictness" share one scale: Tight, Close, Balanced, Open, Adventurous.
+# The settings "Mix openness" and "Station openness" share one scale: Focused, Close, Balanced, Open, Adventurous.
+# Internally a level is a strictness:
 # Each level: the limit on a song's misfit, as a multiple of what MusicIP typically offers (1.2 = the pilot's
 # calibration), and whether new songs the AI calls "borderline" are accepted too.
 STRICTNESS_LEVELS = ((1.0, False), (1.1, False), (1.2, False), (1.35, False), (1.5, True))  # default: Balanced
@@ -5801,12 +5802,12 @@ def strictness_level(index: int) -> tuple[float, bool]:
 
 
 def get_mix_assist_strictness() -> tuple[float, bool]:
-    """Setting "Mix strictness": tidy-ups, new mixes and "More like this"."""
+    """Setting "Mix openness": tidy-ups, new mixes and "More like this"."""
     return strictness_level(get_setting_int("mix_assist_mix_strictness", 2))
 
 
 def get_station_strictness() -> tuple[float, bool]:
-    """Setting "Station strictness": Radio (its first songs and every refill)."""
+    """Setting "Station openness": Radio (its first songs and every refill)."""
     return strictness_level(get_setting_int("mix_assist_station_strictness", 2))
 
 
@@ -6171,7 +6172,7 @@ def process_mix_assist_request(entry: dict) -> None:
 # The station's first songs (a plain MusicIP mix) lose the ones that clearly don't fit the picked song. Refills are
 # checked before they are queued: against a profile that starts as the picked song and drifts with the station
 # ("Station drift": how far), and by the AI against the song the refill is seeded from, or the picked song when the
-# station stays close ("Station strictness": how surprising each song may be).
+# station stays close ("Station openness": how surprising each song may be).
 
 # "Station drift": the profile has moved half the way to where the station went after this many songs.
 RADIO_DRIFT_HALF_LIFE = (0, 60, 20)  # stay close to the picked song, drift slowly (~4 h), wander freely (~1 h 20)

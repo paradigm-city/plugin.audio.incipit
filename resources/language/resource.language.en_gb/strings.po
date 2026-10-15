@@ -113,15 +113,15 @@ msgid "Before \"More like this\" inserts tracks, AI Mix Assist checks MusicIP's 
 msgstr ""
 
 msgctxt "#30405"
-msgid "Mix strictness"
+msgid "Mix openness"
 msgstr ""
 
 msgctxt "#30406"
-msgid "How closely tracks must fit a mix: when AI Mix Assist checks a new mix, tidies one up or adds tracks with \"More like this\". Tight keeps only the core of the style; Adventurous allows wide variation and tracks the AI calls borderline. Balanced is the tested default."
+msgid "How much variety a mix welcomes when AI Mix Assist checks a new mix, tidies one up or adds tracks with \"More like this\". Focused stays with the heart of the mix's style; Adventurous welcomes wide variation, including tracks the AI calls borderline. Balanced is the tested default."
 msgstr ""
 
 msgctxt "#30407"
-msgid "Tight"
+msgid "Focused"
 msgstr ""
 
 msgctxt "#30408"
@@ -169,15 +169,15 @@ msgid "Wander freely"
 msgstr ""
 
 msgctxt "#30419"
-msgid "Station strictness"
+msgid "Station openness"
 msgstr ""
 
 msgctxt "#30420"
-msgid "How surprising each new song on the radio may be. Tight keeps every song close to the one before; Adventurous allows bold steps and songs the AI calls borderline. Same scale as Mix strictness, set separately."
+msgid "How much each new song on the radio may surprise you. Focused keeps every song close to the one before; Adventurous welcomes bold steps, including songs the AI calls borderline. Same scale as Mix openness, set separately."
 msgstr ""
 
 msgctxt "#30421"
-msgid "Tight"
+msgid "Focused"
 msgstr ""
 
 msgctxt "#30422"
