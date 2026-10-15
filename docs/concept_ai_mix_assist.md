@@ -163,7 +163,7 @@ For a guessed unit the two signals are not independent: the seed-intent check re
 | Context | What happens | Automatic |
 |---|---|---|
 | **New mix**, including "More like this" | Plays at once. Refinement runs in the background, patches the not-yet-played part of the playlist and the saved mix, and shows a notification ("Mix refined: 2 tracks replaced"). | yes, if enabled |
-| **Radio, start** | The station plays at once; in the background, its first songs (a plain MusicIP mix) lose the ones that clearly don't fit the picked song (both signals agree), never the playing song or the next one. | yes, if enabled |
+| **Radio, start** | The station plays at once with 8 songs (one refill's worth; without AI Mix Assist, the mix size); in the background, its first songs (a plain MusicIP mix) lose the ones that clearly don't fit the picked song (both signals agree), never the playing song or the next one. | yes, if enabled |
 | **Radio, refills** | Start earlier (6 songs left), take 75 MusicIP candidates and are checked before they are queued; there are minutes before they play. Nothing needs patching. | yes, if enabled |
 | **Saved mix** | "Tidy up with AI Mix Assist" from the context menu: replaces the tracks that don't fit, records what changed in the mix information, and can be undone. | never |
 
