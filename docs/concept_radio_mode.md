@@ -2,25 +2,25 @@
 
 ## Goal
 
-Radio mode works like a vintage radio set. You tune through random song snippets, as if turning the dial, and once something sounds good you start the radio. From then on, an endless MusicIP mix plays in full, with no further input.
+Radio mode works like a vintage radio set. You scan through random song snippets, like the scan button of a radio, and once something sounds good you pick that station. From then on, an endless MusicIP mix plays in full, with no further input.
 
-## Tuning
+## Scanning
 
-**Radio mode → Turn on radio** starts tuning. It uses Discovery mode's snippet playback: random songs from the Kodi library, each starting at an offset and playing for the excerpt length. Both come from the Discovery mode settings (**Excerpt length**, **Start offset into song**).
+**Radio mode → Scan stations** starts scanning. It uses Discovery mode's snippet playback: random songs from the Kodi library, each starting at an offset and playing for the excerpt length. Both come from the Discovery mode settings (**Excerpt length**, **Start offset into song**).
 
-While tuning, the Radio screen offers:
+While scanning, the Radio screen offers:
 
-- **Start radio**: lock onto the snippet that is playing now
-- **Next station**: jump to the next snippet
+- **Pick this station**: lock onto the snippet that is playing now
+- **Skip station**: jump to the next snippet
 - **Stop radio**
 
 ## Starting from any song
 
-**Start MusicIP radio** in the context menu of a library song (next to **Create MusicIP mix**) starts a station with that song as seed, without tuning. It replaces any Discovery or radio playback, and the library view stays where it is. The Radio mode screen then offers **Change station** and **Stop radio** as usual.
+**Start MusicIP radio** in the context menu of a library song (next to **Create MusicIP mix**) starts a station with that song as seed, without scanning. It replaces any Discovery or radio playback, and the library view stays where it is. The Radio mode screen then offers **Scan again** and **Stop radio** as usual.
 
 ## Playing
 
-**Start radio** asks MusicIP for a mix seeded with the current snippet's song, using the configured **Mix parameters** settings, without a dialog. The playlist is replaced by that mix and the songs play in full, starting with the seed song. Labels carry no track numbers.
+**Pick this station** asks MusicIP for a mix seeded with the current snippet's song, using the configured **Mix parameters** settings, without a dialog. The playlist is replaced by that mix and the songs play in full, starting with the seed song. Labels carry no track numbers.
 
 The service keeps the station running:
 
@@ -30,7 +30,7 @@ The service keeps the station running:
 
 The Radio screen then offers:
 
-- **Change station**: go back to tuning; new snippets replace the station, and **Start radio** locks onto a new one
+- **Scan again**: go back to scanning; new snippets replace the station, and **Pick this station** locks onto a new one
 - **Stop radio**
 
 ## Stopping
@@ -39,7 +39,7 @@ The Radio screen then offers:
 - The player's **Stop** stops the radio. The service waits 3 seconds before deciding, so the short gap between songs does not count.
 - **Pause** pauses as usual; the radio stays on.
 - Starting other playback (another album, a mix, Discovery mode) stops the radio without touching the new playback. The service allows 3 seconds after a station starts before checking, while the new station replaces the old one's playback.
-- If tuning stops (player stop, other playback), the radio switches off too. The service allows 3 seconds after tuning starts before checking, while the plugin starts the snippets.
+- If scanning stops (player stop, other playback), the radio switches off too. The service allows 3 seconds after scanning starts before checking, while the plugin starts the snippets.
 - A Kodi restart switches the radio off.
 
 ## Not included
@@ -51,14 +51,14 @@ The Radio screen then offers:
 
 The plugin and the service share `radio_mode_state.json` in the add-on profile:
 
-- `phase`: `off`, `seeking` (tuning) or `playing`
-- `started_ts`: when the radio was turned on (kept across **Change station**); `tuning_started_ts`: when tuning last started
+- `phase`: `off`, `seeking` (scanning) or `playing`
+- `started_ts`: when the radio was turned on (kept across **Scan again**); `tuning_started_ts`: when scanning last started
 - `queue`: the station's playlist entries (`file`, `label`)
 - `seen`: songs already played or queued in this session (up to 5000)
 - `seeds`: the songs that seeded the station's mixes
 - `current_*`: the song playing now
 - `stop_reason`: why the radio stopped (`manual_stop`, `player_stop`, `external_playback`, `startup_reset`, …)
 
-While tuning, Discovery mode's own state carries `owner: "radio"`.
+While scanning, Discovery mode's own state carries `owner: "radio"`.
 
 While Radio mode or Discovery mode is on, the background search for missing files waits.
