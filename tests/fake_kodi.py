@@ -39,8 +39,9 @@ _ASCII_LOWER = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrst
 
 
 def read_setting_defaults() -> dict:
+    """Defaults from resources/settings.xml (Kodi's settings format version 1: <default> elements)."""
     tree = ET.parse(os.path.join(ADDON_DIR, "resources", "settings.xml"))
-    return {node.get("id"): node.get("default", "") for node in tree.iter("setting") if node.get("id")}
+    return {node.get("id"): (node.findtext("default") or "") for node in tree.iter("setting") if node.get("id")}
 
 
 def read_addon_version() -> str:

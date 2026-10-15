@@ -39,10 +39,33 @@ class AddonXmlTest(unittest.TestCase):
         self.assertIn(f"## Version {self.root.get('version')}", read("CHANGELOG.md"))
 
 
+def read_strings():
+    """msgctxt number -> msgid of the English strings.po."""
+    text = read(os.path.join("resources", "language", "resource.language.en_gb", "strings.po"))
+    entries = re.findall(r'msgctxt "#(\d+)"\nmsgid "((?:[^"\\]|\\.)*)"', text)
+    return {int(number): re.sub(r"\\(.)", r"\1", message) for number, message in entries}
+
+
 class SettingsXmlTest(unittest.TestCase):
     def setUp(self):
-        tree = ET.parse(os.path.join(ADDON_DIR, "resources", "settings.xml"))
-        self.settings = {node.get("id"): node for node in tree.iter("setting")}
+        self.tree = ET.parse(os.path.join(ADDON_DIR, "resources", "settings.xml"))
+        self.settings = {node.get("id"): node for node in self.tree.iter("setting")}
+
+    def test_new_settings_format(self):
+        root = self.tree.getroot()
+        self.assertEqual((root.tag, root.get("version")), ("settings", "1"))
+        self.assertEqual(root.find("section").get("id"), ADDON_ID)
+
+    def test_every_setting_has_a_label_and_a_help_text(self):
+        strings = read_strings()
+        for setting_id, node in self.settings.items():
+            with self.subTest(setting=setting_id):
+                self.assertTrue(strings.get(int(node.get("label"))))
+                self.assertGreater(len(strings.get(int(node.get("help")), "")), 20)
+        for node in self.tree.iter():
+            for attribute in ("label", "help"):
+                if node.get(attribute):
+                    self.assertIn(int(node.get(attribute)), strings, f"{node.tag} {attribute}={node.get(attribute)}")
 
     def used_setting_ids(self):
         pattern = re.compile(r"""(?:get_setting(?:_bool|_int)?|getSetting)\(\s*["']([a-z_]+)["']""")
@@ -58,19 +81,19 @@ class SettingsXmlTest(unittest.TestCase):
 
     def test_slider_defaults_are_inside_their_range(self):
         for setting_id, node in self.settings.items():
-            if node.get("type") != "slider":
+            if node.find("control").get("type") != "slider":
                 continue
             with self.subTest(setting=setting_id):
-                low, _step, high = (int(value) for value in node.get("range").split(","))
-                self.assertLessEqual(low, int(node.get("default")))
-                self.assertLessEqual(int(node.get("default")), high)
+                low, high = int(node.findtext("constraints/minimum")), int(node.findtext("constraints/maximum"))
+                self.assertLessEqual(low, int(node.findtext("default")))
+                self.assertLessEqual(int(node.findtext("default")), high)
 
     def test_code_fallbacks_match_declared_defaults(self):
         pattern = re.compile(r"""get_setting(?:_bool|_int)?\(\s*["']([a-z_]+)["']\s*,\s*([^)]+)\)""")
         for source in SOURCES:
             for setting_id, fallback in pattern.findall(read(source)):
                 with self.subTest(source=source, setting=setting_id):
-                    declared = self.settings[setting_id].get("default")
+                    declared = self.settings[setting_id].findtext("default") or ""
                     fallback = fallback.strip().strip("\"'")
                     self.assertEqual(fallback.lower(), declared.lower())
 
