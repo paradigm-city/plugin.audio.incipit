@@ -14,7 +14,7 @@ them with fitting ones, automatically for new mixes, Radio and "More like this",
 | Place | Wording |
 |---|---|
 | Settings category | **AI Mix Assist** |
-| Settings | "Keep new mixes on track", "Keep Radio on track", "Keep 'More like this' on track": off · show only · fix automatically (default: fix automatically) |
+| Settings | "Keep new mixes on track", "Keep 'More like this' on track" (later: "Keep Radio on track"): on/off (default: on). "Show only" was dropped on 2026-10-15: it only listed misfits and left the listener to act; the mix history and Undo cover "what did the AI do". |
 | Notification | "AI Mix Assist: 3 tracks didn't fit and were replaced" |
 | Context menu of a saved mix | "Tidy up with AI Mix Assist" |
 | The seed intent | "**What this mix is about:** dark, abstract, instrumental, …", stated by the AI, with "Edit" |
@@ -302,6 +302,7 @@ Judging a finished MusicIP mix with drift above 0 was tested and does not work: 
 | New mixes: queued when saved, tidied up by the service in a background thread; "show only" lists the tracks that don't fit in the mix information | built, tested live in Kodi (2026-10-15: consistent results; mixes came out short, fixed, see below) |
 | Replacement search, second version: gaps sharing a submix seed share one submix, every MusicIP request asks for 75 tracks, a gap may use any candidate of its round, open gaps get a second round from other clearly fitting tracks | built and tested; dry run on the live-test mix: 7 of 7 gaps filled (before: 4 of 8), 40 of 40 tracks, about 4 minutes |
 | "More like this": the selected song is the reference ("more like THIS"; it may be the seed). It and MusicIP's tracks for it form a small mix; a new track must clearly fit the song (both signals, like replacements), closest first, respecting the artist window around the insertion point; "show only" inserts MusicIP's tracks and lists the misfits | built and tested; dry runs on the live-test mix: 8 of 8 tracks for a fitting song (33 s) and for an edge song (64 s, two batches); live test pending |
+| Mix history (all mixes, on `main`): created, removed by you, More/Less like this, repaired; on this branch also AI tidy-ups with reasons, tracks skipped by "More like this", undo, edited descriptions. Information as pages (Overview, History, AI Mix Assist). Progress bars for creating a mix, More/Less like this, repair and the background tidy-up | built and tested; live test pending |
 | Radio | next |
 
 **Decided (2026-10-15, "More like this"):** the new tracks are measured against the selected song, not the whole mix: "More like this" refers to THIS song, which may be the seed. Measured against the whole mix, a song at the edge of the mix got no tracks at all.
