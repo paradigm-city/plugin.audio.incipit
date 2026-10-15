@@ -271,9 +271,9 @@ def choose_additions(selected: str, candidates: Sequence[str], count: int, cache
                      artist_window: int = ARTIST_WINDOW, model: str = "",
                      progress: Optional[Callable[[str], None]] = None, apply: bool = True) -> dict:
     """"More like this": the selected song and MusicIP's candidates for it form a small mix with the selected song
-    as its seed, and that mix is tidied up like any other: a candidate is dropped when both signals agree it doesn't
-    fit what the selected song is about. The first `count` remaining candidates (closest first) are chosen, without
-    repeating an artist of the `neighbours` (the tracks around the insertion point) or of each other.
+    as its seed. New tracks are held to the same rule as replacements: both signals must say a candidate fits what
+    the selected song is about. The first `count` fitting candidates (closest first) are chosen, without repeating
+    an artist of the `neighbours` (the tracks around the insertion point) or of each other.
     With apply=False ("show only") the first `count` candidates are kept and the misfits among them reported.
 
     Returns intent (the selected song's), chosen (paths), not_fitting ([{path, label, reason}]) and checked (False
@@ -317,7 +317,7 @@ def choose_additions(selected: str, candidates: Sequence[str], count: int, cache
             if len(result["chosen"]) >= count:
                 break
             path = row["unit"]["path"]
-            if row.get("status") == "outlier":
+            if not passes(row, strictness):
                 result["not_fitting"].append({"path": path, "label": row["unit"]["label"],
                                               "reason": row.get("reason") or row.get("why", "")})
                 if apply:
