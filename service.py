@@ -1462,7 +1462,8 @@ def append_radio_tracks(state: dict, plugin, used_seed: str, new_tracks: list[st
     """Queue songs at the end of the station's playlist; they count as seen for the rest of the session."""
     queue = state["queue"]
     seen = list(state.get("seen") or [])
-    metadata_list = plugin.collect_mix_track_metadata(new_tracks, allow_live_lookup=False, include_player_metadata=False)
+    # Look songs up in the library: a station's songs are mostly new to the metadata cache (labels need artists).
+    metadata_list = plugin.collect_mix_track_metadata(new_tracks, allow_live_lookup=True, include_player_metadata=False)
     playlist = get_music_playlist()
     for track, metadata in zip(new_tracks, metadata_list):
         item = plugin.build_mix_playlist_item(track, metadata, 0)
