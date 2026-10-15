@@ -4808,10 +4808,15 @@ def start_radio_from_song(seed: str) -> None:
     start_radio_station(seed)
 
 
+RADIO_ASSISTED_START_SIZE = 16  # with AI Mix Assist: two refills' worth, so the station soon starts to meander
+
+
 def start_radio_station(seed: str) -> bool:
-    """Play an endless MusicIP mix seeded with seed, using the configured mix parameters. False on failure."""
+    """Play an endless MusicIP mix seeded with seed, using the configured mix parameters. False on failure.
+    With AI Mix Assist the station starts small; otherwise with the mix size."""
+    size = RADIO_ASSISTED_START_SIZE if mix_assist_for_radio() else get_playlist_size()
     try:
-        tracks = fetch_mix(seed, get_playlist_size(), get_effective_mix_parameters())
+        tracks = fetch_mix(seed, size, get_effective_mix_parameters(size_override=size))
     except Exception as exc:
         notify(f"Radio could not start: {exc}", xbmcgui.NOTIFICATION_ERROR)
         log(f"Radio mode: start failed for seed {seed!r}: {exc}", xbmc.LOGERROR)
