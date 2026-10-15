@@ -8,17 +8,20 @@ How this file is kept up to date:
 - A fixed finding moves to **Resolved**, keeping its number, with the commit that fixed it.
 - A finding reproduced by a test lists that test under **Test**. Such tests are marked `@unittest.expectedFailure`. `tests/test_findings.py` checks that every one of these tests is listed under **Open**, and that every test listed under **Open** still fails. When a fix makes such a test pass, CI fails until the decorator is removed and the finding is moved to **Resolved**.
 
-Last reviewed: 2026-10-13
+Last reviewed: 2026-10-15
 
 ## Open
 
-### F2 · Cancelling the filter input clears the mix filter
+### F14 · Kodi crashes while a mix listing is being built
 
-In the generate-mix dialog, `edit_mix_generation_parameter()` in `main.py` only ignores `None` from `Dialog().input()`. Kodi returns `""` when the dialog is cancelled, so cancelling replaces the filter with an empty one.
+Kodi crashed (access violation) twice while the add-on was building a folder listing:
 
-Kodi can't tell "cancelled" apart from "cleared on purpose", so a fix needs a UX decision. One option is a separate "Clear filter" choice.
+- 2026-10-15, right after a new mix was generated inside the mix listing (`browse_mix`): in `xbmcplugin.addDirectoryItem()` → `CPluginDirectory::AddItem` → `CFileItemList::Add`, while copying a song's music tag.
+- 2026-10-11: in `xbmcplugin.setPluginCategory()` → `CPluginDirectory::SetProperty`, the first call of a listing.
 
-**Test:** `test_main_mix_parameters.ConfirmMixGenerationDialogTest.test_cancelling_the_filter_input_keeps_the_filter`
+Both stacks were resolved with Kodi 21.3's debug symbols (`kodi-21.3-Omega-x64.pdb` from mirrors.kodi.tv matches the installed build). In both cases Kodi's object for the pending folder request was no longer valid when the add-on called into it. This happens when Kodi gives up a folder request while the add-on is still working on it, for example when the screen changes (`Container.Update`, `Container.Refresh`, Back) during a slow listing. Generating a mix inside a listing takes several seconds (MusicIP reload, the confirmation dialog, the mix itself), which leaves a wide window. F8 is the same pattern from the other side: actions run as folder requests that switch screens instead of returning a listing.
+
+The add-on can't check whether Kodi still waits for a listing. A likely fix is to stop doing slow work and dialogs inside folder requests: generate mixes in a `RunPlugin` action, then show the stored mix with `Container.Update`, whose listing is fast.
 
 ### F3 · "Unknown date" is listed first among recent mix dates
 
@@ -48,6 +51,18 @@ These plugin functions are never called:
 Found on 2026-10-11 while removing the Discovery command channel (F6). They are unrelated to that change.
 
 ## Resolved
+
+### F13 · Saved mixes had two context menu entries for the same information
+
+The context menu of a saved mix listed both **Information** and **Show mix information**, which ran the same action. Found by the user on 2026-10-15.
+
+Fixed in 10fd43d (2026-10-15): only **Information** is left. `test_main_plugin_routes` checks the menu.
+
+### F2 · Cancelling the filter input clears the mix filter
+
+In the generate-mix dialog, `edit_mix_generation_parameter()` in `main.py` only ignored `None` from `Dialog().input()`. Kodi returns `""` when that dialog is cancelled, so cancelling replaced the filter with an empty one.
+
+Fixed in 10fd43d (2026-10-15): text input uses Kodi's keyboard dialog (`xbmc.Keyboard`), whose `isConfirmed()` tells "cancelled" apart from "cleared on purpose", so no extra "Clear filter" choice is needed. `test_main_mix_parameters.ConfirmMixGenerationDialogTest.test_cancelling_the_filter_input_keeps_the_filter` and `test_the_filter_can_be_cleared` cover it.
 
 ### F12 · Seeds with characters outside ISO-8859-1 couldn't be mixed
 

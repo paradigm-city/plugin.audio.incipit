@@ -416,13 +416,9 @@ def edit_mix_generation_parameter(params: dict, option: int) -> dict:
             updated["variety"] = value
 
     elif option == 4:
-        current = str(updated.get("filter") or "")
-        try:
-            value = xbmcgui.Dialog().input("MusicIP filter", defaultt=current)
-        except TypeError:
-            value = xbmcgui.Dialog().input("MusicIP filter", current)
+        value = ask_text("MusicIP filter", str(updated.get("filter") or ""))
         if value is not None:
-            updated["filter"] = str(value).strip()
+            updated["filter"] = value.strip()
 
     elif option == 5:
         value = dialog_slider_int(int(updated["rejectsize"]), "Do not repeat artist within N tracks (0..20)", 0, 20, 1)
@@ -430,6 +426,16 @@ def edit_mix_generation_parameter(params: dict, option: int) -> dict:
             updated["rejectsize"] = value
 
     return normalize_mix_parameters(updated)
+
+
+def ask_text(heading: str, default: str = "") -> str | None:
+    """Text input; None when cancelled. Dialog().input() returns "" for both cancel and clear, the keyboard
+    dialog tells them apart."""
+    keyboard = xbmc.Keyboard(default, heading)
+    keyboard.doModal()
+    if not keyboard.isConfirmed():
+        return None
+    return str(keyboard.getText() or "")
 
 
 def confirm_mix_generation(params: dict) -> dict | None:
@@ -4327,7 +4333,6 @@ def add_saved_mix_item(cache_path: str) -> None:
 
     context_items = [
         ("Information", f"RunPlugin({addon_url(action='mix_info', cache_path=cache_path, nonce=new_nonce())})"),
-        ("Show mix information", f"RunPlugin({addon_url(action='mix_info', cache_path=cache_path, nonce=new_nonce())})"),
         ("Check consistency", build_check_mix_action(cache_path)),
     ]
     repair_readiness = {}

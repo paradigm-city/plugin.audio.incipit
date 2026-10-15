@@ -596,6 +596,29 @@ class DialogProgressBG:
         kodi.dialog_calls.append(("progress.close", (), {}))
 
 
+class Keyboard:
+    """Kodi's keyboard dialog. A queued "keyboard" response is the confirmed text; None (or no response) means
+    the dialog was cancelled."""
+
+    def __init__(self, line="", heading="", hidden=False):
+        self.line, self.heading = line, heading
+        self.text, self.confirmed = line, False
+
+    def doModal(self, autoclose=0):
+        kodi.dialog_calls.append(("keyboard", (self.heading, self.line), {}))
+        queue = kodi.dialog_responses.get("keyboard")
+        response = queue.pop(0) if queue else None
+        self.confirmed = response is not None
+        if response is not None:
+            self.text = response
+
+    def isConfirmed(self):
+        return self.confirmed
+
+    def getText(self):
+        return self.text
+
+
 def _getCurrentWindowId():
     return kodi.window_id
 
@@ -686,6 +709,7 @@ def install():
     )
     xbmc.PLAYLIST_MUSIC, xbmc.PLAYLIST_VIDEO = PLAYLIST_MUSIC, PLAYLIST_VIDEO
     xbmc.Player, xbmc.PlayList, xbmc.Monitor, xbmc.InfoTagMusic = Player, PlayList, Monitor, InfoTagMusic
+    xbmc.Keyboard = Keyboard
     xbmc.log = _xbmc_log
     xbmc.executebuiltin = _executebuiltin
     xbmc.executeJSONRPC = kodi_execute_jsonrpc

@@ -150,7 +150,7 @@ class ConfirmMixGenerationDialogTest(KodiTestCase):
         # Kodi has no Dialog.slider(), so numeric input is used for numbers.
         kodi.respond("select", 1, 2, 3, 4, 5, 0)
         kodi.respond("numeric", "35", "7", "4", "12")
-        kodi.respond("input", "  genre:Rock ")
+        kodi.respond("keyboard", "  genre:Rock ")
         params = main.confirm_mix_generation(main.get_effective_mix_parameters())
         self.assertEqual(params["size"], 35)
         self.assertEqual((params["style_ui"], params["style"]), (7, 140))
@@ -177,13 +177,16 @@ class ConfirmMixGenerationDialogTest(KodiTestCase):
         main.xbmcgui.Dialog.slider = lambda self, *args, **kwargs: 12
         self.assertIsNone(main.dialog_slider_int(2, "Variety", 0, 9))
 
-    @unittest.expectedFailure
     def test_cancelling_the_filter_input_keeps_the_filter(self):
-        # Known issue: Kodi's Dialog.input() returns "" when cancelled, and edit_mix_generation_parameter()
-        # only ignores None, so cancelling clears the filter. Remove expectedFailure once fixed.
-        kodi.respond("input", "")
+        kodi.respond("keyboard", None)
         params = main.edit_mix_generation_parameter({"filter": "genre:Rock"}, 4)
         self.assertEqual(params["filter"], "genre:Rock")
+        self.assertEqual(kodi.dialogs("keyboard")[-1][1], ("MusicIP filter", "genre:Rock"))
+
+    def test_the_filter_can_be_cleared(self):
+        kodi.respond("keyboard", "")
+        params = main.edit_mix_generation_parameter({"filter": "genre:Rock"}, 4)
+        self.assertEqual(params["filter"], "")
 
 
 if __name__ == "__main__":
