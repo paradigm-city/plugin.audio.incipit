@@ -1,6 +1,8 @@
 """The mix history (what happened to a saved mix), the mix information pages, and progress bars."""
 
+import time
 import unittest
+from unittest import mock
 
 from fake_kodi import kodi
 from support import KodiTestCase, MusicIPServerTestCase, main
@@ -119,6 +121,26 @@ class EditingHistoryAndProgressTest(MusicIPServerTestCase, HistoryTestCase):
         self.assertEqual(calls[0], ("progress.create", ("Creating a MusicIP mix", ""), {}))
         self.assertIn(("progress.update", (15, "Creating a MusicIP mix", "Updating MusicIP's library"), {}), calls)
         self.assertEqual(calls[-1][0], "progress.close")
+
+
+class ProgressClockTest(HistoryTestCase):
+    def test_a_long_step_shows_a_running_clock(self):
+        with mock.patch.object(main.BackgroundProgress, "SHOW_CLOCK_AFTER", 0):
+            with main.BackgroundProgress("Busy", tick=0.01) as progress:
+                progress(40, "Waiting for MusicIP")
+                deadline = time.monotonic() + 2
+                while time.monotonic() < deadline and                         ("progress.update", (40, "Busy", "Waiting for MusicIP (0:00)"), {}) not in self.progress_calls():
+                    time.sleep(0.01)
+            calls = self.progress_calls()
+        self.assertIn(("progress.update", (40, "Busy", "Waiting for MusicIP (0:00)"), {}), calls)
+        self.assertEqual(calls[-1][0], "progress.close")
+        self.assertFalse(progress.thread.is_alive())
+
+    def test_short_steps_show_no_clock(self):
+        with main.BackgroundProgress("Busy", tick=0.01) as progress:
+            progress(10, "Quick")
+        self.assertIn(("progress.update", (10, "Busy", "Quick"), {}), self.progress_calls())
+        self.assertFalse(any("(0:" in str(call) for call in self.progress_calls()))
 
 
 class RepairHistoryTest(HistoryTestCase):
