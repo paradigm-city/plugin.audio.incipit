@@ -52,6 +52,18 @@ Found on 2026-10-11 while removing the Discovery command channel (F6). They are 
 
 ## Resolved
 
+### F16 · AI Mix Assist left new mixes shorter than requested
+
+Found by the user on 2026-10-15: two new 40-track mixes ended with 36 tracks after AI Mix Assist (4 replaced, 4 removed). The log showed why: gaps that shared a submix seed fetched the same 15 tracks again and competed for them, and the fallback asked the master seed for 45 tracks, most of which were already in the mix.
+
+Fixed in 26ae462 (2026-10-15): gaps sharing a submix seed share one submix, every request asks MusicIP for 75 tracks and keeps the closest new ones, a gap may use any candidate of its round, and gaps still open get a second round of submixes from other clearly fitting tracks. `test_mixassist_tidy_up.AssistTest.test_gaps_sharing_a_submix_seed_share_one_larger_submix` and `test_open_gaps_get_submixes_from_other_fitting_tracks` cover it.
+
+### F15 · Esc in "Edit what this mix is about" changed the intent
+
+Found by the user on 2026-10-15: closing the editor with Esc showed "Saved. Tidy up the mix to apply it." `Dialog().input()` returns "" when cancelled, which the editor took as "go back to the AI's statement".
+
+Fixed in 26ae462 (2026-10-15) with the keyboard dialog, as for F2. `test_main_mix_assist.EditIntentTest` covers it.
+
 ### F13 · Saved mixes had two context menu entries for the same information
 
 The context menu of a saved mix listed both **Information** and **Show mix information**, which ran the same action. Found by the user on 2026-10-15.

@@ -129,21 +129,35 @@ class UndoTest(MixAssistTestCase):
 class EditIntentTest(MixAssistTestCase):
     def test_the_listener_can_write_and_clear_the_intent(self):
         self.tidy_up(plan())
-        kodi.respond("input", "complex, abstract, not danceable")
+        kodi.respond("keyboard", "complex, abstract, not danceable")
         self.run_plugin(action="mix_assist_edit_intent", cache_path=self.cache_path)
-        self.assertEqual(kodi.dialogs("input")[-1][1], ("What is this mix about?", "dark, abstract, instrumental"))
+        self.assertEqual(kodi.dialogs("keyboard")[-1][1], ("What is this mix about?", "dark, abstract, instrumental"))
         self.assertEqual(self.section()["listener_intent"], "complex, abstract, not danceable")
         self.assertNotified("Saved. Tidy up the mix to apply it.")
 
-        kodi.respond("input", "  ")
+        kodi.respond("keyboard", "  ")
         self.run_plugin(action="mix_assist_edit_intent", cache_path=self.cache_path)
         self.assertNotIn("listener_intent", self.section())
 
-    def test_cancelling_keeps_the_intent(self):
+    def test_cancelling_keeps_the_intent_and_says_nothing(self):
         self.tidy_up(plan())
-        kodi.respond("input", "dark, abstract, instrumental")  # unchanged text, as when cancelled with the default
+        kodi.notifications.clear()
+        kodi.respond("keyboard", "complex, abstract, not danceable")
+        self.run_plugin(action="mix_assist_edit_intent", cache_path=self.cache_path)
+        kodi.notifications.clear()
+        kodi.respond("keyboard", None)  # Esc
+        self.run_plugin(action="mix_assist_edit_intent", cache_path=self.cache_path)
+        self.assertEqual(self.section()["listener_intent"], "complex, abstract, not danceable")
+        self.assertEqual(kodi.notification_messages(), [])
+
+    def test_unchanged_or_empty_text_changes_nothing(self):
+        self.tidy_up(plan())
+        kodi.notifications.clear()
+        kodi.respond("keyboard", "dark, abstract, instrumental ", "")
+        self.run_plugin(action="mix_assist_edit_intent", cache_path=self.cache_path)
         self.run_plugin(action="mix_assist_edit_intent", cache_path=self.cache_path)
         self.assertNotIn("listener_intent", self.section())
+        self.assertEqual(kodi.notification_messages(), [])
 
 
 class SavedMixMenuTest(MixAssistTestCase):

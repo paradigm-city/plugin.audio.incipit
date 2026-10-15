@@ -241,6 +241,29 @@ class AssistTest(unittest.TestCase):
         self.assertEqual(sorted(plan["removed"]), [6, 11])
         self.assertEqual(plan["paths"], [p for p in self.paths if not p.startswith("bad")])
 
+    def test_gaps_sharing_a_submix_seed_share_one_larger_submix(self):
+        paths = ["seed"] + [f"fit{i}" for i in range(1, 5)] + ["bad1", "bad2"] + [f"fit{i}" for i in range(5, 9)]
+        requests = []
+
+        def fetch_mix(seed, size):
+            requests.append((seed, size))
+            return [seed, "candbad", "cand1", "cand2", "cand3"] if seed == "fit4" else [seed]
+
+        plan = assist.tidy_up(paths, self.store, self.ask, self.resolve, fetch_mix, artist_window=0)
+        self.assertEqual(requests, [("fit4", assist.MUSICIP_MAX_MIX), ("seed", assist.MUSICIP_MAX_MIX)])
+        self.assertEqual(sorted(change["old"] for change in plan["changes"]), ["bad1", "bad2"])
+        self.assertEqual({change["source"] for change in plan["changes"]}, {"submix"})
+        self.assertEqual(len(plan["paths"]), len(paths))
+
+    def test_open_gaps_get_submixes_from_other_fitting_tracks(self):
+        def fetch_mix(seed, size):
+            return [seed, "cand1", "cand2"] if seed == "fit3" else [seed, "candbad"]
+
+        plan = assist.tidy_up(self.paths, self.store, self.ask, self.resolve, fetch_mix, artist_window=0)
+        self.assertEqual(sorted(change["old"] for change in plan["changes"]), ["bad1", "bad2"])
+        self.assertEqual({change["source"] for change in plan["changes"]}, {"nearby"})
+        self.assertEqual(plan["removed"], [])
+
     def test_a_fitting_mix_is_left_alone(self):
         paths = ["seed"] + [f"fit{i}" for i in range(1, 9)]
         plan = assist.tidy_up(paths, self.store, self.ask, self.resolve, self.fetch_mix)
