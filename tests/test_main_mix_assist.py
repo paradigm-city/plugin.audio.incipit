@@ -316,6 +316,12 @@ class ProcessNewMixTest(MixAssistTestCase):
         self.process(plan(changes=[REPLACE_DISCO], removed=[5]))
         self.assertEqual(kodi.playlist_files(), [TRACKS[0], TRACKS[1], REPLACEMENT, TRACKS[3]])
 
+    def test_a_patched_track_is_labelled_with_its_artist(self):
+        kodi.library.add_song(REPLACEMENT, title="Think", artist="Medeski Martin & Wood")
+        self.play_mix(0)
+        self.process(plan(changes=[REPLACE_DISCO]))
+        self.assertIn("Medeski Martin & Wood", kodi.playlist[2][1].getLabel())
+
     def test_the_playing_track_and_the_next_one_are_never_touched(self):
         self.play_mix(1)  # track 3 (the disco one) is next
         self.process(plan(changes=[REPLACE_DISCO], removed=[5]))
