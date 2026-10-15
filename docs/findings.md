@@ -23,6 +23,10 @@ Both stacks were resolved with Kodi 21.3's debug symbols (`kodi-21.3-Omega-x64.p
 
 The add-on can't check whether Kodi still waits for a listing. A likely fix is to stop doing slow work and dialogs inside folder requests: generate mixes in a `RunPlugin` action, then show the stored mix with `Container.Update`, whose listing is fast.
 
+### F17 · A Radio test failed once
+
+`test_radio_mode.StartFromAnySongTest.test_new_station_is_not_mistaken_for_other_playback` failed once on 2026-10-15 during a full test run (`stop_reason` was `''` instead of `external_playback`) and passed in the next 10 runs, alone and in the full suite. The test uses the fake clock, so the cause is probably state left behind by another test (a background thread or the fake MusicIP server) rather than real time. Not reproduced yet.
+
 ### F3 · "Unknown date" is listed first among recent mix dates
 
 `group_saved_mixes_by_date()` in `main.py` gives "Unknown date" a sort key meant to put it last, but then sorts with `reverse=True`, so it comes first. This only affects mixes whose save time can't be read.

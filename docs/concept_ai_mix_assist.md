@@ -301,10 +301,10 @@ Judging a finished MusicIP mix with drift above 0 was tested and does not work: 
 | Saved mixes on demand: tidy up, undo, edit what the mix is about | built, tested live in Kodi (5 replacements, 138 s) |
 | New mixes: queued when saved, tidied up by the service in a background thread; "show only" lists the tracks that don't fit in the mix information | built, tested live in Kodi (2026-10-15: consistent results; mixes came out short, fixed, see below) |
 | Replacement search, second version: gaps sharing a submix seed share one submix, every MusicIP request asks for 75 tracks, a gap may use any candidate of its round, open gaps get a second round from other clearly fitting tracks | built and tested; dry run on the live-test mix: 7 of 7 gaps filled (before: 4 of 8), 40 of 40 tracks, about 4 minutes |
-| "More like this": MusicIP's tracks for the selected song are checked against what the mix is about before they are inserted (closest first, artist window); "show only" inserts them and lists the misfits | built and tested; dry run: about 30 s per 24 candidates, a fitting song got 4 of 8 tracks, an edge song (modern rock in an early-80s metal mix) got none; live test pending |
+| "More like this": the selected song is the reference ("more like THIS"; it may be the seed). It and MusicIP's tracks for it form a small mix; a new track must clearly fit the song (both signals, like replacements), closest first, respecting the artist window around the insertion point; "show only" inserts MusicIP's tracks and lists the misfits | built and tested; dry runs on the live-test mix: 8 of 8 tracks for a fitting song (33 s) and for an edge song (64 s, two batches); live test pending |
 | Radio | next |
 
-**Open question ("More like this"):** the new tracks are measured against the whole mix, as the concept says. When the listener picks a song at the edge of the mix, almost nothing fits and nothing is inserted ("none of MusicIP's tracks for this song fits the mix"). The alternative is to measure against the selected song with the mix's intent as a looser frame.
+**Decided (2026-10-15, "More like this"):** the new tracks are measured against the selected song, not the whole mix: "More like this" refers to THIS song, which may be the seed. Measured against the whole mix, a song at the edge of the mix got no tracks at all.
 
 ## Running Claude from Kodi (spike, 2026-10-14)
 
