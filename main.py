@@ -4799,7 +4799,8 @@ def start_radio_station(seed: str) -> bool:
         })
         save_discovery_state(discovery)
 
-    metadata_list = collect_mix_track_metadata(tracks, allow_live_lookup=False, include_player_metadata=False)
+    # Look songs up in the library: a station's songs are mostly new to the metadata cache (labels need artists).
+    metadata_list = collect_mix_track_metadata(tracks, allow_live_lookup=True, include_player_metadata=False)
     now = int(time.time())
     previous = get_radio_state()
     started_ts = int(previous.get("started_ts") or 0) if radio_phase() != "off" else 0
