@@ -1167,6 +1167,11 @@ RADIO_REFILL_SEEDS = 3           # last queued songs tried as seed when a mix br
 RADIO_REFILL_RETRY_SECONDS = 60  # wait after a failed or empty top-up
 RADIO_STOP_GRACE_SECONDS = 3     # playback must be stopped this long (gaps between songs are shorter)
 RADIO_MAX_SEEN = 5000            # songs remembered per session to avoid repeats
+RADIO_CHECKED_THRESHOLD = 6      # with AI Mix Assist: top up earlier, the check takes a minute or two
+RADIO_CHECK_SIZE = 75            # MusicIP candidates per checked refill (MusicIP's maximum)
+
+# One AI Mix Assist check at a time, in a background thread; the radio tick applies its result.
+RADIO_CHECK: dict = {"thread": None, "station": 0, "kind": "", "result": None, "fallback": [], "seed": ""}
 
 
 def radio_state_path() -> str:
@@ -1251,11 +1256,127 @@ def run_radio_tick() -> None:
 
     position = prune_radio_backlog(state, position)
 
+    plugin = load_plugin_module()
+    assisted = radio_mix_assist_enabled(plugin)
+    if assisted:
+        apply_radio_check(state, plugin, position)
+        if not state.get("start_checked") and not radio_check_busy():
+            state["start_checked"] = True
+            start_radio_start_check(state, plugin)
+
     remaining = len(state["queue"]) - position - 1 if position >= 0 else len(state["queue"])
-    if remaining < RADIO_REFILL_THRESHOLD and now >= int(state.get("next_refill_ts") or 0):
-        refill_radio_queue(state)
+    threshold = RADIO_CHECKED_THRESHOLD if assisted else RADIO_REFILL_THRESHOLD
+    if remaining < threshold and now >= int(state.get("next_refill_ts") or 0) and not radio_check_busy():
+        refill_radio_queue(state, checked=assisted)
 
     save_radio_state(state)
+
+
+def radio_mix_assist_enabled(plugin) -> bool:
+    try:
+        return bool(plugin.mix_assist_for_radio())
+    except Exception:
+        return False
+
+
+def radio_station_id(state: dict) -> int:
+    """Changes with every new station (each starts playing anew)."""
+    return int(state.get("playing_started_ts") or 0)
+
+
+def radio_check_running() -> bool:
+    thread = RADIO_CHECK.get("thread")
+    return thread is not None and thread.is_alive()
+
+
+def radio_check_busy() -> bool:
+    """A check is running, or its result waits to be applied."""
+    return radio_check_running() or RADIO_CHECK.get("result") is not None
+
+
+def start_radio_check(state: dict, kind: str, job, fallback=(), seed: str = "") -> None:
+    """Run job() (an AI Mix Assist check) in a background thread; apply_radio_check() takes the result."""
+    monitor = xbmc.Monitor()
+
+    def check() -> None:
+        if monitor.abortRequested():
+            raise RuntimeError("Kodi is shutting down.")
+
+    def run() -> None:
+        try:
+            RADIO_CHECK["result"] = job(check)
+        except Exception as exc:
+            RADIO_CHECK["result"] = {"error": exc}
+
+    RADIO_CHECK.update(station=radio_station_id(state), kind=kind, result=None, fallback=list(fallback), seed=seed)
+    RADIO_CHECK["thread"] = threading.Thread(target=run, daemon=True)
+    RADIO_CHECK["thread"].start()
+
+
+def start_radio_start_check(state: dict, plugin) -> None:
+    seed = str(state.get("seed") or "")
+    files = [str(entry["file"]) for entry in state.get("queue") or []]
+    tracks = [seed] + [track for track in files if plugin.normalize_track_identity(track) != plugin.normalize_track_identity(seed)]
+    if seed and len(tracks) > 2:
+        log_info(f"Radio mode: AI Mix Assist checks the station's first {len(tracks) - 1} song(s).")
+        start_radio_check(state, "start", lambda check: plugin.check_radio_start(tracks, check=check))
+
+
+def apply_radio_check(state: dict, plugin, position: int) -> None:
+    """Apply a finished check to the station it was made for."""
+    if radio_check_running() or RADIO_CHECK.get("result") is None:
+        return
+    kind, result, station = RADIO_CHECK["kind"], RADIO_CHECK["result"], RADIO_CHECK["station"]
+    fallback, seed = RADIO_CHECK["fallback"], RADIO_CHECK["seed"]
+    RADIO_CHECK.update(thread=None, result=None, fallback=[], seed="")
+    if station != radio_station_id(state):
+        return  # the station changed meanwhile
+
+    error = result.get("error")
+    if error is not None:
+        log(f"Radio mode: AI Mix Assist check failed: {error}", xbmc.LOGWARNING)
+        if getattr(error, "kind", ""):
+            plugin.report_automatic_mix_assist_error(error)
+        if kind == "refill" and fallback:
+            append_radio_tracks(state, plugin, seed, fallback)  # keep the station going, unchecked
+        return
+
+    if kind == "start":
+        remove = {plugin.normalize_track_identity(track) for track in result.get("remove") or []}
+        removed = 0
+        for index in range(len(state["queue"]) - 1, position + 1, -1):  # never the playing song or the next one
+            if plugin.normalize_track_identity(str(state["queue"][index]["file"])) not in remove:
+                continue
+            try:
+                execute_jsonrpc("Playlist.Remove", {"playlistid": 0, "position": index})
+            except Exception as exc:
+                log_info(f"Radio mode: removing a song that doesn't fit failed: {exc}")
+                continue
+            state["queue"].pop(index)
+            removed += 1
+        state["intent"] = result.get("intent") or ""
+        state["reference"] = result.get("reference")
+        log_info(f"Radio mode: AI Mix Assist took out {removed} song(s) that didn't fit the station.")
+        return
+
+    chosen = list(result.get("chosen") or [])
+    if result.get("reference"):
+        state["reference"] = result["reference"]
+    skipped = len(result.get("not_fitting") or [])
+    if chosen:
+        append_radio_tracks(state, plugin, seed, chosen)
+        state["refill_seed_offset"] = 0
+        log_info(f"Radio mode: AI Mix Assist kept {len(chosen)} song(s), skipped {skipped}.")
+        return
+    remaining = len(state["queue"]) - position - 1 if position >= 0 else len(state["queue"])
+    if remaining <= 1 and fallback:
+        log_info("Radio mode: nothing fitted and the station is about to run dry; adding MusicIP's songs unchecked.")
+        append_radio_tracks(state, plugin, seed, fallback)
+        return
+    # Nothing fitted the song before this refill: next time, seed from an earlier song.
+    state["refill_seed_offset"] = int(state.get("refill_seed_offset") or 0) + 1
+    state["next_refill_ts"] = int(time.time()) + RADIO_REFILL_RETRY_SECONDS
+    log_info(f"Radio mode: none of {skipped} song(s) fitted; trying an earlier seed.")
 
 
 def prune_radio_backlog(state: dict, position: int) -> int:
@@ -1277,20 +1398,23 @@ def prune_radio_backlog(state: dict, position: int) -> int:
     return position - removed
 
 
-def refill_radio_queue(state: dict) -> int:
-    """Top up the station with a MusicIP mix seeded from the last queued song. Returns songs added."""
+def refill_radio_queue(state: dict, checked: bool = False) -> int:
+    """Top up the station with a MusicIP mix seeded from the last queued song. Returns songs added. With checked,
+    MusicIP's songs go to AI Mix Assist first (in the background) and are added when the check is done."""
     plugin = load_plugin_module()
     queue = state["queue"]
-    seen = list(state.get("seen") or [])
-    seen_set = set(seen)
+    seen_set = set(state.get("seen") or [])
     now = int(time.time())
     new_tracks: list[str] = []
     used_seed = ""
+    size = plugin.get_playlist_size()
+    offset = int(state.get("refill_seed_offset") or 0) if checked else 0
 
-    for entry in list(reversed(queue))[:RADIO_REFILL_SEEDS]:
+    for entry in list(reversed(queue))[offset:offset + RADIO_REFILL_SEEDS]:
         seed = str(entry["file"])
         try:
-            tracks = plugin.fetch_mix(seed, plugin.get_playlist_size(), plugin.get_effective_mix_parameters())
+            request_size = RADIO_CHECK_SIZE if checked else size
+            tracks = plugin.fetch_mix(seed, request_size, plugin.get_effective_mix_parameters(size_override=request_size))
         except plugin.MusicIPError as exc:
             if "empty mix" in str(exc):
                 log_info(f"Radio mode: MusicIP returned no songs for {seed!r}.")
@@ -1300,7 +1424,11 @@ def refill_radio_queue(state: dict) -> int:
         except Exception as exc:
             log(f"Radio mode: MusicIP mix for {seed!r} failed: {exc}", xbmc.LOGWARNING)
             break
-        new_tracks = [track for track in tracks if plugin.normalize_track_identity(track) not in seen_set]
+        new_tracks = []
+        for track in tracks:
+            identity = plugin.normalize_track_identity(track)
+            if identity not in seen_set and identity not in {plugin.normalize_track_identity(t) for t in new_tracks}:
+                new_tracks.append(track)
         if new_tracks:
             used_seed = seed
             break
@@ -1308,18 +1436,37 @@ def refill_radio_queue(state: dict) -> int:
 
     if not new_tracks:
         state["next_refill_ts"] = now + RADIO_REFILL_RETRY_SECONDS
+        state["refill_seed_offset"] = 0
         log_info(f"Radio mode: no new songs for the station; retrying in {RADIO_REFILL_RETRY_SECONDS} s.")
         return 0
 
+    if checked:
+        drift = plugin.get_radio_drift()
+        reference_song = used_seed if drift > 0 else str(state.get("seed") or used_seed)
+        reference = state.get("reference") if isinstance(state.get("reference"), dict) else None
+        neighbours = [str(entry["file"]) for entry in queue]
+        candidates, fallback = list(new_tracks), list(new_tracks[:size])
+        log_info(f"Radio mode: AI Mix Assist checks {len(candidates)} song(s) seeded from {used_seed!r}.")
+        start_radio_check(
+            state, "refill",
+            lambda check: plugin.check_radio_refill(reference_song, candidates, size, reference, neighbours, check=check),
+            fallback=fallback, seed=used_seed)
+        return 0
+
+    return append_radio_tracks(state, plugin, used_seed, new_tracks)
+
+
+def append_radio_tracks(state: dict, plugin, used_seed: str, new_tracks: list[str]) -> int:
+    """Queue songs at the end of the station's playlist; they count as seen for the rest of the session."""
+    queue = state["queue"]
+    seen = list(state.get("seen") or [])
     metadata_list = plugin.collect_mix_track_metadata(new_tracks, allow_live_lookup=False, include_player_metadata=False)
     playlist = get_music_playlist()
     for track, metadata in zip(new_tracks, metadata_list):
         item = plugin.build_mix_playlist_item(track, metadata, 0)
         playlist.add(track, item)
         queue.append({"file": track, "label": item.getLabel()})
-        identity = plugin.normalize_track_identity(track)
-        seen.append(identity)
-        seen_set.add(identity)
+        seen.append(plugin.normalize_track_identity(track))
 
     plugin.enqueue_metadata_refresh_for_tracks(new_tracks, metadata_list=metadata_list, reason_context="radio")
     state["seen"] = seen[-RADIO_MAX_SEEN:]

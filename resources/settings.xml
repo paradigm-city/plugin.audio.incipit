@@ -19,6 +19,8 @@
     <category label="AI Mix Assist">
         <setting id="mix_assist_auto_new_mixes" type="bool" label="Keep new mixes on track" default="true" />
         <setting id="mix_assist_auto_more_like_this" type="bool" label="Keep &quot;More like this&quot; on track" default="true" />
+        <setting id="mix_assist_auto_radio" type="bool" label="Keep Radio on track" default="true" />
+        <setting id="mix_assist_radio_drift" type="enum" label="Station drift" values="Stay close to the picked song|Drift slowly|Wander freely" default="1" />
         <setting id="mix_assist_strictness" type="enum" label="Strictness" values="Lenient|Relaxed|Normal|Strict|Very strict" default="2" />
         <setting id="mix_assist_cli_path" type="text" label="Claude Code CLI (empty: find it automatically)" default="" />
     </category>

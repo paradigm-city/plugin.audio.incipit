@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Callable, Dict, List, Optional, Sequence
 
-from mixassist import checks, fit
+from mixassist import checks, dimensions, fit
 from mixassist.cache import RatingCache, normalize
 from mixassist.rating import Ask, rate_missing
 from mixassist.stats import median
@@ -283,20 +283,24 @@ def tidy_up(paths: Sequence[str], cache: RatingCache, ask: Ask, resolve: Resolve
 def choose_additions(selected: str, candidates: Sequence[str], count: int, cache: RatingCache, ask: Ask,
                      resolve: Resolve, neighbours: Sequence[str] = (), strictness: float = DEFAULT_STRICTNESS,
                      artist_window: int = ARTIST_WINDOW, model: str = "",
-                     progress: Optional[Callable[..., None]] = None) -> dict:
-    """"More like this": the selected song and MusicIP's candidates for it form a small mix with the selected song
+                     progress: Optional[Callable[..., None]] = None, reference: Optional[dict] = None) -> dict:
+    """"More like this" (and Radio refills): the selected song and MusicIP's candidates for it form a small mix with the selected song
     as its seed. New tracks are held to the same rule as replacements: both signals must say a candidate fits what
     the selected song is about. The first `count` fitting candidates (closest first) are chosen, without repeating
     an artist of the `neighbours` (the tracks around the insertion point) or of each other.
 
-    Returns intent (the selected song's), chosen (paths), not_fitting ([{path, label, reason}]) and checked (False
-    if the candidates couldn't be measured; then the first ones are taken unchecked)."""
+    `reference` (a rating, e.g. a Radio station's drifting profile) replaces the selected song's own rating in the
+    vector part; the AI still judges against the selected song.
+
+    Returns intent (the selected song's), chosen (paths), entries (the chosen tracks' ratings by path), seed_entry
+    (the selected song's rating), not_fitting ([{path, label, reason}]) and checked (False if the candidates
+    couldn't be measured; then the first ones are taken unchecked)."""
     def step(text: str, fraction: Optional[float] = None) -> None:
         if progress:
             progress(text) if fraction is None else progress(text, fraction)
 
     candidates = list(candidates)
-    result = {"intent": "", "chosen": [], "not_fitting": [], "checked": False}
+    result = {"intent": "", "chosen": [], "entries": {}, "seed_entry": None, "not_fitting": [], "checked": False}
     step("Looking up the tracks")
     selected_unit = resolve([selected])[0]
     blocked = set()
@@ -318,7 +322,9 @@ def choose_additions(selected: str, candidates: Sequence[str], count: int, cache
             verdicts = {number + 1: verdict for number, verdict in judged.items()}
         else:
             result["intent"], verdicts = checks.state_intent(units, entries, ask)
-        analysis = analyze(units, entries, verdicts, cache.library(), strictness)
+        result["seed_entry"] = result["seed_entry"] or entries[0]
+        vector_entries = [reference] + entries[1:] if reference else entries
+        analysis = analyze(units, vector_entries, verdicts, cache.library(), strictness)
         if not analysis["ready"]:
             if not result["checked"]:
                 result["chosen"] = batch[:count]
@@ -337,6 +343,21 @@ def choose_additions(selected: str, candidates: Sequence[str], count: int, cache
             if artist in blocked:
                 continue
             result["chosen"].append(path)
+            result["entries"][path] = row["entry"]
             if artist_window > 0:
                 blocked.add(artist)
     return result
+
+
+def drift_reference(reference: dict, added: Sequence[Optional[dict]], drift: float) -> dict:
+    """A Radio station's profile after a refill: (1 − drift) × profile + drift × the added tracks' average.
+    Drift 0 keeps the picked song's profile; higher values let the station wander."""
+    rated = [entry for entry in added if entry]
+    if not rated or drift <= 0:
+        return dict(reference)
+    moved = dict(reference)
+    for key in dimensions.ALL_KEYS:
+        values = [float(entry[key]) for entry in rated if isinstance(entry.get(key), (int, float))]
+        if values and isinstance(reference.get(key), (int, float)):
+            moved[key] = (1 - drift) * float(reference[key]) + drift * sum(values) / len(values)
+    return moved

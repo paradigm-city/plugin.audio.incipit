@@ -6153,6 +6153,92 @@ def process_mix_assist_request(entry: dict) -> None:
     notify(mix_assist_result_message(plan))
 
 
+# --- AI Mix Assist for Radio: the service checks a station's songs in a background thread ------------------
+# The station's first songs (a plain MusicIP mix) lose the ones that clearly don't fit the picked song. Refills are
+# checked before they are queued: against a profile that starts as the picked song and drifts with the station
+# (setting "Station drift"), and by the AI against the song the refill is seeded from (or the picked song when the
+# station stays close).
+
+RADIO_DRIFT = (0.0, 0.2, 0.5)  # "Station drift": stay close to the picked song, drift slowly, wander freely
+
+
+def mix_assist_for_radio() -> bool:
+    """Setting "Keep Radio on track", and the Claude CLI is there (without it, Radio works as before)."""
+    return get_setting_bool("mix_assist_auto_radio", True) and mix_assist_available()
+
+
+MIX_ASSIST_AVAILABLE = {"checked": 0.0, "found": False}
+
+
+def mix_assist_available(max_age: float = 600) -> bool:
+    """Whether the Claude CLI can be found; looked up at most every max_age seconds (the service asks often)."""
+    now = time.monotonic()
+    if not MIX_ASSIST_AVAILABLE["checked"] or now - MIX_ASSIST_AVAILABLE["checked"] > max_age:
+        MIX_ASSIST_AVAILABLE.update(checked=now, found=bool(
+            mix_assist_claude.find_cli(get_setting("mix_assist_cli_path", "").strip())))
+    return MIX_ASSIST_AVAILABLE["found"]
+
+
+def get_radio_drift() -> float:
+    index = max(0, min(len(RADIO_DRIFT) - 1, get_setting_int("mix_assist_radio_drift", 1)))
+    return RADIO_DRIFT[index]
+
+
+def radio_check_progress(check=None):
+    """mixassist progress for the service's background checks: no bar, but a chance to stop on Kodi's shutdown."""
+    def report(*_args) -> None:
+        if check:
+            check()
+    return report
+
+
+def check_radio_start(tracks: list[str], check=None) -> dict:
+    """Which of a new station's songs (tracks[0] = the picked song) clearly don't fit it: both signals agree, as in
+    a tidy-up. Returns remove (paths), intent and reference (the picked song's rating, the station's first profile)."""
+    store = mix_assist_cache.RatingCache(mix_assist_cache_path())
+    try:
+        plan = mix_assist.tidy_up(
+            tracks, store, mix_assist_ask(),
+            resolve=lambda paths: mix_assist_library.resolve(paths, execute_jsonrpc, {}),
+            fetch_mix=lambda *_args: [],
+            strictness=get_mix_assist_strictness(),
+            artist_window=get_mix_reject_size() or mix_assist.ARTIST_WINDOW,
+            model=mix_assist_claude.DEFAULT_MODEL,
+            progress=radio_check_progress(check),
+            find_replacements=False,
+        )
+    finally:
+        store.close()
+    rows = plan["rows"]
+    return {"remove": [tracks[position - 1] for position in plan["outliers"]], "intent": plan["intent"],
+            "reference": rows[0].get("entry") if rows else None}
+
+
+def check_radio_refill(reference_song: str, candidates: list[str], count: int, reference: dict | None,
+                       neighbours: list[str], check=None) -> dict:
+    """Choose a refill's songs from MusicIP's candidates (closest first): both signals must say they fit. Adds
+    "reference": the station's profile after this refill (drifted towards the chosen songs)."""
+    store = mix_assist_cache.RatingCache(mix_assist_cache_path())
+    try:
+        window = get_mix_reject_size() or mix_assist.ARTIST_WINDOW
+        result = mix_assist.choose_additions(
+            reference_song, candidates, count, store, mix_assist_ask(),
+            resolve=lambda paths: mix_assist_library.resolve(paths, execute_jsonrpc, {}),
+            neighbours=neighbours[-window:],
+            strictness=get_mix_assist_strictness(),
+            artist_window=window,
+            model=mix_assist_claude.DEFAULT_MODEL,
+            progress=radio_check_progress(check),
+            reference=reference,
+        )
+    finally:
+        store.close()
+    base = reference or result.get("seed_entry")
+    result["reference"] = mix_assist.drift_reference(
+        base, [result["entries"].get(path) for path in result["chosen"]], get_radio_drift()) if base else None
+    return result
+
+
 def router() -> None:
     ensure_musicip_keymap_installed()
     params = parse_args()
