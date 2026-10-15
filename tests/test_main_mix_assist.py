@@ -51,6 +51,9 @@ class MixAssistTestCase(KodiTestCase):
     def section(self):
         return self.read_json(main.mix_meta_path_from_cache_path(self.cache_path)).get("mix_assist", {})
 
+    def history(self):
+        return self.read_json(main.mix_meta_path_from_cache_path(self.cache_path)).get("history", [])
+
 
 class TidyUpTest(MixAssistTestCase):
     def test_replacements_are_applied_recorded_and_announced(self):
@@ -64,6 +67,12 @@ class TidyUpTest(MixAssistTestCase):
         self.assertEqual(section["removed"], ["Track 5"])
         self.assertNotified("AI Mix Assist: 1 track didn't fit and was replaced, 1 without a fitting replacement was removed.")
         self.assertBuiltin("Container.Refresh")
+        event = self.history()[-1]
+        self.assertEqual((event["kind"], event["automatic"], event["intent"]),
+                         ("ai_tidy_up", False, "dark, abstract, instrumental"))
+        self.assertEqual(event["replaced"], [{"old": "wilfried – fire walk", "new": "Medeski Martin & Wood – Think",
+                                              "reason": "Danceable disco, bright"}])
+        self.assertEqual(event["removed"], [{"track": "Track 5", "reason": ""}])
 
     def test_a_fitting_mix_is_left_unchanged(self):
         self.tidy_up(plan())
@@ -120,6 +129,7 @@ class UndoTest(MixAssistTestCase):
         self.assertNotIn("replaced", self.section())
         self.assertEqual(self.section()["intent"], "dark, abstract, instrumental")
         self.assertNotified("AI Mix Assist: the changes were undone.")
+        self.assertEqual(self.history()[-1]["kind"], "ai_undone")
 
     def test_nothing_to_undo(self):
         self.run_plugin(action="mix_assist_undo", cache_path=self.cache_path)
@@ -134,10 +144,13 @@ class EditIntentTest(MixAssistTestCase):
         self.assertEqual(kodi.dialogs("keyboard")[-1][1], ("What is this mix about?", "dark, abstract, instrumental"))
         self.assertEqual(self.section()["listener_intent"], "complex, abstract, not danceable")
         self.assertNotified("Saved. Tidy up the mix to apply it.")
+        self.assertEqual(self.history()[-1], dict(self.history()[-1], kind="intent_edited",
+                                                  text="complex, abstract, not danceable"))
 
         kodi.respond("keyboard", "  ")
         self.run_plugin(action="mix_assist_edit_intent", cache_path=self.cache_path)
         self.assertNotIn("listener_intent", self.section())
+        self.assertEqual(self.history()[-1]["text"], "")
 
     def test_cancelling_keeps_the_intent_and_says_nothing(self):
         self.tidy_up(plan())
@@ -174,11 +187,18 @@ class SavedMixMenuTest(MixAssistTestCase):
         self.tidy_up(plan(changes=[REPLACE_DISCO]))
         self.assertIn("Undo AI Mix Assist changes", self.context_labels())
 
-    def test_mix_information_shows_the_intent_and_the_changes(self):
+    def test_mix_information_has_an_ai_mix_assist_page(self):
+        self.assertEqual([title for title, _text in main.mix_info_pages(self.cache_path)], ["Overview", "History (1)"])
         self.tidy_up(plan(changes=[REPLACE_DISCO]))
-        message = main.build_mix_info_message(self.cache_path)
-        self.assertIn("What this mix is about (stated by the AI): dark, abstract, instrumental", message)
-        self.assertIn("Replaced: wilfried – fire walk → Medeski Martin & Wood – Think (Danceable disco, bright)", message)
+        pages = dict(main.mix_info_pages(self.cache_path))
+        self.assertEqual(list(pages), ["Overview", "History (2)", "AI Mix Assist"])
+        self.assertIn("What this mix is about (as the AI put it):\ndark, abstract, instrumental", pages["AI Mix Assist"])
+        self.assertIn("wilfried – fire walk → Medeski Martin & Wood – Think (Danceable disco, bright)",
+                      pages["AI Mix Assist"])
+        self.assertNotIn("dark, abstract", pages["Overview"])
+        self.assertIn("AI Mix Assist tidied up the mix: 1 replaced, 0 removed\n"
+                      "    wilfried – fire walk → Medeski Martin & Wood – Think (Danceable disco, bright)",
+                      pages["History (2)"])
 
 
 class SubmixFetcherTest(MusicIPServerTestCase):
@@ -202,19 +222,15 @@ class NewMixQueueTest(KodiTestCase):
     def queued(self):
         return self.read_json(main.mix_assist_queue_path()).get("entries", [])
 
-    def test_new_mixes_are_queued_once_in_the_chosen_mode(self):
+    def test_new_mixes_are_queued_once(self):
         main.queue_mix_assist_for_new_mix("a.m3u", TRACKS)
         main.queue_mix_assist_for_new_mix("b.m3u", TRACKS[:3])
         main.queue_mix_assist_for_new_mix("a.m3u", TRACKS[:4])  # regenerated: replaces the older request
-        self.assertEqual([(e["cache_path"], e["mode"], len(e["tracks"])) for e in self.queued()],
-                         [("b.m3u", "fix", 3), ("a.m3u", "fix", 4)])
-        kodi.settings["mix_assist_new_mixes"] = "1"
-        main.queue_mix_assist_for_new_mix("c.m3u", TRACKS)
-        self.assertEqual(self.queued()[-1]["mode"], "show")
+        self.assertEqual([(e["cache_path"], len(e["tracks"])) for e in self.queued()], [("b.m3u", 3), ("a.m3u", 4)])
 
     def test_nothing_is_queued_when_switched_off_or_too_short(self):
         main.queue_mix_assist_for_new_mix("a.m3u", TRACKS[:1])
-        kodi.settings["mix_assist_new_mixes"] = "0"
+        kodi.settings["mix_assist_auto_new_mixes"] = "false"
         main.queue_mix_assist_for_new_mix("b.m3u", TRACKS)
         self.assertEqual(self.queued(), [])
 
@@ -238,12 +254,12 @@ class NewMixGenerationQueueTest(MusicIPServerTestCase):
 
 
 class ProcessNewMixTest(MixAssistTestCase):
-    def request(self, mode="fix"):
-        return {"cache_path": self.cache_path, "tracks": list(TRACKS), "mode": mode}
+    def request(self):
+        return {"cache_path": self.cache_path, "tracks": list(TRACKS)}
 
-    def process(self, result, mode="fix"):
+    def process(self, result):
         with mock.patch.object(main.mix_assist, "tidy_up", return_value=result) as tidy_up:
-            main.process_mix_assist_request(self.request(mode))
+            main.process_mix_assist_request(self.request())
         return tidy_up
 
     def play_mix(self, position):
@@ -258,18 +274,20 @@ class ProcessNewMixTest(MixAssistTestCase):
         self.assertEqual(self.read_mix(self.cache_path), [TRACKS[0], TRACKS[1], REPLACEMENT, TRACKS[3]])
         self.assertEqual(self.section()["previous_tracks"], TRACKS)
         self.assertNotified("1 track didn't fit and was replaced")
+        self.assertEqual((self.history()[-1]["kind"], self.history()[-1]["automatic"]), ("ai_tidy_up", True))
 
-    def test_show_only_records_the_tracks_that_dont_fit(self):
-        result = plan()
-        result["outliers"] = [3]
-        result["rows"][2]["reason"] = "Danceable disco, bright"
-        tidy_up = self.process(result, mode="show")
-        self.assertFalse(tidy_up.call_args[1]["find_replacements"])
-        self.assertEqual(self.read_mix(self.cache_path), TRACKS)
-        self.assertEqual(self.section()["not_fitting"], [{"label": "Track 3", "reason": "Danceable disco, bright"}])
-        self.assertNotIn("previous_tracks", self.section())
-        self.assertNotified("AI Mix Assist: 1 track may not fit.")
-        self.assertIn("Doesn't fit: Track 3 (Danceable disco, bright)", main.build_mix_info_message(self.cache_path))
+    def test_a_progress_bar_shows_the_steps(self):
+        def tidy_up(*args, **kwargs):
+            kwargs["progress"]("Rating new music")
+            return plan()
+
+        with mock.patch.object(main.mix_assist, "tidy_up", side_effect=tidy_up):
+            main.process_mix_assist_request(self.request())
+        calls = [call for call in kodi.dialog_calls if call[0].startswith("progress")]
+        self.assertEqual(calls[0], ("progress.create", ("AI Mix Assist: new mix", ""), {}))
+        self.assertIn(("progress.update", (33, "AI Mix Assist: new mix", "Rating new music"), {}), calls)
+        self.assertEqual(calls[-1][0], "progress.close")
+        self.assertEqual(self.history()[-1]["kind"], "ai_tidy_up")  # "every track fits" is recorded too
 
     def test_a_mix_changed_since_it_was_queued_is_skipped(self):
         main.save_mix_by_cache_path(self.cache_path, TRACKS[:3])
@@ -340,22 +358,15 @@ class MoreLikeThisTest(MusicIPServerTestCase):
         choose = self.more_like_this(result)
         args, kwargs = choose.call_args
         self.assertEqual((args[0], args[1], args[2]), (TRACKS[1], self.NEW, 2))  # this song, all new tracks, 2 wanted
-        self.assertTrue(kwargs["apply"])
         self.assertEqual(kwargs["neighbours"], [TRACKS[0]] + TRACKS[2:])  # within the artist window
         self.assertEqual(self.musicip.mix_requests()[0]["size"], "75")
         self.assertEqual(self.read_mix(self.cache_path), TRACKS[:2] + [self.NEW[2], self.NEW[4]] + TRACKS[2:])
-        self.assertNotified("Inserted 2 track(s). AI Mix Assist skipped 1 that didn't fit.")
+        self.assertNotified("Inserted 2 track(s). AI Mix Assist skipped 1 that didn't fit (see the mix history).")
         self.assertNotIn("intent", self.section())  # the song's intent is not the mix's
-
-    def test_show_only_inserts_musicips_tracks_and_records_the_misfits(self):
-        kodi.settings["mix_assist_more_like_this"] = "1"
-        result = {"intent": "x", "chosen": self.NEW[:2],
-                  "not_fitting": [{"path": self.NEW[1], "label": "New 1", "reason": "too bright"}], "checked": True}
-        choose = self.more_like_this(result)
-        self.assertFalse(choose.call_args[1]["apply"])
-        self.assertEqual(self.read_mix(self.cache_path), TRACKS[:2] + self.NEW[:2] + TRACKS[2:])
-        self.assertEqual(self.section()["not_fitting"], [{"label": "New 1", "reason": "too bright"}])
-        self.assertNotified("Inserted 2 track(s). 1 may not fit (see the mix information).")
+        event = self.read_json(main.mix_meta_path_from_cache_path(self.cache_path))["history"][-1]
+        self.assertEqual(event["skipped"], [{"track": "New 0", "reason": "too bright"}])
+        text = main.build_mix_history_text({"history": [event]})
+        self.assertIn("AI Mix Assist skipped 1 that didn't fit:\n    × New 0 (too bright)", text)
 
     def test_nothing_fits(self):
         self.more_like_this({"intent": "x", "chosen": [], "checked": True,
@@ -383,7 +394,7 @@ class MoreLikeThisTest(MusicIPServerTestCase):
 class NewMixWithoutCliTest(MixAssistTestCase):
     def test_new_mixes_are_skipped_quietly_without_the_claude_cli(self):
         with mock.patch.object(main, "mix_assist_ask", ORIGINAL_ASK):
-            main.process_mix_assist_request({"cache_path": self.cache_path, "tracks": list(TRACKS), "mode": "fix"})
+            main.process_mix_assist_request({"cache_path": self.cache_path, "tracks": list(TRACKS)})
         self.assertEqual(kodi.notification_messages(), [])
         self.assertEqual(self.read_mix(self.cache_path), TRACKS)
 

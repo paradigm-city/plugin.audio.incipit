@@ -292,12 +292,6 @@ class AssistTest(unittest.TestCase):
         self.assertEqual(result["chosen"], ["solo1"])
         self.assertEqual(systems, [checks.SEED_INTENT_PROMPT, checks.INTENT_PROMPT])
 
-    def test_more_like_this_show_only_keeps_musicips_tracks(self):
-        result = assist.choose_additions("seed", ["candbad", "cand1", "cand2", "cand3", "cand4"], 2, self.store,
-                                         self.ask, self.resolve, artist_window=0, apply=False)
-        self.assertEqual(result["chosen"], ["candbad", "cand1"])
-        self.assertEqual([entry["path"] for entry in result["not_fitting"]], ["candbad"])
-
     def test_a_fitting_mix_is_left_alone(self):
         paths = ["seed"] + [f"fit{i}" for i in range(1, 9)]
         plan = assist.tidy_up(paths, self.store, self.ask, self.resolve, self.fetch_mix)
