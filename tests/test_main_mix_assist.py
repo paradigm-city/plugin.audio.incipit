@@ -82,7 +82,7 @@ class TidyUpTest(MixAssistTestCase):
         self.assertNotified("AI Mix Assist: every track fits.")
 
     def test_settings_and_the_listeners_intent_are_passed_on(self):
-        kodi.settings.update({"mix_assist_strictness": "4", "mix_reject_size": "3"})
+        kodi.settings.update({"mix_assist_mix_strictness": "0", "mix_reject_size": "3"})
         sidecar = self.read_json(main.mix_meta_path_from_cache_path(self.cache_path))
         sidecar["mix_assist"] = {"listener_intent": "my own words"}
         self.write_json(main.mix_meta_path_from_cache_path(self.cache_path), sidecar)
@@ -441,12 +441,22 @@ class StepReporterTest(KodiTestCase):
 
 
 class StrictnessSettingTest(KodiTestCase):
-    def test_steps_map_to_thresholds(self):
-        self.assertEqual(main.get_mix_assist_strictness(), 1.2)
-        for value, expected in (("0", 1.5), ("4", 1.0), ("9", 1.0), ("x", 1.2)):
-            kodi.settings["mix_assist_strictness"] = value
+    def test_mixes_and_radio_share_one_scale_but_not_the_setting(self):
+        self.assertEqual((main.get_mix_assist_strictness(), main.get_station_strictness()), ((1.2, False), (1.2, False)))
+        for value, expected in (("0", (1.0, False)), ("1", (1.1, False)), ("3", (1.35, False)), ("4", (1.5, True)),
+                                ("9", (1.5, True)), ("x", (1.2, False))):
+            kodi.settings["mix_assist_mix_strictness"] = value
             self.assertEqual(main.get_mix_assist_strictness(), expected)
+            self.assertEqual(main.get_station_strictness(), (1.2, False))  # independent
 
+    def test_adventurous_mixes_accept_borderline_replacements(self):
+        kodi.settings["mix_assist_mix_strictness"] = "4"
+        cache_path = self.save_mix(TRACKS)
+        meta = main.get_saved_mix_metadata(cache_path, TRACKS)
+        with mock.patch.object(main, "mix_assist_ask", return_value=lambda *args: {}), \
+                mock.patch.object(main.mix_assist, "tidy_up", return_value={}) as tidy_up:
+            main.compute_mix_assist_plan(TRACKS, meta)
+        self.assertEqual((tidy_up.call_args[1]["strictness"], tidy_up.call_args[1]["accept_borderline"]), (1.5, True))
 
 if __name__ == "__main__":
     unittest.main()

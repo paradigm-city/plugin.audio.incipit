@@ -118,8 +118,8 @@ class RadioMixAssistTest(RadioBase):
         self.tick()
         self.assertEqual(self.files(), queue)
 
-    def test_station_steps_and_drift_reach_the_check(self):
-        kodi.settings.update({"mix_assist_radio_steps": "2", "mix_assist_radio_drift": "2"})
+    def test_station_strictness_and_drift_reach_the_check(self):
+        kodi.settings.update({"mix_assist_station_strictness": "4", "mix_assist_radio_drift": "2"})
         chosen = {"chosen": ["b"], "entries": {"b": {"energy": 9, "sounding_year": 1983}}, "seed_entry": None,
                   "not_fitting": []}
         with mock.patch.object(main.mix_assist, "choose_additions", return_value=chosen) as choose, \
@@ -130,14 +130,9 @@ class RadioMixAssistTest(RadioBase):
         step = 1 - 0.5 ** (1 / 20)  # "Wander freely": half the way after 20 songs
         self.assertAlmostEqual(result["reference"]["energy"], 5 + step * 4)
 
-    def test_station_steps_follow_the_mix_strictness(self):
-        self.assertEqual(main.get_radio_steps(), (1.2, False))  # medium = the mix setting
-        kodi.settings["mix_assist_radio_steps"] = "0"
-        self.assertEqual(main.get_radio_steps(), (1.1, False))  # small: one step stricter
-        kodi.settings.update({"mix_assist_radio_steps": "0", "mix_assist_strictness": "4"})
-        self.assertEqual(main.get_radio_steps(), (1.0, False))  # already the strictest
-        kodi.settings["mix_assist_radio_steps"] = "2"
-        self.assertEqual(main.get_radio_steps(), (1.2, True))  # bold: two steps looser, borderline songs count
+    def test_station_strictness_is_its_own_setting(self):
+        kodi.settings.update({"mix_assist_station_strictness": "1", "mix_assist_mix_strictness": "4"})
+        self.assertEqual(main.get_station_strictness(), (1.1, False))
 
     def test_without_the_claude_cli_radio_works_as_before(self):
         with mock.patch.object(main, "mix_assist_available", return_value=False):

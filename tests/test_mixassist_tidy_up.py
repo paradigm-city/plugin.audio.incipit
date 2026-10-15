@@ -327,7 +327,7 @@ class AssistTest(unittest.TestCase):
         self.assertAlmostEqual(one_batch["energy"], 5.0)
         self.assertAlmostEqual(in_batches["energy"], 5.0)
 
-    def test_bold_steps_also_take_borderline_songs(self):
+    def test_adventurous_also_takes_borderline_songs(self):
         borderline = {"relative": 1.0, "verdict": "borderline"}
         self.assertFalse(assist.passes(borderline, 1.2))
         self.assertTrue(assist.passes(borderline, 1.2, accept_borderline=True))
