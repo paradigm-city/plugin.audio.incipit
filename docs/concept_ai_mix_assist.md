@@ -216,13 +216,13 @@ Replacing an outlier works like "More like this": a **submix** is created and in
 - **Repair** remains the recovery of moved or deleted files. Style changes are curation, not recovery, so they follow the stricter rule for saved mixes.
 - **"Less like this"** removes tracks similar to one the user dislikes. A style check removes tracks that don't match the seed. They complement each other and can share the decision record.
 
-### Strictness scale
+### Openness scale
 
-Mixes and Radio use one scale with the same words, set independently ("Mix strictness" for tidy-ups, new mixes and "More like this"; "Station strictness" for Radio; decided 2026-10-15). A level is the limit on the relative misfit and whether new songs the AI calls *borderline* are accepted:
+Mixes and Radio use one scale with the same words, set independently ("Mix openness" for tidy-ups, new mixes and "More like this"; "Station openness" for Radio; decided 2026-10-15; named for what the listener gains, not as "strictness", and not "variety", which is MusicIP's own mix parameter). Internally a level is a strictness: the limit on the relative misfit and whether new songs the AI calls *borderline* are accepted:
 
 | Level | Limit | New songs: AI verdicts accepted |
 |---|---|---|
-| Tight | 1.0 | fits |
+| Focused | 1.0 | fits |
 | Close | 1.1 | fits |
 | **Balanced** (default; the pilot's calibration) | 1.2 | fits |
 | Open | 1.35 | fits |
@@ -247,7 +247,7 @@ The same idea in two plainer controls:
 - **Step size:** how different consecutive tracks may be.
 - **Leash:** how far the mix may move from the seed in total.
 
-**As built for Radio (2026-10-15):** drift is a meandering, exploratory experience with two controls. **Station drift** (how far): the station's profile moves towards every added song in turn, with a half-life in songs, so it doesn't depend on refill size or skip rate: stay close to the picked song (never moves), drift slowly (half the way after about 60 songs, ~4 h), wander freely (after about 20 songs, ~1 h 20). The vector part measures candidates against that profile (the leash). **Station strictness** (how surprising each song may be), on the same scale as mixes (see *Strictness scale*); the AI judges against the song the refill is seeded from, or the picked song when the station stays close. Checked refills bring 8 songs (20–50 minutes), so that reference song moves on often and the meander stays smooth; batch size is fixed, not a setting. When nothing fits, the next refill seeds from an earlier song; when the check fails or the station is about to run dry, MusicIP's songs are queued unchecked.
+**As built for Radio (2026-10-15):** drift is a meandering, exploratory experience with two controls. **Station drift** (how far): the station's profile moves towards every added song in turn, with a half-life in songs, so it doesn't depend on refill size or skip rate: stay close to the picked song (never moves), drift slowly (half the way after about 60 songs, ~4 h), wander freely (after about 20 songs, ~1 h 20). The vector part measures candidates against that profile (the leash). **Station openness** (how surprising each song may be), on the same scale as mixes (see *Openness scale*); the AI judges against the song the refill is seeded from, or the picked song when the station stays close. Checked refills bring 8 songs (20–50 minutes), so that reference song moves on often and the meander stays smooth; batch size is fixed, not a setting. When nothing fits, the next refill seeds from an earlier song; when the check fails or the station is about to run dry, MusicIP's songs are queued unchecked.
 
 Judging a finished MusicIP mix with drift above 0 was tested and does not work: MusicIP's track order jumps between clusters, so a gradual judgement accepted almost everything, and a chain judgement flagged the tracks *after* each jump, including the best-fitting ones. Finished mixes are therefore always judged at drift 0; transitions are a matter of ordering (see *Deferred*).
 
@@ -320,7 +320,7 @@ Judging a finished MusicIP mix with drift above 0 was tested and does not work: 
 | Replacement search, second version: gaps sharing a submix seed share one submix, every MusicIP request asks for 75 tracks, a gap may use any candidate of its round, open gaps get a second round from other clearly fitting tracks | built and tested; dry run on the live-test mix: 7 of 7 gaps filled (before: 4 of 8), 40 of 40 tracks, about 4 minutes |
 | "More like this": the selected song is the reference ("more like THIS"; it may be the seed). It and MusicIP's tracks for it form a small mix; a new track must clearly fit the song (both signals, like replacements), closest first, respecting the artist window around the insertion point; "show only" inserts MusicIP's tracks and lists the misfits | built and tested; dry runs on the live-test mix: 8 of 8 tracks for a fitting song (33 s) and for an edge song (64 s, two batches); live test pending |
 | Mix history (all mixes, on `main`): created, removed by you, More/Less like this, repaired; on this branch also AI tidy-ups with reasons, tracks skipped by "More like this", undo, edited descriptions. Information as pages (Overview, History, AI Mix Assist). Progress bars for creating a mix, More/Less like this, repair and the background tidy-up | built and tested; live test pending |
-| Radio: start check, checked 8-song refills, per-song drift (settings "Keep Radio on track", "Station drift", "Station strictness"); without the Claude CLI Radio works as before | built and tested; live test pending |
+| Radio: start check, checked 8-song refills, per-song drift (settings "Keep Radio on track", "Station drift", "Station openness"); without the Claude CLI Radio works as before | built and tested; live test pending |
 
 **Decided (2026-10-15, "More like this"):** the new tracks are measured against the selected song, not the whole mix: "More like this" refers to THIS song, which may be the seed. Measured against the whole mix, a song at the edge of the mix got no tracks at all.
 

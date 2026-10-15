@@ -80,7 +80,8 @@ Terms used in [concept_ai_mix_assist.md](concept_ai_mix_assist.md) and in the pi
 
 | Term | Meaning | Retired or ambiguous words |
 |---|---|---|
-| **Strictness** | The threshold on the relative misfit, plus whether new songs the AI calls borderline are accepted. One scale for mixes and Radio, set separately ("Mix strictness", "Station strictness"): Tight 1.0, Close 1.1, Balanced 1.2 (calibrated default), Open 1.35, Adventurous 1.5 with borderline songs. | "rigidity", "strength", "tolerance", "station steps" |
+| **Openness** | What the listener sets: how much variety a mix or station welcomes. One scale for mixes and Radio, set separately ("Mix openness", "Station openness"): Focused, Close, Balanced (default), Open, Adventurous. Each level is a strictness. | "strictness" (in the settings), "station steps", "variety" (that is MusicIP's mix parameter) |
+| **Strictness** | Internal: the threshold on the relative misfit, plus whether new songs the AI calls borderline are accepted. The openness levels map to 1.0, 1.1, 1.2 (calibrated default), 1.35 and 1.5 with borderline songs. | "rigidity", "strength", "tolerance" |
 | **Dimension weight** | A user setting per dimension: off, or how much it counts, on top of the seed weight. | per-category "strength" slider |
 | **Target values** | Slider positions that set the desired value of a dimension directly instead of taking it from the seed. | |
 | **Drift** | When tracks are chosen one after another (Radio, journeys): how the reference moves. **0** = stays at the seed, **1** = always the predecessor. Not used for judging finished mixes. | "memory" (meant the inverse) |
