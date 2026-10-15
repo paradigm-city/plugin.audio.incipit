@@ -2682,13 +2682,13 @@ def insert_more_like_this_into_mix(seed: str, size: int, index: int, path: str, 
     insert_at = insert_after + 1
     result = None
     if new_tracks and mode != MIX_ASSIST_OFF:
-        result = check_more_like_this(target_cache_path, source_tracks, insert_at, new_tracks, target_count,
+        result = check_more_like_this(target_cache_path, source_tracks, insert_after, new_tracks, target_count,
                                       apply=mode == MIX_ASSIST_FIX)
     new_tracks = result["chosen"] if result else new_tracks[:target_count]
 
     if not new_tracks:
         if result and result["not_fitting"]:
-            raise MusicIPError("AI Mix Assist: none of MusicIP's tracks for this song fits the mix.")
+            raise MusicIPError("AI Mix Assist: none of MusicIP's tracks is close enough to this song.")
         raise MusicIPError("No new tracks found for this song.")
 
     updated_tracks = source_tracks[:insert_at] + new_tracks + source_tracks[insert_at:]
@@ -5761,16 +5761,16 @@ def report_automatic_mix_assist_error(exc: Exception) -> None:
         notify(MIX_ASSIST_MESSAGES.get(kind, str(exc)), xbmcgui.NOTIFICATION_WARNING)
 
 
-MORE_LIKE_THIS_STEPS = ["Looking up the tracks", "Rating new music", "Working out what this mix is about",
-                        "Checking the new tracks"]
+MORE_LIKE_THIS_STEPS = ["Looking up the tracks", "Rating new music", "Checking the new tracks"]
 
 
-def check_more_like_this(cache_path: str, tracks: list[str], insert_at: int, candidates: list[str], count: int,
+def check_more_like_this(cache_path: str, tracks: list[str], selected: int, candidates: list[str], count: int,
                          apply: bool) -> dict | None:
-    """AI Mix Assist for "More like this" (the listener waits, with a progress bar). None if it couldn't run;
-    then the first candidates are inserted unchecked."""
+    """AI Mix Assist for "More like this": the candidates are measured against the selected song (tracks[selected]),
+    not the whole mix. The listener waits, with a progress bar. None if it couldn't run; then the first candidates
+    are inserted unchecked."""
     meta = get_saved_mix_metadata(cache_path, tracks)
-    section = get_mix_assist_section(meta)
+    window = get_mix_reject_size() or mix_assist.ARTIST_WINDOW
     progress = xbmcgui.DialogProgressBG()
     progress.create("AI Mix Assist", "Checking the new tracks")
 
@@ -5783,12 +5783,11 @@ def check_more_like_this(cache_path: str, tracks: list[str], insert_at: int, can
         store = mix_assist_cache.RatingCache(mix_assist_cache_path())
         try:
             return mix_assist.choose_additions(
-                tracks, candidates, count, store, ask,
+                tracks[selected], candidates, count, store, ask,
                 resolve=lambda paths: mix_assist_library.resolve(paths, execute_jsonrpc, mix_assist_track_metadata(meta)),
-                intent=str(section.get("listener_intent") or section.get("intent") or ""),
-                insert_at=insert_at,
+                neighbours=tracks[max(0, selected + 1 - window):selected] + tracks[selected + 1:selected + 1 + window],
                 strictness=get_mix_assist_strictness(),
-                artist_window=get_mix_reject_size() or mix_assist.ARTIST_WINDOW,
+                artist_window=window,
                 model=mix_assist_claude.DEFAULT_MODEL,
                 progress=show,
                 apply=apply,
@@ -5803,12 +5802,9 @@ def check_more_like_this(cache_path: str, tracks: list[str], insert_at: int, can
 
 
 def record_more_like_this_check(cache_path: str, tracks: list[str], result: dict, applied: bool) -> None:
-    """Keep the stated intent (so the next check needs no extra AI call) and, in "show only", the new tracks that
-    may not fit."""
+    """In "show only", note the new tracks that may not fit."""
     meta = get_saved_mix_metadata(cache_path, tracks)
     section = get_mix_assist_section(meta)
-    if result.get("intent_source") == "ai" and result.get("intent"):
-        section.update({"intent": result["intent"], "intent_source": "ai"})
     if not applied and result.get("not_fitting"):
         known = {entry.get("label") for entry in section.get("not_fitting") or []}
         section["not_fitting"] = list(section.get("not_fitting") or []) + [

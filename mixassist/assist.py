@@ -266,61 +266,66 @@ def tidy_up(paths: Sequence[str], cache: RatingCache, ask: Ask, resolve: Resolve
     return plan
 
 
-def choose_additions(paths: Sequence[str], candidates: Sequence[str], count: int, cache: RatingCache, ask: Ask,
-                     resolve: Resolve, intent: str = "", insert_at: Optional[int] = None,
-                     strictness: float = DEFAULT_STRICTNESS, artist_window: int = ARTIST_WINDOW, model: str = "",
+def choose_additions(selected: str, candidates: Sequence[str], count: int, cache: RatingCache, ask: Ask,
+                     resolve: Resolve, neighbours: Sequence[str] = (), strictness: float = DEFAULT_STRICTNESS,
+                     artist_window: int = ARTIST_WINDOW, model: str = "",
                      progress: Optional[Callable[[str], None]] = None, apply: bool = True) -> dict:
-    """"More like this": which of MusicIP's candidates (closest first) to add to a mix, checked like replacements
-    against what the mix is about. With apply=False ("show only") the first `count` candidates are kept and the
-    ones that don't fit are only reported.
+    """"More like this": the selected song and MusicIP's candidates for it form a small mix with the selected song
+    as its seed, and that mix is tidied up like any other: a candidate is dropped when both signals agree it doesn't
+    fit what the selected song is about. The first `count` remaining candidates (closest first) are chosen, without
+    repeating an artist of the `neighbours` (the tracks around the insertion point) or of each other.
+    With apply=False ("show only") the first `count` candidates are kept and the misfits among them reported.
 
-    Returns intent, intent_source ("given" or "ai"), chosen (paths), not_fitting ([{path, label, reason}]) and
-    checked (False if the mix couldn't be measured; then the first candidates are taken unchecked)."""
+    Returns intent (the selected song's), chosen (paths), not_fitting ([{path, label, reason}]) and checked (False
+    if the candidates couldn't be measured; then the first ones are taken unchecked)."""
     def step(text: str) -> None:
         if progress:
             progress(text)
 
-    paths, candidates = list(paths), list(candidates)
+    candidates = list(candidates)
+    result = {"intent": "", "chosen": [], "not_fitting": [], "checked": False}
     step("Looking up the tracks")
-    units = resolve(paths)
-    step("Rating new music")
-    rate_missing(units, cache, ask, model=model)
-    entries = [cache.get(unit["key"]) for unit in units]
-    if intent:
-        verdicts: Dict[int, dict] = {}
-        intent_source = "given"
-    else:
-        step("Working out what this mix is about")
-        intent, verdicts = checks.state_intent(units, entries, ask)
-        intent_source = "ai"
-    analysis = analyze(units, entries, verdicts, cache.library(), strictness)
-    result = {"intent": intent, "intent_source": intent_source, "chosen": [], "not_fitting": [],
-              "checked": bool(analysis["ready"])}
-    if not analysis["ready"]:
-        result["chosen"] = candidates[:count]
-        return result
-
-    insert_at = len(paths) if insert_at is None else insert_at
+    selected_unit = resolve([selected])[0]
     blocked = set()
     if artist_window > 0:
-        blocked = {artist_key(unit.get("artist", "")) for unit in
-                   units[max(0, insert_at - artist_window):insert_at + artist_window] if unit.get("artist")}
-    batches = [candidates[:count]] if not apply else [candidates[:3 * count], candidates[3 * count:6 * count]]
+        blocked = {artist_key(unit.get("artist", "")) for unit in resolve(list(neighbours)) if unit.get("artist")}
+        blocked.add(artist_key(selected_unit.get("artist", "")))
+        blocked.discard("")
+    batch_size = max(3 * count, 10)
+    batches = [candidates[:batch_size]] if not apply else [candidates[:batch_size], candidates[batch_size:2 * batch_size]]
     for batch in batches:
         if not batch or (apply and len(result["chosen"]) >= count):
             break
+        units = [selected_unit] + resolve(batch)
+        step("Rating new music")
+        rate_missing(units, cache, ask, model=model)
+        entries = [cache.get(unit["key"]) for unit in units]
         step("Checking the new tracks")
-        scored = score_candidates(batch, units, entries, intent, analysis, cache, ask, resolve, model)
-        for path in batch:
-            candidate = scored.get(path)
-            fits = passes(candidate, strictness)
-            if not fits:
-                result["not_fitting"].append({"path": path, "label": candidate["label"] if candidate else path,
-                                              "reason": (candidate or {}).get("reason") or "doesn't match the mix"})
-            if not apply:
-                result["chosen"].append(path)
-            elif fits and len(result["chosen"]) < count and artist_key(candidate["artist"]) not in blocked:
-                result["chosen"].append(path)
-                if artist_window > 0:
-                    blocked.add(artist_key(candidate["artist"]))
+        if result["intent"]:  # a second batch is judged against the intent stated for the first
+            judged = checks.judge(result["intent"], units[0], entries[0], units[1:], entries[1:], ask)
+            verdicts = {number + 1: verdict for number, verdict in judged.items()}
+        else:
+            result["intent"], verdicts = checks.state_intent(units, entries, ask)
+        analysis = analyze(units, entries, verdicts, cache.library(), strictness)
+        if not analysis["ready"]:
+            if not result["checked"]:
+                result["chosen"] = batch[:count]
+                return result
+            break
+        result["checked"] = True
+        for row in analysis["rows"][1:]:
+            if len(result["chosen"]) >= count:
+                break
+            path = row["unit"]["path"]
+            if row.get("status") == "outlier":
+                result["not_fitting"].append({"path": path, "label": row["unit"]["label"],
+                                              "reason": row.get("reason") or row.get("why", "")})
+                if apply:
+                    continue
+            artist = artist_key(row["unit"].get("artist", ""))
+            if apply and artist in blocked:
+                continue
+            result["chosen"].append(path)
+            if artist_window > 0:
+                blocked.add(artist)
     return result
