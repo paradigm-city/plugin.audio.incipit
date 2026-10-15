@@ -312,6 +312,90 @@ class ProcessNewMixTest(MixAssistTestCase):
         self.assertEqual(kodi.playlist_files(), [TRACKS[0], TRACKS[2]])
 
 
+class MoreLikeThisTest(MusicIPServerTestCase):
+    NEW = [f"E:\\new\\{n}.mp3" for n in range(6)]
+
+    def setUp(self):
+        super().setUp()
+        kodi.settings["playlist_size"] = "10"  # More like this adds 20 % = 2 tracks
+        kodi.info_labels["Container.PluginName"] = "plugin.audio.musicip"
+        self.cache_path = self.save_mix(TRACKS)
+        self.musicip.set_mix(TRACKS[1], [TRACKS[0]] + self.NEW)
+        patcher = mock.patch.object(main, "mix_assist_ask", return_value=lambda *args: {})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def more_like_this(self, result=None, error=None):
+        with mock.patch.object(main.mix_assist, "choose_additions", return_value=result, side_effect=error) as choose:
+            self.run_plugin(action="more_like_this", seed=TRACKS[0], size="5", index="1", path=TRACKS[1],
+                            cache_path=self.cache_path)
+        return choose
+
+    def section(self):
+        return self.read_json(main.mix_meta_path_from_cache_path(self.cache_path)).get("mix_assist", {})
+
+    def test_only_fitting_tracks_are_inserted(self):
+        result = {"intent": "dark, abstract", "intent_source": "ai", "chosen": [self.NEW[2], self.NEW[4]],
+                  "not_fitting": [{"path": self.NEW[0], "label": "New 0", "reason": "too bright"}], "checked": True}
+        choose = self.more_like_this(result)
+        args, kwargs = choose.call_args
+        self.assertEqual((args[1], args[2]), (self.NEW, 2))  # all new tracks are candidates, 2 are wanted
+        self.assertEqual((kwargs["insert_at"], kwargs["apply"], kwargs["intent"]), (2, True, ""))
+        self.assertEqual(self.musicip.mix_requests()[0]["size"], "75")
+        self.assertEqual(self.read_mix(self.cache_path), TRACKS[:2] + [self.NEW[2], self.NEW[4]] + TRACKS[2:])
+        self.assertNotified("Inserted 2 track(s). AI Mix Assist skipped 1 that didn't fit.")
+        self.assertEqual(self.section()["intent"], "dark, abstract")  # the next check needs no extra AI call
+
+    def test_the_known_intent_is_used(self):
+        sidecar = self.read_json(main.mix_meta_path_from_cache_path(self.cache_path))
+        sidecar["mix_assist"] = {"intent": "stated before", "listener_intent": "my words"}
+        self.write_json(main.mix_meta_path_from_cache_path(self.cache_path), sidecar)
+        choose = self.more_like_this({"intent": "my words", "intent_source": "given", "chosen": [self.NEW[0]],
+                                      "not_fitting": [], "checked": True})
+        self.assertEqual(choose.call_args[1]["intent"], "my words")
+        self.assertEqual(self.section()["intent"], "stated before")
+
+    def test_show_only_inserts_musicips_tracks_and_records_the_misfits(self):
+        kodi.settings["mix_assist_more_like_this"] = "1"
+        result = {"intent": "x", "intent_source": "ai", "chosen": self.NEW[:2],
+                  "not_fitting": [{"path": self.NEW[1], "label": "New 1", "reason": "too bright"}], "checked": True}
+        choose = self.more_like_this(result)
+        self.assertFalse(choose.call_args[1]["apply"])
+        self.assertEqual(self.read_mix(self.cache_path), TRACKS[:2] + self.NEW[:2] + TRACKS[2:])
+        self.assertEqual(self.section()["not_fitting"], [{"label": "New 1", "reason": "too bright"}])
+        self.assertNotified("Inserted 2 track(s). 1 may not fit (see the mix information).")
+
+    def test_nothing_fits(self):
+        self.more_like_this({"intent": "x", "intent_source": "given", "chosen": [], "checked": True,
+                             "not_fitting": [{"path": p, "label": p, "reason": "no"} for p in self.NEW]})
+        self.assertEqual(self.read_mix(self.cache_path), TRACKS)
+        self.assertNotified("none of MusicIP's tracks for this song fits the mix")
+
+    def test_claude_problems_fall_back_to_musicips_tracks(self):
+        error = main.mix_assist_claude.ClaudeError(main.mix_assist_claude.USAGE_LIMIT, "limit")
+        self.more_like_this(error=error)
+        self.assertEqual(self.read_mix(self.cache_path), TRACKS[:2] + self.NEW[:2] + TRACKS[2:])
+        self.assertNotified("Claude's usage limit is reached")
+        self.assertNotified("Inserted 2 track(s).")
+
+    def test_without_the_claude_cli_more_like_this_works_as_before_and_quietly(self):
+        with mock.patch.object(main, "mix_assist_ask", ORIGINAL_ASK):
+            self.run_plugin(action="more_like_this", seed=TRACKS[0], size="5", index="1", path=TRACKS[1],
+                            cache_path=self.cache_path)
+        self.assertEqual(self.read_mix(self.cache_path), TRACKS[:2] + self.NEW[:2] + TRACKS[2:])
+        self.assertEqual(kodi.notification_messages(), ["Inserted 2 track(s)."])
+        self.assertEqual([call[0] for call in kodi.dialog_calls if call[0].startswith("progress")][-1],
+                         "progress.close")
+
+
+class NewMixWithoutCliTest(MixAssistTestCase):
+    def test_new_mixes_are_skipped_quietly_without_the_claude_cli(self):
+        with mock.patch.object(main, "mix_assist_ask", ORIGINAL_ASK):
+            main.process_mix_assist_request({"cache_path": self.cache_path, "tracks": list(TRACKS), "mode": "fix"})
+        self.assertEqual(kodi.notification_messages(), [])
+        self.assertEqual(self.read_mix(self.cache_path), TRACKS)
+
+
 class ServiceTickTest(KodiTestCase):
     def setUp(self):
         super().setUp()

@@ -70,6 +70,10 @@ class KodiTestCase(unittest.TestCase):
     def setUp(self):
         kodi.reset()
         self.addCleanup(kodi.cleanup)
+        # Never start the real Claude CLI from tests (it may be installed on the machine running them).
+        patcher = mock.patch.object(main.mix_assist_claude, "find_cli", return_value="")
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
         main.LAST_MIX_GENERATION_PARAMS.clear()
         main.AUDIO_LIBRARY_FRESHNESS_CACHE = {"fetched_ts": 0, "payload": {}}

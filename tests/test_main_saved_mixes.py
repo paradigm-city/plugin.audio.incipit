@@ -132,6 +132,7 @@ class MoreAndLessLikeThisTest(MusicIPServerTestCase):
         self.cache_path = self.save_mix([A, B, C])
 
     def test_more_like_this_inserts_new_tracks_after_selection(self):
+        kodi.settings["mix_assist_more_like_this"] = "0"  # AI Mix Assist off: MusicIP's tracks as they come
         new1, new2, new3 = (f"E:\\new\\{n}.mp3" for n in range(3))
         self.musicip.set_mix(B, [A, new1, C, new2, new3])
         self.assertEqual(main.insert_more_like_this_into_mix(A, 3, 1, B, cache_path=self.cache_path), 2)
