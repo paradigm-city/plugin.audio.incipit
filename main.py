@@ -188,6 +188,40 @@ def notify(message: str, level=xbmcgui.NOTIFICATION_INFO) -> None:
     xbmcgui.Dialog().notification(ADDON_NAME, message, level)
 
 
+class BackgroundProgress:
+    """A small progress bar in the corner of the screen (Kodi's DialogProgressBG), closed even when the work fails.
+
+        with BackgroundProgress("More like this") as progress:
+            progress(30, "Asking MusicIP")
+    """
+
+    def __init__(self, heading: str):
+        self.heading = heading
+        self.dialog = None
+
+    def __enter__(self) -> "BackgroundProgress":
+        try:
+            self.dialog = xbmcgui.DialogProgressBG()
+            self.dialog.create(self.heading, "")
+        except Exception:
+            self.dialog = None
+        return self
+
+    def __call__(self, percent: int, text: str) -> None:
+        if self.dialog is not None:
+            try:
+                self.dialog.update(max(0, min(100, int(percent))), self.heading, text)
+            except Exception:
+                pass
+
+    def __exit__(self, *exc_info) -> None:
+        if self.dialog is not None:
+            try:
+                self.dialog.close()
+            except Exception:
+                pass
+
+
 def get_setting(name: str, default: str = "") -> str:
     try:
         value = ADDON.getSetting(name)
@@ -1280,6 +1314,7 @@ def save_mix(seed: str, size: int, tracks: list[str], track_metadata_list: list[
     meta = load_json_file(mix_meta_path_from_cache_path(path))
     if not isinstance(meta, dict):
         meta = {}
+    created_before = bool(meta.get("track_count"))
 
     meta.update({
         "seed": seed,
@@ -1308,6 +1343,8 @@ def save_mix(seed: str, size: int, tracks: list[str], track_metadata_list: list[
             meta["track_metadata_library_freshest_ts"] = freshest_ts
 
     save_json_file(mix_meta_path_from_cache_path(path), meta)
+    record_mix_history(path, "created", again=created_before, seed=mix_track_labels(path, [seed])[0],
+                       tracks=len(tracks), parameters=describe_mix_parameters(meta.get("mix_generation_parameters")))
 
 def save_mix_by_cache_path(cache_path: str, tracks: list[str]) -> None:
     payload = "\n".join(tracks)
@@ -2366,10 +2403,16 @@ def reload_musicip_server_before_mix_generation() -> None:
         raise MusicIPError(f"MusicIP server reload failed: {exc}") from exc
 
 
-def fetch_mix(seed_song: str, size: int, mix_params: dict | None = None, reload: bool = True) -> list[str]:
+def fetch_mix(seed_song: str, size: int, mix_params: dict | None = None, reload: bool = True,
+              progress=None) -> list[str]:
+    """MusicIP's mix for a seed. progress(percent, text), if given, is told about each step."""
     params = mix_params or get_effective_mix_parameters(size_override=size)
     if reload:
+        if progress:
+            progress(15, "Updating MusicIP's library")
         reload_musicip_server_before_mix_generation()
+    if progress:
+        progress(55, "MusicIP is mixing")
     url = build_musicip_url(seed_song, size, params)
     timeout = get_timeout()
 
@@ -2416,10 +2459,10 @@ def fetch_mix(seed_song: str, size: int, mix_params: dict | None = None, reload:
     return prepend_seed_track(seed_song, tracks)
 
 
-def fetch_mix_with_defaults(seed_song: str, size: int) -> list[str]:
+def fetch_mix_with_defaults(seed_song: str, size: int, progress=None) -> list[str]:
     params = get_effective_mix_parameters(size_override=size)
     remember_mix_generation_parameters(seed_song, size, params)
-    return fetch_mix(seed_song, size, mix_params=params)
+    return fetch_mix(seed_song, size, mix_params=params, progress=progress)
 
 
 def fetch_mix_confirmed(seed_song: str, size: int) -> list[str]:
@@ -2429,7 +2472,8 @@ def fetch_mix_confirmed(seed_song: str, size: int) -> list[str]:
         raise MusicIPError("Mix generation cancelled.")
 
     remember_mix_generation_parameters(seed_song, size, params)
-    return fetch_mix(seed_song, int(params.get("size") or size), mix_params=params)
+    with BackgroundProgress("Creating a MusicIP mix") as progress:
+        return fetch_mix(seed_song, int(params.get("size") or size), mix_params=params, progress=progress)
 
 
 def path_to_label(path: str) -> str:
@@ -2570,6 +2614,7 @@ def remove_track_from_mix(seed: str, size: int, index: int, path: str, cache_pat
     meta["track_count"] = len(tracks)
     meta["updated_ts"] = int(time.time())
     save_json_file(mix_meta_path_from_cache_path(target_cache_path), meta)
+    record_mix_history(target_cache_path, "removed", track=mix_track_labels(target_cache_path, [removed_path])[0])
     return removed_path
 
 
@@ -2641,9 +2686,9 @@ def find_track_position(tracks: list[str], index: int, path: str) -> int:
 
 
 def insert_more_like_this_into_mix(seed: str, size: int, index: int, path: str, cache_path: str = "",
-                                   report: dict | None = None) -> int:
-    """Insert tracks like the selected one after it. AI Mix Assist (if on) checks them against what the mix is
-    about first; `report` receives how many were skipped or may not fit."""
+                                   report: dict | None = None, progress=None) -> int:
+    """Insert tracks like the selected one after it. AI Mix Assist (if on) checks them against the selected song
+    first; `report` receives how many were skipped or may not fit."""
     if not path:
         raise MusicIPError("No seed track was supplied for More like this.")
 
@@ -2659,7 +2704,7 @@ def insert_more_like_this_into_mix(seed: str, size: int, index: int, path: str, 
     target_count = get_more_like_this_target_size()
     mode = get_mix_assist_more_like_this_mode()
     request_size = mix_assist.MUSICIP_MAX_MIX if mode != MIX_ASSIST_OFF else get_playlist_size()
-    submix_tracks = fetch_mix_with_defaults(path, request_size)
+    submix_tracks = fetch_mix_with_defaults(path, request_size, progress=progress)
     existing = {
         normalize_track_identity(track)
         for track in source_tracks
@@ -2693,6 +2738,8 @@ def insert_more_like_this_into_mix(seed: str, size: int, index: int, path: str, 
 
     updated_tracks = source_tracks[:insert_at] + new_tracks + source_tracks[insert_at:]
     save_mix_by_cache_path(target_cache_path, updated_tracks)
+    record_mix_history(target_cache_path, "more_like_this", song=mix_track_labels(target_cache_path, [path])[0],
+                       added=mix_track_labels(target_cache_path, new_tracks))
     if result:
         record_more_like_this_check(target_cache_path, updated_tracks, result, applied=mode == MIX_ASSIST_FIX)
         if report is not None:
@@ -2710,7 +2757,8 @@ def more_like_this_message(inserted: int, report: dict) -> str:
 
 
 
-def remove_less_like_this_from_mix(seed: str, size: int, index: int, path: str, cache_path: str = "") -> int:
+def remove_less_like_this_from_mix(seed: str, size: int, index: int, path: str, cache_path: str = "",
+                                   progress=None) -> int:
     if not path:
         raise MusicIPError("No seed track was supplied for Less like this.")
 
@@ -2725,7 +2773,7 @@ def remove_less_like_this_from_mix(seed: str, size: int, index: int, path: str, 
 
     target_count = get_more_like_this_target_size()
     submix_request_size = max(1, get_playlist_size() * 2)
-    submix_tracks = fetch_mix_with_defaults(path, submix_request_size)
+    submix_tracks = fetch_mix_with_defaults(path, submix_request_size, progress=progress)
     selected_seed_identity = normalize_track_identity(path)
 
     removable_matches: set[str] = set()
@@ -2741,6 +2789,7 @@ def remove_less_like_this_from_mix(seed: str, size: int, index: int, path: str, 
         raise MusicIPError("No matching tracks found for this song.")
 
     removed = 0
+    removed_tracks: list[str] = []
     updated_tracks: list[str] = []
 
     for pos, track in enumerate(source_tracks):
@@ -2748,10 +2797,12 @@ def remove_less_like_this_from_mix(seed: str, size: int, index: int, path: str, 
 
         if pos == selected_position:
             removed += 1
+            removed_tracks.append(track)
             continue
 
         if normalized in removable_matches and removed < target_count:
             removed += 1
+            removed_tracks.append(track)
             continue
 
         updated_tracks.append(track)
@@ -2760,6 +2811,8 @@ def remove_less_like_this_from_mix(seed: str, size: int, index: int, path: str, 
         raise MusicIPError("No matching tracks from the source mix could be removed.")
 
     save_mix_by_cache_path(target_cache_path, updated_tracks)
+    record_mix_history(target_cache_path, "less_like_this", song=mix_track_labels(target_cache_path, [path])[0],
+                       removed=mix_track_labels(target_cache_path, removed_tracks))
     return removed
 
 
@@ -3672,6 +3725,7 @@ def repair_saved_mix_automatic_only(cache_path: str) -> int:
     repaired = 0
     missing = 0
     updated_tracks: list[str] = []
+    replaced: list[tuple[str, str]] = []
 
     for index, track in enumerate(tracks):
         if track_file_exists(track):
@@ -3687,6 +3741,7 @@ def repair_saved_mix_automatic_only(cache_path: str) -> int:
         if replacement:
             log_info(f"Auto-repair service: replacing {track!r} with {replacement!r}")
             updated_tracks.append(replacement)
+            replaced.append((track, replacement))
             repaired += 1
         else:
             log_info(f"Auto-repair service: no safe automatic replacement for {track!r}")
@@ -3698,12 +3753,20 @@ def repair_saved_mix_automatic_only(cache_path: str) -> int:
         return 0
 
     save_mix_by_cache_path(cache_path, updated_tracks)
+    record_repair_history(cache_path, replaced, automatic=True)
     analyze_mix_consistency(cache_path)
     log_info(f"Auto-repair service: saved repaired mix. Repaired={repaired}.")
     return repaired
 
 
-def repair_saved_mix_foreground(cache_path: str) -> int:
+def record_repair_history(cache_path: str, replaced: list[tuple[str, str]], automatic: bool) -> None:
+    old_labels = mix_track_labels(cache_path, [old for old, _new in replaced])
+    new_labels = mix_track_labels(cache_path, [new for _old, new in replaced])
+    record_mix_history(cache_path, "repaired", automatic=automatic,
+                       replaced=[{"old": old, "new": new} for old, new in zip(old_labels, new_labels)])
+
+
+def repair_saved_mix_foreground(cache_path: str, progress=None) -> int:
     log_info(f"Auto-repair: started for saved mix: {cache_path!r}")
 
     tracks = load_mix_by_cache_path(cache_path)
@@ -3714,14 +3777,19 @@ def repair_saved_mix_foreground(cache_path: str) -> int:
     repaired = 0
     missing = 0
     updated_tracks: list[str] = []
+    replaced: list[tuple[str, str]] = []
 
     for index, track in enumerate(tracks):
+        if progress:
+            progress(int(100 * index / len(tracks)), f"Checking track {index + 1} of {len(tracks)}")
         if track_file_exists(track):
             updated_tracks.append(track)
             continue
 
         missing += 1
         log_info(f"Auto-repair: track {index} is missing: {track!r}")
+        if progress:
+            progress(int(100 * index / len(tracks)), f"Looking for {path_to_label(track)}")
 
         candidates = get_repair_candidates_for_path(track)
         replacement = choose_repair_candidate(track, candidates)
@@ -3729,6 +3797,7 @@ def repair_saved_mix_foreground(cache_path: str) -> int:
         if replacement:
             log_info(f"Auto-repair: replacing {track!r} with {replacement!r}")
             updated_tracks.append(replacement)
+            replaced.append((track, replacement))
             repaired += 1
         else:
             log_info(f"Auto-repair: no replacement selected for {track!r}")
@@ -3742,6 +3811,7 @@ def repair_saved_mix_foreground(cache_path: str) -> int:
         raise MusicIPError("No tracks were repaired.")
 
     save_mix_by_cache_path(cache_path, updated_tracks)
+    record_repair_history(cache_path, replaced, automatic=False)
     analyze_mix_consistency(cache_path)
     log_info(f"Auto-repair: saved repaired mix. Repaired={repaired}.")
     return repaired
@@ -5290,6 +5360,109 @@ def browse_saved_mix(
     xbmcplugin.endOfDirectory(HANDLE, updateListing=update_listing, cacheToDisc=False)
     apply_pending_focus(focus_index, focus_token)
 
+# --- Mix history -------------------------------------------------------------------------------
+# What happened to a saved mix, oldest first, in the sidecar's "history" list. Shown in the mix information.
+
+MIX_HISTORY_KEY = "history"
+MIX_HISTORY_LIMIT = 200
+
+
+def mix_track_labels(cache_path: str, paths: list[str]) -> list[str]:
+    """"Artist – Title" from the mix's recorded metadata, else from the file name."""
+    meta = load_json_file(mix_meta_path_from_cache_path(cache_path))
+    snapshots = meta.get("track_metadata_by_path") if isinstance(meta, dict) else None
+    snapshots = snapshots if isinstance(snapshots, dict) else {}
+    labels = []
+    for path in paths:
+        snapshot = snapshots.get(canonical_audio_path(path))
+        title = str(snapshot.get("title") or "").strip() if isinstance(snapshot, dict) else ""
+        artist = snapshot.get("artist") if isinstance(snapshot, dict) else ""
+        artist = ", ".join(artist) if isinstance(artist, list) else str(artist or "").strip()
+        labels.append(f"{artist} – {title}" if title and artist else title or path_to_label(path))
+    return labels
+
+
+def record_mix_history(cache_path: str, kind: str, **details) -> None:
+    """Add an event to the mix's history. Never fails the action it records."""
+    try:
+        meta_path = mix_meta_path_from_cache_path(cache_path)
+        meta = load_json_file(meta_path)
+        meta = meta if isinstance(meta, dict) else {}
+        history = [event for event in meta.get(MIX_HISTORY_KEY) or [] if isinstance(event, dict)]
+        history.append(dict(details, kind=kind, ts=int(time.time())))
+        meta[MIX_HISTORY_KEY] = history[-MIX_HISTORY_LIMIT:]
+        save_json_file(meta_path, meta)
+    except Exception as exc:
+        log(f"Mix history: could not record {kind!r} for {cache_path!r}: {exc}", xbmc.LOGWARNING)
+
+
+def describe_mix_parameters(params: dict) -> str:
+    if not isinstance(params, dict) or not params:
+        return ""
+    reject = int(params.get("rejectsize") or 0)
+    parts = [
+        f"variety {params.get('variety', '?')}",
+        f"style {params.get('style_ui', '?')}/10",
+        f"no artist repeat within {reject} tracks" if reject > 0 else "artists may repeat",
+        f"filter {params.get('filter')}" if params.get("filter") else "no filter",
+    ]
+    return ", ".join(parts)
+
+
+def history_list(prefix: str, labels: list[str]) -> list[str]:
+    return [f"{prefix} {label}" for label in labels]
+
+
+def format_history_created(event: dict) -> list[str]:
+    verb = "Created again" if event.get("again") else "Created"
+    line = f"{verb} from {event.get('seed', '?')}: {event.get('tracks', '?')} tracks"
+    return [line + (f" ({event['parameters']})" if event.get("parameters") else "")]
+
+
+def format_history_removed(event: dict) -> list[str]:
+    return [f"You removed {event.get('track', '?')}"]
+
+
+def format_history_more_like_this(event: dict) -> list[str]:
+    added = event.get("added") or []
+    return [f"\"More like this\" for {event.get('song', '?')} added {len(added)} track(s):"] + history_list("+", added)
+
+
+def format_history_less_like_this(event: dict) -> list[str]:
+    removed = event.get("removed") or []
+    return [f"\"Less like this\" for {event.get('song', '?')} removed {len(removed)} track(s):"] + \
+        history_list("−", removed)
+
+
+def format_history_repaired(event: dict) -> list[str]:
+    replaced = event.get("replaced") or []
+    how = "Repaired automatically" if event.get("automatic") else "Repaired"
+    return [f"{how}: {len(replaced)} missing file(s) replaced:"] + \
+        [f"{entry.get('old', '?')} → {entry.get('new', '?')}" for entry in replaced]
+
+
+MIX_HISTORY_FORMATTERS = {
+    "created": format_history_created,
+    "removed": format_history_removed,
+    "more_like_this": format_history_more_like_this,
+    "less_like_this": format_history_less_like_this,
+    "repaired": format_history_repaired,
+}
+
+
+def build_mix_history_text(meta: dict) -> str:
+    """The history, newest first."""
+    events = [event for event in meta.get(MIX_HISTORY_KEY) or [] if isinstance(event, dict)]
+    if not events:
+        return "Nothing recorded yet. The history starts with mixes created or changed from now on."
+    blocks = []
+    for event in reversed(events):
+        formatter = MIX_HISTORY_FORMATTERS.get(str(event.get("kind") or ""))
+        lines = formatter(event) if formatter else [str(event.get("kind") or "?")]
+        blocks.append("\n".join([f"{format_sidecar_ts(event.get('ts'))}  {lines[0]}"] + [f"    {line}" for line in lines[1:]]))
+    return "\n\n".join(blocks)
+
+
 def format_sidecar_ts(value: object) -> str:
     try:
         ts = int(value or 0)
@@ -5371,17 +5544,34 @@ def build_mix_info_message(cache_path: str) -> str:
     return "\n".join(lines)
 
 
+def mix_info_pages(cache_path: str) -> list[tuple[str, str]]:
+    """The pages of the mix information: (title, text)."""
+    meta = get_saved_mix_metadata(cache_path, load_mix_by_cache_path(cache_path))
+    events = [event for event in meta.get(MIX_HISTORY_KEY) or [] if isinstance(event, dict)]
+    return [
+        ("Overview", build_mix_info_message(cache_path)),
+        (f"History ({len(events)})", build_mix_history_text(meta)),
+    ]
+
+
 def show_mix_info(cache_path: str) -> None:
+    """The mix information as pages, like tabs: a short list of pages; closing a page returns to the list."""
     try:
-        message = build_mix_info_message(cache_path)
+        pages = mix_info_pages(cache_path)
     except Exception as exc:
         xbmcgui.Dialog().ok("MusicIP mix information", f"Could not read mix information.\n\n{exc}")
         return
 
-    try:
-        xbmcgui.Dialog().textviewer("MusicIP mix information", message)
-    except Exception:
-        xbmcgui.Dialog().ok("MusicIP mix information", message)
+    choice = 0
+    while True:
+        choice = xbmcgui.Dialog().select("MusicIP mix information", [title for title, _text in pages], preselect=choice)
+        if choice is None or choice < 0 or choice >= len(pages):
+            return
+        title, text = pages[choice]
+        try:
+            xbmcgui.Dialog().textviewer(f"MusicIP mix information: {title}", text)
+        except Exception:
+            xbmcgui.Dialog().ok(f"MusicIP mix information: {title}", text)
 
 
 def selected_mix_cache_path() -> str:
@@ -6110,7 +6300,8 @@ def router() -> None:
 
         try:
             ensure_repair_ready(cache_path)
-            repaired = repair_saved_mix_foreground(cache_path)
+            with BackgroundProgress("Repairing the mix") as progress:
+                repaired = repair_saved_mix_foreground(cache_path, progress=progress)
         except MusicIPError as exc:
             notify(str(exc), xbmcgui.NOTIFICATION_WARNING if "cancelled" in str(exc).lower() else xbmcgui.NOTIFICATION_ERROR)
             log(str(exc), xbmc.LOGERROR)
@@ -6215,7 +6406,9 @@ def router() -> None:
         try:
             ensure_remove_allowed_from_addon_container()
             report: dict = {}
-            inserted = insert_more_like_this_into_mix(seed, size, index, path, cache_path=cache_path, report=report)
+            with BackgroundProgress("More like this") as progress:
+                inserted = insert_more_like_this_into_mix(seed, size, index, path, cache_path=cache_path,
+                                                          report=report, progress=progress)
         except MusicIPError as exc:
             notify(str(exc), xbmcgui.NOTIFICATION_WARNING if "cancelled" in str(exc).lower() else xbmcgui.NOTIFICATION_ERROR)
             log(str(exc), xbmc.LOGERROR)
@@ -6239,7 +6432,9 @@ def router() -> None:
 
         try:
             ensure_remove_allowed_from_addon_container()
-            removed = remove_less_like_this_from_mix(seed, size, index, path, cache_path=cache_path)
+            with BackgroundProgress("Less like this") as progress:
+                removed = remove_less_like_this_from_mix(seed, size, index, path, cache_path=cache_path,
+                                                         progress=progress)
         except MusicIPError as exc:
             notify(str(exc), xbmcgui.NOTIFICATION_WARNING if "cancelled" in str(exc).lower() else xbmcgui.NOTIFICATION_ERROR)
             log(str(exc), xbmc.LOGERROR)

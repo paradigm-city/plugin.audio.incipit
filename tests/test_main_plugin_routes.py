@@ -173,15 +173,17 @@ class MixInfoTest(KodiTestCase):
         self.cache_path = self.save_mix([SEED, T1], size=2)
 
     def test_info_dialog(self):
+        kodi.respond("select", 0)  # the Overview page
         self.run_plugin(action="mix_info", cache_path=self.cache_path)
         heading, text = kodi.dialogs("textviewer")[0][1]
-        self.assertEqual(heading, "MusicIP mix information")
+        self.assertEqual(heading, "MusicIP mix information: Overview")
         self.assertIn("Style: 5/10 - medium preference (API 100)", text)
         self.assertIn("Artist repeat: do not repeat artist within 2 tracks", text)
         self.assertIn("Status: unknown", text)
 
     def test_info_for_selected_item(self):
         kodi.info_labels["ListItem.Property(MusicIP.CachePath)"] = self.cache_path
+        kodi.respond("select", 0)
         self.run_plugin(action="mix_info_selected")
         self.assertEqual(len(kodi.dialogs("textviewer")), 1)
 
