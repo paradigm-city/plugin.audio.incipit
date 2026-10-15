@@ -107,14 +107,26 @@ def pick(candidates: Sequence[dict], strictness: float, taken: set, blocked: set
     return min(passing, key=lambda c: c["relative"]) if passing else None
 
 
+def rating_progress(progress: Optional[Callable[..., None]], text: str, share: float = 1.0):
+    """rate_missing's progress(done, total) as progress("<text> (done of total)", fraction of the step)."""
+    if not progress:
+        return None
+    return lambda done, total: progress(f"{text} ({done} of {total})", share * done / max(1, total))
+
+
 def score_candidates(candidate_paths: Sequence[str], units: Sequence[dict], entries: Sequence[Optional[dict]],
                      intent: str, analysis: Dict[str, object], cache: RatingCache, ask: Ask, resolve: Resolve,
-                     model: str = "") -> Dict[str, dict]:
+                     model: str = "", progress: Optional[Callable[..., None]] = None,
+                     label: str = "Checking the replacements") -> Dict[str, dict]:
     """Both signals for candidate tracks, measured against the master mix (one AI call for all of them).
-    Keyed by path: label, artist, the AI's verdict and reason, and the relative misfit if the track is rated."""
+    Keyed by path: label, artist, the AI's verdict and reason, and the relative misfit if the track is rated.
+    progress(text, fraction) reports the parts of this step (`label`)."""
     candidates = resolve(candidate_paths)
-    rate_missing(candidates, cache, ask, model=model)
+    rate_missing(candidates, cache, ask, model=model,
+                 progress=rating_progress(progress, f"{label}: rating new music", 0.7))
     candidate_entries = [cache.get(unit["key"]) for unit in candidates]
+    if progress:
+        progress(f"{label}: asking the AI about {len(candidates)} tracks", 0.75)
     verdicts = checks.judge(intent, units[0], entries[0], candidates, candidate_entries, ask)
     scored: Dict[str, dict] = {}
     for number, (unit, entry) in enumerate(zip(candidates, candidate_entries), start=1):
@@ -134,20 +146,21 @@ def passes(candidate: Optional[dict], strictness: float) -> bool:
 
 def tidy_up(paths: Sequence[str], cache: RatingCache, ask: Ask, resolve: Resolve, fetch_mix: FetchMix,
             intent: str = "", strictness: float = DEFAULT_STRICTNESS, artist_window: int = ARTIST_WINDOW,
-            model: str = "", progress: Optional[Callable[[str], None]] = None,
+            model: str = "", progress: Optional[Callable[..., None]] = None,
             find_replacements: bool = True) -> dict:
     """A plan for the mix: the intent, every track's status, and the replacements to make.
 
     With find_replacements=False only the tracks that don't fit are found ("show only")."""
-    def step(text: str) -> None:
+    def step(text: str, fraction: Optional[float] = None) -> None:
+        """progress(text) at the start of a step, progress(text, fraction) within it."""
         if progress:
-            progress(text)
+            progress(text) if fraction is None else progress(text, fraction)
 
     paths = list(paths)
     step("Looking up the tracks")
     units = resolve(paths)
     step("Rating new music")
-    rate_missing(units, cache, ask, model=model)
+    rate_missing(units, cache, ask, model=model, progress=rating_progress(step, "Rating new music"))
     entries = [cache.get(unit["key"]) for unit in units]
 
     step("Working out what this mix is about")
@@ -198,7 +211,8 @@ def tidy_up(paths: Sequence[str], cache: RatingCache, ask: Ask, resolve: Resolve
         if not candidate_paths:
             return {}
         step("Checking the replacements")
-        return score_candidates(candidate_paths, units, entries, intent, analysis, cache, ask, resolve, model)
+        return score_candidates(candidate_paths, units, entries, intent, analysis, cache, ask, resolve, model,
+                                progress=step)
 
     taken = {path_key(path) for path in paths}
     artists = [unit.get("artist", "") for unit in units]
@@ -269,7 +283,7 @@ def tidy_up(paths: Sequence[str], cache: RatingCache, ask: Ask, resolve: Resolve
 def choose_additions(selected: str, candidates: Sequence[str], count: int, cache: RatingCache, ask: Ask,
                      resolve: Resolve, neighbours: Sequence[str] = (), strictness: float = DEFAULT_STRICTNESS,
                      artist_window: int = ARTIST_WINDOW, model: str = "",
-                     progress: Optional[Callable[[str], None]] = None) -> dict:
+                     progress: Optional[Callable[..., None]] = None) -> dict:
     """"More like this": the selected song and MusicIP's candidates for it form a small mix with the selected song
     as its seed. New tracks are held to the same rule as replacements: both signals must say a candidate fits what
     the selected song is about. The first `count` fitting candidates (closest first) are chosen, without repeating
@@ -277,9 +291,9 @@ def choose_additions(selected: str, candidates: Sequence[str], count: int, cache
 
     Returns intent (the selected song's), chosen (paths), not_fitting ([{path, label, reason}]) and checked (False
     if the candidates couldn't be measured; then the first ones are taken unchecked)."""
-    def step(text: str) -> None:
+    def step(text: str, fraction: Optional[float] = None) -> None:
         if progress:
-            progress(text)
+            progress(text) if fraction is None else progress(text, fraction)
 
     candidates = list(candidates)
     result = {"intent": "", "chosen": [], "not_fitting": [], "checked": False}
@@ -296,9 +310,9 @@ def choose_additions(selected: str, candidates: Sequence[str], count: int, cache
             break
         units = [selected_unit] + resolve(batch)
         step("Rating new music")
-        rate_missing(units, cache, ask, model=model)
+        rate_missing(units, cache, ask, model=model, progress=rating_progress(step, "Rating new music"))
         entries = [cache.get(unit["key"]) for unit in units]
-        step("Checking the new tracks")
+        step(f"Checking the new tracks: asking the AI about {len(batch)} tracks", 0.1)
         if result["intent"]:  # a second batch is judged against the intent stated for the first
             judged = checks.judge(result["intent"], units[0], entries[0], units[1:], entries[1:], ask)
             verdicts = {number + 1: verdict for number, verdict in judged.items()}

@@ -5840,14 +5840,17 @@ MIX_ASSIST_STEPS = ["Looking up the tracks", "Rating new music", "Working out wh
 
 
 def mix_assist_step_reporter(progress, steps: list[str], start: int = 0, end: int = 100, check=None):
-    """progress(text) for mixassist that moves a BackgroundProgress bar from start to end % along the steps.
-    check() runs first at every step (e.g. to stop when Kodi shuts down)."""
-    def report(text: str) -> None:
+    """progress(text[, fraction]) for mixassist that moves a BackgroundProgress bar from start to end % along the
+    steps; a text such as "Checking the replacements: rating new music (2 of 5)" belongs to the step it starts with,
+    and fraction (0..1) moves the bar within that step. check() runs first every time (e.g. to stop when Kodi shuts
+    down)."""
+    def report(text: str, fraction: float = 0.0) -> None:
         if check:
             check()
         if progress:
-            step = steps.index(text) + 1 if text in steps else 0
-            progress(start + (end - start) * step // (len(steps) + 1), text)
+            step = next((index + 1 for index, name in enumerate(steps) if text.startswith(name)), 0)
+            position = step + (max(0.0, min(1.0, fraction)) if step else 0.0)
+            progress(start + int((end - start) * position / (len(steps) + 1)), text)
     return report
 
 
