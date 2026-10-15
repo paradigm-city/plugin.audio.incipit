@@ -53,7 +53,7 @@ class RadioMenuTest(RadioTestCase):
         self.assertIn("Radio mode", self.listed_labels())
 
     def test_off(self):
-        self.assertEqual(self.menu(), ["Turn on radio"])
+        self.assertEqual(self.menu(), ["Scan stations"])
         self.assertIn(("setPluginCategory", "MusicIP radio"), kodi.directory_calls)
 
     def test_entries_are_actions_not_folders(self):
@@ -65,12 +65,12 @@ class RadioMenuTest(RadioTestCase):
 
     def test_tuning_and_playing(self):
         self.turn_on()
-        self.assertEqual(self.menu(), ["Start radio", "Next station", "Stop radio"])
+        self.assertEqual(self.menu(), ["Pick this station", "Skip station", "Stop radio"])
         snippet = main.get_discovery_state()["current_label"]
-        self.assertIn(("setPluginCategory", f"Radio: tuning - {snippet}"), kodi.directory_calls)
+        self.assertIn(("setPluginCategory", f"Radio: scanning - {snippet}"), kodi.directory_calls)
 
         self.run_plugin(action="radio_play")
-        self.assertEqual(self.menu(), ["Change station", "Stop radio"])
+        self.assertEqual(self.menu(), ["Scan again", "Stop radio"])
         self.assertIn(("setPluginCategory", f"Radio: {self.radio()['current_label']}"), kodi.directory_calls)
 
 
@@ -82,7 +82,7 @@ class TuningTest(RadioTestCase):
         self.assertTrue(discovery["enabled"])
         self.assertEqual(discovery["owner"], "radio")
         self.assertEqual(kodi.player.time, float(discovery["queue"][0]["offset"]))
-        self.assertNotified("Radio on. Tuning in.")
+        self.assertNotified("Scanning stations.")
         self.assertEqual(plugin_query(kodi.builtins[-1])["action"], "radio_mode")
 
     def test_turn_on_without_songs(self):
@@ -130,7 +130,7 @@ class StartRadioTest(RadioTestCase):
         self.assertEqual([entry["file"] for entry in radio["queue"]], expected)
         self.assertEqual((kodi.player.position, kodi.player.file), (0, seed))
         self.assertEqual(radio["seeds"], [seed])
-        self.assertNotified("Radio started.")
+        self.assertNotified("Station picked.")
 
         discovery = main.get_discovery_state()
         self.assertEqual((discovery["enabled"], discovery["stop_reason"]), (False, "radio_started"))
@@ -180,7 +180,7 @@ class StartFromAnySongTest(RadioTestCase):
         self.assertEqual((kodi.player.position, kodi.player.file), (0, SONGS[5]))
         self.assertEqual(self.musicip.mix_requests()[0]["size"], "10")
         self.assertEqual(kodi.dialog_calls, [])
-        self.assertNotified("Radio started.")
+        self.assertNotified("Station picked.")
         self.assertFalse(main.get_discovery_state().get("enabled"))
 
     def test_the_current_view_stays(self):
@@ -260,8 +260,8 @@ class ChangeStationTest(RadioTestCase):
         self.assertEqual((discovery["enabled"], discovery["owner"]), (True, "radio"))
         self.assertEqual(kodi.playlist_files(), [entry["file"] for entry in discovery["queue"]])
         self.assertEqual(kodi.player.time, float(discovery["queue"][0]["offset"]))
-        self.assertNotified("Changing station. Tuning in.")
-        self.assertEqual(self.menu(), ["Start radio", "Next station", "Stop radio"])
+        self.assertNotified("Scanning stations.")
+        self.assertEqual(self.menu(), ["Pick this station", "Skip station", "Stop radio"])
 
     def test_new_station_after_changing(self):
         self.start()
