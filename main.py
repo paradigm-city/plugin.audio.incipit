@@ -5781,8 +5781,10 @@ def open_settings() -> None:
 # AI Mix Assist (docs/concept_ai_mix_assist.md): tidying up saved mixes on demand.
 # ---------------------------------------------------------------------------
 
-# "Strictness" setting: lenient … very strict, as multiples of a mix's median misfit (1.2 = calibrated default).
-MIX_ASSIST_STRICTNESS = (1.5, 1.35, 1.2, 1.1, 1.0)
+# "Mix strictness" and "Station strictness" share one scale: Tight, Close, Balanced, Open, Adventurous.
+# Each level: the limit on a song's misfit, as a multiple of what MusicIP typically offers (1.2 = the pilot's
+# calibration), and whether new songs the AI calls "borderline" are accepted too.
+STRICTNESS_LEVELS = ((1.0, False), (1.1, False), (1.2, False), (1.35, False), (1.5, True))  # default: Balanced
 MIX_ASSIST_SECTION = "mix_assist"
 MIX_ASSIST_MESSAGES = {
     mix_assist_claude.NOT_FOUND: "AI Mix Assist needs the Claude Code CLI. Install it, or set its path in the settings.",
@@ -5793,9 +5795,19 @@ MIX_ASSIST_MESSAGES = {
 }
 
 
-def get_mix_assist_strictness() -> float:
-    index = max(0, min(len(MIX_ASSIST_STRICTNESS) - 1, get_setting_int("mix_assist_strictness", 2)))
-    return MIX_ASSIST_STRICTNESS[index]
+def strictness_level(index: int) -> tuple[float, bool]:
+    """(limit, accept borderline) of a level of the strictness scale."""
+    return STRICTNESS_LEVELS[max(0, min(len(STRICTNESS_LEVELS) - 1, index))]
+
+
+def get_mix_assist_strictness() -> tuple[float, bool]:
+    """Setting "Mix strictness": tidy-ups, new mixes and "More like this"."""
+    return strictness_level(get_setting_int("mix_assist_mix_strictness", 2))
+
+
+def get_station_strictness() -> tuple[float, bool]:
+    """Setting "Station strictness": Radio (its first songs and every refill)."""
+    return strictness_level(get_setting_int("mix_assist_station_strictness", 2))
 
 
 def mix_assist_cache_path() -> str:
@@ -5866,11 +5878,12 @@ def compute_mix_assist_plan(tracks: list[str], meta: dict, progress=None, find_r
             resolve=lambda paths: mix_assist_library.resolve(paths, execute_jsonrpc, recorded),
             fetch_mix=mix_assist_fetcher(),
             intent=str(section.get("listener_intent") or ""),
-            strictness=get_mix_assist_strictness(),
+            strictness=get_mix_assist_strictness()[0],
             artist_window=get_mix_reject_size() or mix_assist.ARTIST_WINDOW,
             model=mix_assist_claude.DEFAULT_MODEL,
             progress=progress,
             find_replacements=find_replacements,
+            accept_borderline=get_mix_assist_strictness()[1],
         )
     finally:
         store.close()
@@ -6039,10 +6052,11 @@ def check_more_like_this(cache_path: str, tracks: list[str], selected: int, cand
                 tracks[selected], candidates, count, store, ask,
                 resolve=lambda paths: mix_assist_library.resolve(paths, execute_jsonrpc, mix_assist_track_metadata(meta)),
                 neighbours=tracks[max(0, selected + 1 - window):selected] + tracks[selected + 1:selected + 1 + window],
-                strictness=get_mix_assist_strictness(),
+                strictness=get_mix_assist_strictness()[0],
                 artist_window=window,
                 model=mix_assist_claude.DEFAULT_MODEL,
                 progress=mix_assist_step_reporter(progress, MORE_LIKE_THIS_STEPS, start=60),
+                accept_borderline=get_mix_assist_strictness()[1],
             )
         finally:
             store.close()
@@ -6157,12 +6171,10 @@ def process_mix_assist_request(entry: dict) -> None:
 # The station's first songs (a plain MusicIP mix) lose the ones that clearly don't fit the picked song. Refills are
 # checked before they are queued: against a profile that starts as the picked song and drifts with the station
 # ("Station drift": how far), and by the AI against the song the refill is seeded from, or the picked song when the
-# station stays close ("Station steps": how surprising each song may be).
+# station stays close ("Station strictness": how surprising each song may be).
 
 # "Station drift": the profile has moved half the way to where the station went after this many songs.
 RADIO_DRIFT_HALF_LIFE = (0, 60, 20)  # stay close to the picked song, drift slowly (~4 h), wander freely (~1 h 20)
-# "Station steps": strictness relative to the mix setting (higher = stricter), and whether "borderline" songs count.
-RADIO_STEPS = ((1, False), (0, False), (-2, True))  # small, medium, bold
 
 
 def mix_assist_for_radio() -> bool:
@@ -6187,13 +6199,6 @@ def get_radio_drift_half_life() -> int:
     return RADIO_DRIFT_HALF_LIFE[index]
 
 
-def get_radio_steps() -> tuple[float, bool]:
-    """(strictness, accept borderline) for a station's songs: "Station steps" relative to the mix strictness."""
-    offset, borderline = RADIO_STEPS[max(0, min(len(RADIO_STEPS) - 1, get_setting_int("mix_assist_radio_steps", 1)))]
-    base = max(0, min(len(MIX_ASSIST_STRICTNESS) - 1, get_setting_int("mix_assist_strictness", 2)))
-    return MIX_ASSIST_STRICTNESS[max(0, min(len(MIX_ASSIST_STRICTNESS) - 1, base + offset))], borderline
-
-
 def radio_check_progress(check=None):
     """mixassist progress for the service's background checks: no bar, but a chance to stop on Kodi's shutdown."""
     def report(*_args) -> None:
@@ -6211,7 +6216,7 @@ def check_radio_start(tracks: list[str], check=None) -> dict:
             tracks, store, mix_assist_ask(),
             resolve=lambda paths: mix_assist_library.resolve(paths, execute_jsonrpc, {}),
             fetch_mix=lambda *_args: [],
-            strictness=get_radio_steps()[0],
+            strictness=get_station_strictness()[0],
             artist_window=get_mix_reject_size() or mix_assist.ARTIST_WINDOW,
             model=mix_assist_claude.DEFAULT_MODEL,
             progress=radio_check_progress(check),
@@ -6231,7 +6236,7 @@ def check_radio_refill(reference_song: str, candidates: list[str], count: int, r
     store = mix_assist_cache.RatingCache(mix_assist_cache_path())
     try:
         window = get_mix_reject_size() or mix_assist.ARTIST_WINDOW
-        strictness, borderline = get_radio_steps()
+        strictness, borderline = get_station_strictness()
         result = mix_assist.choose_additions(
             reference_song, candidates, count, store, mix_assist_ask(),
             resolve=lambda paths: mix_assist_library.resolve(paths, execute_jsonrpc, {}),

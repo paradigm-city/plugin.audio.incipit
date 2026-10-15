@@ -21,8 +21,8 @@
         <setting id="mix_assist_auto_more_like_this" type="bool" label="Keep &quot;More like this&quot; on track" default="true" />
         <setting id="mix_assist_auto_radio" type="bool" label="Keep Radio on track" default="true" />
         <setting id="mix_assist_radio_drift" type="enum" label="Station drift" values="Stay close to the picked song|Drift slowly|Wander freely" default="1" />
-        <setting id="mix_assist_radio_steps" type="enum" label="Station steps" values="Small|Medium|Bold" default="1" />
-        <setting id="mix_assist_strictness" type="enum" label="Strictness" values="Lenient|Relaxed|Normal|Strict|Very strict" default="2" />
+        <setting id="mix_assist_station_strictness" type="enum" label="Station strictness" values="Tight|Close|Balanced|Open|Adventurous" default="2" />
+        <setting id="mix_assist_mix_strictness" type="enum" label="Mix strictness" values="Tight|Close|Balanced|Open|Adventurous" default="2" />
         <setting id="mix_assist_cli_path" type="text" label="Claude Code CLI (empty: find it automatically)" default="" />
     </category>
 

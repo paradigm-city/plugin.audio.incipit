@@ -101,8 +101,9 @@ def nearby_artists(artists: Sequence[str], position: int, window: int) -> set:
             if i != index and artists[i]}
 
 
-def pick(candidates: Sequence[dict], strictness: float, taken: set, blocked: set) -> Optional[dict]:
-    passing = [c for c in candidates if passes(c, strictness)
+def pick(candidates: Sequence[dict], strictness: float, taken: set, blocked: set,
+         accept_borderline: bool = False) -> Optional[dict]:
+    passing = [c for c in candidates if passes(c, strictness, accept_borderline)
                and path_key(c["path"]) not in taken and artist_key(c.get("artist", "")) not in blocked]
     return min(passing, key=lambda c: c["relative"]) if passing else None
 
@@ -151,7 +152,7 @@ def passes(candidate: Optional[dict], strictness: float, accept_borderline: bool
 def tidy_up(paths: Sequence[str], cache: RatingCache, ask: Ask, resolve: Resolve, fetch_mix: FetchMix,
             intent: str = "", strictness: float = DEFAULT_STRICTNESS, artist_window: int = ARTIST_WINDOW,
             model: str = "", progress: Optional[Callable[..., None]] = None,
-            find_replacements: bool = True) -> dict:
+            find_replacements: bool = True, accept_borderline: bool = False) -> dict:
     """A plan for the mix: the intent, every track's status, and the replacements to make.
 
     With find_replacements=False only the tracks that don't fit are found ("show only")."""
@@ -231,9 +232,10 @@ def tidy_up(paths: Sequence[str], cache: RatingCache, ask: Ask, resolve: Resolve
         shared = list(scored.values())
         for position, options in gaps:
             blocked = nearby_artists(artists, position, artist_window)
-            choice, origin = pick([scored[p] for p in options if p in scored], strictness, taken, blocked), source
+            choice = pick([scored[p] for p in options if p in scored], strictness, taken, blocked, accept_borderline)
+            origin = source
             if choice is None:
-                choice = pick(shared, strictness, taken, blocked)
+                choice = pick(shared, strictness, taken, blocked, accept_borderline)
                 origin = "seed" if choice and choice["path"] in fallback else source
             if choice is None:
                 unfilled.append(position)
