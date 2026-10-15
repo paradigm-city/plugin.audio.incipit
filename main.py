@@ -13,6 +13,7 @@ import random
 import sqlite3
 import re
 import sys
+import threading
 import time
 import unicodedata
 from urllib.parse import parse_qsl, quote_from_bytes, urlencode, unquote
@@ -184,14 +185,24 @@ def notify(message: str, level=xbmcgui.NOTIFICATION_INFO) -> None:
 
 class BackgroundProgress:
     """A small progress bar in the corner of the screen (Kodi's DialogProgressBG), closed even when the work fails.
+    While one step takes longer than a few seconds, a running clock is added to its text, so a long step (a large
+    MusicIP reload, an AI call) visibly keeps going.
 
         with BackgroundProgress("More like this") as progress:
             progress(30, "Asking MusicIP")
     """
 
-    def __init__(self, heading: str):
+    TICK_SECONDS = 1.0
+    SHOW_CLOCK_AFTER = 3
+
+    def __init__(self, heading: str, tick: float | None = None):
         self.heading = heading
         self.dialog = None
+        self.tick = self.TICK_SECONDS if tick is None else tick
+        self.percent, self.text, self.step_started = 0, "", time.monotonic()
+        self.lock = threading.Lock()
+        self.stopped = threading.Event()
+        self.thread: threading.Thread | None = None
 
     def __enter__(self) -> "BackgroundProgress":
         try:
@@ -199,16 +210,38 @@ class BackgroundProgress:
             self.dialog.create(self.heading, "")
         except Exception:
             self.dialog = None
+        if self.dialog is not None:
+            self.thread = threading.Thread(target=self.heartbeat, daemon=True)
+            self.thread.start()
         return self
 
     def __call__(self, percent: int, text: str) -> None:
-        if self.dialog is not None:
+        with self.lock:
+            if text != self.text:
+                self.step_started = time.monotonic()
+            self.percent, self.text = max(0, min(100, int(percent))), text
+        self.render()
+
+    def render(self) -> None:
+        if self.dialog is None:
+            return
+        with self.lock:
+            elapsed = int(time.monotonic() - self.step_started)
+            text = self.text if elapsed < self.SHOW_CLOCK_AFTER else f"{self.text} ({elapsed // 60}:{elapsed % 60:02d})"
             try:
-                self.dialog.update(max(0, min(100, int(percent))), self.heading, text)
+                self.dialog.update(self.percent, self.heading, text)
             except Exception:
                 pass
 
+    def heartbeat(self) -> None:
+        while not self.stopped.wait(self.tick):
+            if self.text:
+                self.render()
+
     def __exit__(self, *exc_info) -> None:
+        self.stopped.set()
+        if self.thread is not None:
+            self.thread.join(timeout=2)
         if self.dialog is not None:
             try:
                 self.dialog.close()
