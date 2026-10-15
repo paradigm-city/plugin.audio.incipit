@@ -1167,12 +1167,13 @@ RADIO_REFILL_SEEDS = 3           # last queued songs tried as seed when a mix br
 RADIO_REFILL_RETRY_SECONDS = 60  # wait after a failed or empty top-up
 RADIO_STOP_GRACE_SECONDS = 3     # playback must be stopped this long (gaps between songs are shorter)
 RADIO_MAX_SEEN = 5000            # songs remembered per session to avoid repeats
-RADIO_CHECKED_THRESHOLD = 6      # with AI Mix Assist: top up earlier, the check takes a minute or two
+RADIO_CHECKED_THRESHOLD = 3      # with AI Mix Assist: top up when fewer songs remain (the check takes 1-2 minutes)
 RADIO_CHECK_SIZE = 75            # MusicIP candidates per checked refill (MusicIP's maximum)
 RADIO_CHECKED_BATCH = 8          # songs per checked refill (20-50 minutes): small steps for a smooth meander
 
 # One AI Mix Assist check at a time, in a background thread; the radio tick applies its result.
-RADIO_CHECK: dict = {"thread": None, "station": 0, "kind": "", "result": None, "fallback": [], "seed": ""}
+RADIO_CHECK: dict = {"thread": None, "station": 0, "kind": "", "result": None, "fallback": [], "seed": "",
+                     "superseded": False}
 
 
 def radio_state_path() -> str:
@@ -1261,6 +1262,7 @@ def run_radio_tick() -> None:
     assisted = radio_mix_assist_enabled(plugin)
     if assisted:
         apply_radio_check(state, plugin, position)
+        keep_radio_from_running_dry(state, plugin, position)
         if not state.get("start_checked") and not radio_check_busy():
             state["start_checked"] = True
             start_radio_start_check(state, plugin)
@@ -1309,7 +1311,8 @@ def start_radio_check(state: dict, kind: str, job, fallback=(), seed: str = "") 
         except Exception as exc:
             RADIO_CHECK["result"] = {"error": exc}
 
-    RADIO_CHECK.update(station=radio_station_id(state), kind=kind, result=None, fallback=list(fallback), seed=seed)
+    RADIO_CHECK.update(station=radio_station_id(state), kind=kind, result=None, fallback=list(fallback), seed=seed,
+                       superseded=False)
     RADIO_CHECK["thread"] = threading.Thread(target=run, daemon=True)
     RADIO_CHECK["thread"].start()
 
@@ -1323,15 +1326,31 @@ def start_radio_start_check(state: dict, plugin) -> None:
         start_radio_check(state, "start", lambda check: plugin.check_radio_start(tracks, check=check))
 
 
+def keep_radio_from_running_dry(state: dict, plugin, position: int) -> None:
+    """The last song plays and the refill check is still running: queue MusicIP's songs unchecked now, or the
+    player would stop (and with it the radio). The check's songs are then not added; its profile still counts."""
+    if not radio_check_running() or RADIO_CHECK["kind"] != "refill" or RADIO_CHECK["superseded"]:
+        return
+    if RADIO_CHECK["station"] != radio_station_id(state) or position < 0 or position < len(state["queue"]) - 1:
+        return
+    RADIO_CHECK["superseded"] = True
+    log_info("Radio mode: the refill check is taking long; adding MusicIP's songs unchecked so the music goes on.")
+    append_radio_tracks(state, plugin, RADIO_CHECK["seed"], RADIO_CHECK["fallback"])
+
+
 def apply_radio_check(state: dict, plugin, position: int) -> None:
     """Apply a finished check to the station it was made for."""
     if radio_check_running() or RADIO_CHECK.get("result") is None:
         return
     kind, result, station = RADIO_CHECK["kind"], RADIO_CHECK["result"], RADIO_CHECK["station"]
-    fallback, seed = RADIO_CHECK["fallback"], RADIO_CHECK["seed"]
-    RADIO_CHECK.update(thread=None, result=None, fallback=[], seed="")
+    fallback, seed, superseded = RADIO_CHECK["fallback"], RADIO_CHECK["seed"], RADIO_CHECK["superseded"]
+    RADIO_CHECK.update(thread=None, result=None, fallback=[], seed="", superseded=False)
     if station != radio_station_id(state):
         return  # the station changed meanwhile
+    if superseded:
+        if result.get("reference"):
+            state["reference"] = result["reference"]  # its songs were replaced by the unchecked ones
+        return
 
     error = result.get("error")
     if error is not None:
