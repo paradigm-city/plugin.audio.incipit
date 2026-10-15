@@ -5674,13 +5674,12 @@ def edit_mix_assist_intent(cache_path: str) -> bool:
     meta = get_saved_mix_metadata(cache_path, load_mix_by_cache_path(cache_path))
     section = get_mix_assist_section(meta)
     current = str(section.get("listener_intent") or section.get("intent") or "")
-    try:
-        value = xbmcgui.Dialog().input("What is this mix about?", defaultt=current)
-    except TypeError:
-        value = xbmcgui.Dialog().input("What is this mix about?", current)
-    if value is None or value == current:
+    value = ask_text("What is this mix about?", current)
+    if value is None:  # cancelled
         return False
-    value = str(value).strip()
+    value = value.strip()
+    if value == current.strip() or (not value and not section.get("listener_intent")):
+        return False
     if value:
         section["listener_intent"] = value
     else:

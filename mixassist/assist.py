@@ -147,81 +147,110 @@ def tidy_up(paths: Sequence[str], cache: RatingCache, ask: Ask, resolve: Resolve
 
     step("Finding replacements")
     fitting = clearly_fitting(rows, strictness)
-    excluded = {path_key(path) for path in paths}
+    examined = {path_key(path) for path in paths}  # in the mix or already offered as a candidate
+    mixes: Dict[int, Optional[List[str]]] = {}
 
-    def fresh(tracks: Sequence[str]) -> List[str]:
-        result, seen = [], set(excluded)
-        for track in tracks:
-            if path_key(track) not in seen:
-                seen.add(path_key(track))
+    def musicip_mix(position: int) -> Optional[List[str]]:
+        """MusicIP's mix for a track of the mix (fetched once, as large as MusicIP allows); None if rejected."""
+        if position not in mixes:
+            try:
+                mixes[position] = list(fetch_mix(paths[position - 1], MUSICIP_MAX_MIX))
+            except Exception:
+                mixes[position] = None
+        return mixes[position]
+
+    def fresh(tracks: Optional[Sequence[str]], limit: int) -> List[str]:
+        """The first tracks not yet in the mix or offered; MusicIP lists the closest first."""
+        result: List[str] = []
+        for track in tracks or []:
+            if len(result) >= limit:
+                break
+            if path_key(track) not in examined:
+                examined.add(path_key(track))
                 result.append(track)
         return result
 
-    gaps = []
-    for position in outliers:
-        seed_position = submix_seed_position(position, fitting)
-        submix: List[str] = []
-        while seed_position >= 1:
-            try:
-                submix = fetch_mix(paths[seed_position - 1], SUBMIX_SIZE)
-                break
-            except Exception:
-                if seed_position == 1:
-                    seed_position = 0
-                    break
-                seed_position = submix_seed_position(seed_position, fitting)
-        gaps.append({"position": position, "seed_position": seed_position, "paths": fresh(submix)})
-    try:
-        fallback_paths = fresh(fetch_mix(paths[0], min(MUSICIP_MAX_MIX, SUBMIX_SIZE * FALLBACK_FACTOR)))
-    except Exception:
-        fallback_paths = []
+    def evaluate(candidate_paths: List[str]) -> Dict[str, dict]:
+        """Both signals for the candidates, measured against the master mix (one AI call for all of them)."""
+        if not candidate_paths:
+            return {}
+        step("Checking the replacements")
+        candidates = resolve(candidate_paths)
+        rate_missing(candidates, cache, ask, model=model)
+        candidate_entries = [cache.get(unit["key"]) for unit in candidates]
+        candidate_verdicts = checks.judge(intent, units[0], entries[0], candidates, candidate_entries, ask)
+        scored: Dict[str, dict] = {}
+        for number, (unit, entry) in enumerate(zip(candidates, candidate_entries), start=1):
+            verdict = candidate_verdicts.get(number, {})
+            candidate = {"path": unit["path"], "label": unit["label"], "artist": unit.get("artist", ""),
+                         "verdict": verdict.get("verdict", ""), "reason": verdict.get("reason", "")}
+            if entry:
+                misfit, _ = fit.misfit(entry, entries[0], analysis["spreads"], analysis["inverse"])
+                candidate["relative"] = misfit / analysis["typical"]
+            scored[unit["path"]] = candidate
+        return scored
 
-    candidate_paths: List[str] = []
-    for track in [p for gap in gaps for p in gap["paths"]] + fallback_paths:
-        if track not in candidate_paths:
-            candidate_paths.append(track)
-    if not candidate_paths:
-        plan["removed"] = outliers
-        plan["paths"] = [path for index, path in enumerate(paths, start=1) if index not in outliers]
-        return plan
-    step("Checking the replacements")
-    candidates = resolve(candidate_paths)
-    rate_missing(candidates, cache, ask, model=model)
-    candidate_entries = [cache.get(unit["key"]) for unit in candidates]
-    candidate_verdicts = checks.judge(intent, units[0], entries[0], candidates, candidate_entries, ask)
-
-    scored: Dict[str, dict] = {}
-    for number, (unit, entry) in enumerate(zip(candidates, candidate_entries), start=1):
-        verdict = candidate_verdicts.get(number, {})
-        candidate = {"path": unit["path"], "label": unit["label"], "artist": unit.get("artist", ""),
-                     "verdict": verdict.get("verdict", ""), "reason": verdict.get("reason", "")}
-        if entry:
-            misfit, _ = fit.misfit(entry, entries[0], analysis["spreads"], analysis["inverse"])
-            candidate["relative"] = misfit / analysis["typical"]
-        scored[unit["path"]] = candidate
-
-    taken = set(excluded)
+    taken = {path_key(path) for path in paths}
     artists = [unit.get("artist", "") for unit in units]
     for position in outliers:  # these tracks leave the mix, so their artists don't block anything
         artists[position - 1] = ""
     new_paths: List[Optional[str]] = list(paths)
-    fallback = [scored[p] for p in fallback_paths if p in scored]
-    for gap in gaps:
-        blocked = nearby_artists(artists, gap["position"], artist_window)
-        options = [scored[p] for p in gap["paths"] if p in scored]
-        choice, source = pick(options, strictness, taken, blocked), "submix"
-        if choice is None:
-            choice, source = pick(fallback, strictness, taken, blocked), "seed"
-        row = rows[gap["position"] - 1]
-        if choice:
+
+    def fill(gaps: List[tuple], fallback: List[str], scored: Dict[str, dict], source: str) -> List[int]:
+        """Fill each gap from its own candidates, else from any candidate of this round (the other gaps' and the
+        fallback); returns the unfilled gaps."""
+        unfilled = []
+        shared = list(scored.values())
+        for position, options in gaps:
+            blocked = nearby_artists(artists, position, artist_window)
+            choice, origin = pick([scored[p] for p in options if p in scored], strictness, taken, blocked), source
+            if choice is None:
+                choice = pick(shared, strictness, taken, blocked)
+                origin = "seed" if choice and choice["path"] in fallback else source
+            if choice is None:
+                unfilled.append(position)
+                continue
+            row = rows[position - 1]
             taken.add(path_key(choice["path"]))
-            artists[gap["position"] - 1] = choice["artist"]
-            new_paths[gap["position"] - 1] = choice["path"]
-            plan["changes"].append({"position": gap["position"], "old": paths[gap["position"] - 1],
+            artists[position - 1] = choice["artist"]
+            new_paths[position - 1] = choice["path"]
+            plan["changes"].append({"position": position, "old": paths[position - 1],
                                     "old_label": row["unit"]["label"], "reason": row.get("reason") or row.get("why", ""),
-                                    "new": choice["path"], "new_label": choice["label"], "source": source})
-        else:
-            new_paths[gap["position"] - 1] = None
-            plan["removed"].append(gap["position"])
+                                    "new": choice["path"], "new_label": choice["label"], "source": origin})
+        return unfilled
+
+    # Round 1: a submix from the nearest earlier track that clearly fits. Gaps that share a submix seed share one
+    # larger submix, so they don't all compete for the same 15 tracks.
+    groups: Dict[int, List[int]] = {}
+    for position in outliers:
+        seed_position = submix_seed_position(position, fitting)
+        while musicip_mix(seed_position) is None and seed_position > 1:
+            seed_position = submix_seed_position(seed_position, fitting)
+        groups.setdefault(seed_position, []).append(position)
+    gaps = []
+    for seed_position, members in groups.items():
+        options = fresh(musicip_mix(seed_position), SUBMIX_SIZE * len(members))
+        gaps.extend((position, options) for position in members)
+    gaps.sort()
+    fallback = fresh(musicip_mix(1), SUBMIX_SIZE * FALLBACK_FACTOR)
+    unfilled = fill(gaps, fallback, evaluate([p for _, options in gaps for p in options] + fallback), "submix")
+
+    # Round 2: for gaps still open, submixes from other clearly fitting tracks, the nearest first.
+    if unfilled:
+        step("Finding replacements")
+        gaps = []
+        for position in unfilled:
+            nearby = sorted((p for p in fitting if p not in mixes), key=lambda p: (abs(p - position), p > position))
+            options = []
+            for seed_position in nearby[:3]:
+                options = fresh(musicip_mix(seed_position), SUBMIX_SIZE)
+                if options:
+                    break
+            gaps.append((position, options))
+        unfilled = fill(gaps, [], evaluate([p for _, options in gaps for p in options]), "nearby")
+
+    for position in unfilled:
+        new_paths[position - 1] = None
+        plan["removed"].append(position)
     plan["paths"] = [path for path in new_paths if path]
     return plan
