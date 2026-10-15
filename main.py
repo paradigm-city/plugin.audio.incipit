@@ -4808,7 +4808,7 @@ def start_radio_from_song(seed: str) -> None:
     start_radio_station(seed)
 
 
-RADIO_ASSISTED_START_SIZE = 16  # with AI Mix Assist: two refills' worth, so the station soon starts to meander
+RADIO_ASSISTED_START_SIZE = 8  # with AI Mix Assist: one refill's worth, so the station soon starts to meander
 
 
 def start_radio_station(seed: str) -> bool:
@@ -6124,7 +6124,7 @@ def patch_playlist_for_mix(original: list[str], plan: dict) -> int:
             execute_jsonrpc("Playlist.Remove", {"playlistid": xbmc.PLAYLIST_MUSIC, "position": index})
             if position in replacements:
                 track = replacements[position]
-                metadata = collect_mix_track_metadata([track], allow_live_lookup=False)[0]
+                metadata = collect_mix_track_metadata([track], allow_live_lookup=True)[0]  # label with the artist
                 playlist.add(track, build_mix_playlist_item(track, metadata, position), index)
             patched += 1
         except Exception as exc:
