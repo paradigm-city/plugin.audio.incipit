@@ -1155,7 +1155,7 @@ def load_plugin_module():
 
 
 # --- Radio mode ------------------------------------------------------------------------------
-# The plugin turns the radio on (tuning = Discovery snippet playback) and starts it ("Start radio").
+# The plugin scans stations (Discovery snippet playback) and picks one ("Pick this station").
 # While it plays, the service follows the playlist, tops it up with new MusicIP mixes seeded from
 # the last queued song, prunes old songs, and stops the radio on the player's Stop or when other
 # playback takes over. Pause does not stop it.

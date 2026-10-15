@@ -4633,8 +4633,8 @@ def end_discovery_playback(reason: str = "manual_stop") -> None:
         pass
 
 # --- Radio mode ------------------------------------------------------------------------------
-# Like a vintage radio set: tune through random snippets (Discovery playback), then "Start radio"
-# locks onto the current song. The station is an endless MusicIP mix with the configured mix
+# Like a vintage radio set: "Scan stations" plays random snippets (Discovery playback), "Skip station"
+# moves on, "Pick this station" locks onto the current song. The station is an endless MusicIP mix with the configured mix
 # parameters; the service plays it, tops it up from the last queued song and stops it on the
 # player's Stop.
 
@@ -4681,7 +4681,7 @@ def show_radio_mode_menu() -> None:
 
     if phase == "seeking":
         current = str(get_discovery_state().get("current_label") or "").strip()
-        title = f"Radio: tuning - {current}" if current else "Radio: tuning"
+        title = f"Radio: scanning - {current}" if current else "Radio: scanning"
     elif phase == "playing":
         current = str(state.get("current_label") or "").strip()
         title = f"Radio: {current}" if current else "Radio: playing"
@@ -4692,14 +4692,14 @@ def show_radio_mode_menu() -> None:
     xbmcplugin.setContent(HANDLE, "files")
 
     if phase == "seeking":
-        add_radio_action_item("Start radio", "radio_play")
-        add_radio_action_item("Next station", "radio_tune")
+        add_radio_action_item("Pick this station", "radio_play")
+        add_radio_action_item("Skip station", "radio_tune")
         add_radio_action_item("Stop radio", "radio_stop")
     elif phase == "playing":
-        add_radio_action_item("Change station", "radio_retune")
+        add_radio_action_item("Scan again", "radio_retune")
         add_radio_action_item("Stop radio", "radio_stop")
     else:
-        add_radio_action_item("Turn on radio", "radio_on")
+        add_radio_action_item("Scan stations", "radio_on")
 
     xbmcplugin.endOfDirectory(HANDLE, cacheToDisc=False)
 
@@ -4718,7 +4718,7 @@ def begin_radio_tuning() -> bool:
 
 def turn_radio_on() -> None:
     if begin_radio_tuning():
-        notify("Radio on. Tuning in.")
+        notify("Scanning stations.")
     replace_with_radio_mode_menu()
 
 
@@ -4728,7 +4728,7 @@ def change_radio_station() -> None:
         replace_with_radio_mode_menu()
         return
     if begin_radio_tuning():
-        notify("Changing station. Tuning in.")
+        notify("Scanning stations.")
     replace_with_radio_mode_menu()
 
 
@@ -4737,7 +4737,7 @@ def tune_radio() -> None:
         replace_with_radio_mode_menu()
         return
     if skip_discovery_song() is None:
-        notify("No next station buffered yet.", xbmcgui.NOTIFICATION_WARNING)
+        notify("No other station found yet. Try again in a moment.", xbmcgui.NOTIFICATION_WARNING)
     replace_with_radio_mode_menu()
 
 
@@ -4832,7 +4832,7 @@ def start_radio_station(seed: str) -> bool:
         return False
 
     log(f"Radio mode: started from {seed!r} with {len(tracks)} song(s).", xbmc.LOGINFO)
-    notify("Radio started.")
+    notify("Station picked.")
     return True
 
 
