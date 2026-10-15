@@ -308,13 +308,30 @@ class AssistTest(unittest.TestCase):
         self.assertEqual(result["chosen"], ["solo1"])
         self.assertEqual(systems, [checks.SEED_INTENT_PROMPT, checks.INTENT_PROMPT])
 
-    def test_a_radio_profile_drifts_towards_the_added_tracks(self):
+    def test_a_radio_profile_drifts_song_by_song(self):
         reference = vector(energy=2, sounding_year=1980)
+        # Half-life 1 song: each song pulls the profile half the way towards it; later songs count more.
         moved = assist.drift_reference(reference, [vector(energy=6, sounding_year=1990), None,
-                                                   vector(energy=8, sounding_year=2000)], 0.5)
-        self.assertEqual((moved["energy"], moved["sounding_year"]), (4.5, 1987.5))
+                                                   vector(energy=8, sounding_year=2000)], 1)
+        self.assertEqual((moved["energy"], moved["sounding_year"]), (6.0, 1992.5))
         self.assertEqual(moved["character"], "x")
         self.assertEqual(assist.drift_reference(reference, [vector(energy=9)], 0), reference)
+
+    def test_drift_does_not_depend_on_the_refill_size(self):
+        reference = vector(energy=0)
+        songs = [vector(energy=10)] * 60
+        one_batch = assist.drift_reference(reference, songs, 60)
+        in_batches = reference
+        for start in range(0, 60, 8):
+            in_batches = assist.drift_reference(in_batches, songs[start:start + 8], 60)
+        self.assertAlmostEqual(one_batch["energy"], 5.0)
+        self.assertAlmostEqual(in_batches["energy"], 5.0)
+
+    def test_bold_steps_also_take_borderline_songs(self):
+        borderline = {"relative": 1.0, "verdict": "borderline"}
+        self.assertFalse(assist.passes(borderline, 1.2))
+        self.assertTrue(assist.passes(borderline, 1.2, accept_borderline=True))
+        self.assertFalse(assist.passes({"relative": 1.0, "verdict": "outlier"}, 1.2, accept_borderline=True))
 
     def test_more_like_this_returns_the_ratings_it_used(self):
         result = assist.choose_additions("seed", ["cand1", "cand2", "cand3", "cand4"], 1, self.store, self.ask,
