@@ -172,19 +172,56 @@ class MixInfoTest(KodiTestCase):
         main.remember_mix_generation_parameters(SEED, 2, {"size": 2, "style_ui": 5, "rejectsize": 2})
         self.cache_path = self.save_mix([SEED, T1], size=2)
 
-    def test_info_dialog(self):
+    def test_info_window(self):
+        self.run_plugin(action="mix_info", cache_path=self.cache_path)
+        self.assertEqual(kodi.dialogs("textviewer"), [])
+        window = kodi.windows[0]
+        self.assertEqual(window.xml, ("script-musicip-info.xml", main.ADDON.getAddonInfo("path"), "Default", "1080i"))
+        properties = window.properties
+        self.assertTrue(properties["facts"].startswith("Created 20"))
+        self.assertIn("| 2 tracks |", properties["facts"])
+        tabs = [properties.get(f"tab{number}") for number in range(1, 7)]
+        self.assertEqual(tabs, ["Overview", "Sound", "Changes", "History", None, None])  # no course without ratings
+        self.assertEqual((window.focus, properties["tab"], properties["image"]), (201, "1", ""))
+        self.assertIn("[B]How it was made[/B]\nMusicIP: 2 tracks, variety 0, style 5/10, no artist repeat within 2 "
+                      "tracks, no filter", properties["text"])
+        self.assertIn("[B]Files[/B]\nNot checked yet", properties["text"])
+        window.onFocus(202)
+        self.assertEqual((properties["tab"], properties["image"]), ("2", ""))
+        self.assertIn("Not rated yet", properties["text"])
+        window.onFocus(203)
+        self.assertEqual(properties["text"], "AI Mix Assist hasn't checked this mix yet.")
+        window.onFocus(204)
+        self.assertEqual(properties["text"], main.mix_info_parts(self.cache_path)["history"])
+        window.onFocus(205)  # no such tab: stays
+        self.assertEqual(properties["tab"], "4")
+        window.onClick(204)  # on to the text, to scroll it
+        self.assertEqual(window.focus, main.INFO_TEXT_GROUP)
+
+    def test_without_the_window_the_text_viewer_shows_it_all(self):
+        kodi.window_error = "broken skin file"
         self.run_plugin(action="mix_info", cache_path=self.cache_path)
         heading, text = kodi.dialogs("textviewer")[0][1]
         self.assertEqual(heading, "MusicIP mix information")
-        self.assertEqual(kodi.dialogs("select"), [])  # one page, no list of pages
         self.assertIn("[B]How it was made[/B]", text)
         self.assertIn("MusicIP: 2 tracks, variety 0, style 5/10, no artist repeat within 2 tracks, no filter", text)
         self.assertIn("[B]Files[/B]\nNot checked yet", text)
 
+    def test_the_window_file_is_shipped(self):
+        import xml.etree.ElementTree as ET
+        skin = os.path.join(ADDON_DIR, "resources", "skins", "Default")
+        tree = ET.parse(os.path.join(skin, "1080i", main.INFO_WINDOW_XML))
+        ids = {int(control.get("id")) for control in tree.iter("control") if control.get("id")}
+        self.assertTrue(set(main.INFO_TAB_IDS) | {main.INFO_TEXT_GROUP} <= ids)
+        textures = {element.text for element in tree.iter() if element.text and element.text.endswith(".png")}
+        self.assertEqual(textures, {"musicip-white.png"})
+        self.assertTrue(os.path.isfile(os.path.join(skin, "media", "musicip-white.png")))
+        self.assertEqual(list(tree.iter("include")), [])  # a script window can't use the skin's includes
+
     def test_info_for_selected_item(self):
         kodi.info_labels["ListItem.Property(MusicIP.CachePath)"] = self.cache_path
         self.run_plugin(action="mix_info_selected")
-        self.assertEqual(len(kodi.dialogs("textviewer")), 1)
+        self.assertEqual(len(kodi.windows), 1)
 
     def test_nothing_selected(self):
         self.run_plugin(action="mix_info")

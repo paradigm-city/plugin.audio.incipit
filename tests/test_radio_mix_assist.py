@@ -193,35 +193,48 @@ class RadioMixAssistTest(RadioBase):
 
     def test_station_information_from_the_radio_screen(self):
         self.started_station()
+        self.run_plugin(action="radio_info")
+        window = kodi.windows[0]
+        properties = window.properties
+        self.assertEqual(properties["heading"], "Radio station")
+        self.assertTrue(properties["facts"].startswith("Picked song: "))
+        self.assertIn("| playing for 0 min", properties["facts"])
+        self.assertEqual([properties.get(f"tab{number}") for number in range(1, 6)],
+                         ["Overview", "What it is about", "Drift", "History (2)", None])
+        self.assertIn("AI Mix Assist: on", properties["text"])
+        window.onFocus(203)
+        self.assertTrue(os.path.isfile(properties["image"]))  # the start check measured the picked song
+        self.assertIn("Measured 1 time(s)", properties["text"])
+
+    def test_without_the_window_the_station_information_is_a_list_of_pages(self):
+        self.started_station()
+        kodi.window_error = "broken skin file"
         kodi.respond("select", 2, -1)  # Drift, then close
         self.run_plugin(action="radio_info")
         self.assertEqual(kodi.dialogs("select")[0][1], ("Radio station", ["Overview", "What it is about", "Drift",
-                                                                          "Drift chart", "History (2)"]))
+                                                                          "History (2)"]))
         self.assertEqual(kodi.dialogs("textviewer")[0][1][0], "Radio station: Drift")
 
     def test_the_drift_chart(self):
         self.started_station()
         self.finish_check()
-        self.tick()
-        kodi.respond("select", 3, 3, -1)  # Drift chart, again (a new image), then close
+        radio = self.tick()
+        texts = [text.text for text in main.drift_chart_texts(main.drift_chart_series(radio["events"]))]
+        for text in ("Energy", "5.0 -> 6.0 steady", "Sounding year", "1983 -> 1984", "0", "10"):
+            self.assertIn(text, texts)
+        self.assertTrue(any(text.endswith("| 2 measurements") for text in texts))
         self.run_plugin(action="radio_info")
-        self.assertEqual(len(kodi.windows), 2)
-        window = kodi.windows[-1]
-        labels = window.labels()
-        self.assertTrue(labels[0].startswith("Station drift: "))
-        self.assertIn("Energy", labels)
-        self.assertIn("5.0 -> 6.0 steady", labels)
-        self.assertIn("Sounding year", labels)
-        self.assertIn("1983 -> 1984", labels)
-        image = window.controls[0].filename
+        self.run_plugin(action="radio_info")  # a new image; the older one is gone
+        kodi.windows[-1].onFocus(203)
+        image = kodi.windows[-1].properties["image"]
         self.assertTrue(os.path.isfile(image))
-        self.assertEqual(os.listdir(os.path.dirname(image)), [os.path.basename(image)])  # the older one is gone
+        self.assertEqual(os.listdir(os.path.dirname(image)), [os.path.basename(image)])
 
     def test_the_drift_chart_needs_measurements(self):
         self.start()
-        main.show_radio_drift_chart()
-        self.assertEqual(kodi.windows, [])
-        self.assertIn("Drift is measured when", kodi.dialogs("ok")[0][1][1])
+        drift = main.radio_info_tabs(self.radio())[2]
+        self.assertEqual((drift["title"], drift.get("image")), ("Drift", None))
+        self.assertIn("Drift is measured when", drift["text"])
 
     def test_the_first_check_names_the_station(self):
         self.start_check.return_value = {"remove": [], "intent": "x", "reference": REFERENCE,

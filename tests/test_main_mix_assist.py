@@ -1,5 +1,6 @@
 """AI Mix Assist in the add-on: tidying up saved mixes from the context menu, undo, editing the intent."""
 
+import os
 import unittest
 from unittest import mock
 
@@ -245,6 +246,58 @@ class SavedMixMenuTest(MixAssistTestCase):
         self.assertIn("[B]How it sounds[/B]\nEnergy: 5.0 steady (range 2-8)", page)
         self.assertIn("Sounding year: 1985 (range 1982-1988)", page)
         self.assertIn("(ratings of 4 tracks, at the check on", page)
+        self.assertNotIn("changed since", page)
+
+    def test_a_check_stores_each_tracks_ratings_for_the_course(self):
+        result = plan(changes=[dict(REPLACE_DISCO, entry={"energy": 7, "sounding_year": 1990})], removed=[5])
+        for row, energy in zip(result["rows"], (2, 4, 9, 6, 8)):
+            row["entry"] = {"energy": energy, "sounding_year": 1980 + energy}
+        result["paths"] = [TRACKS[0], TRACKS[1], REPLACEMENT, TRACKS[3]]
+        self.tidy_up(result)
+        profile = self.section()["profile"]
+        energy, year = (main.mix_assist_dimensions.ALL_KEYS.index(key) for key in ("energy", "sounding_year"))
+        self.assertEqual([(row[energy], row[year]) for row in profile["course"]],
+                         [(2, 1982), (4, 1984), (7, 1990), (6, 1986)])  # the replacement's own, the removed one gone
+        self.assertEqual(profile["tracks_key"], main.mix_tracks_key(result["paths"]))
+        main.save_mix_by_cache_path(self.cache_path, result["paths"][:3])
+        self.assertIn("; the mix has changed since)", main.build_mix_info_page(self.cache_path))
+
+    def test_the_window_shows_the_sound_and_the_course_as_charts(self):
+        result = plan(changes=[REPLACE_DISCO])
+        for row, energy in zip(result["rows"], (2, 4, 9, 6, 8)):
+            row["entry"] = {"energy": energy, "exploration": 5, "sounding_year": 1980 + energy}
+        self.tidy_up(result)
+        self.run_plugin(action="mix_info", cache_path=self.cache_path)
+        window = kodi.windows[-1]
+        titles = [window.properties.get(f"tab{number}") for number in range(1, 6)]
+        self.assertEqual(titles, ["Overview", "Sound", "Course", "Changes", "History"])
+        self.assertIn("[B]What it is about[/B]\ndark, abstract, instrumental", window.properties["text"])
+        window.onFocus(202)
+        sound = window.properties["image"]
+        self.assertTrue(sound.endswith(".png") and os.path.isfile(sound))
+        self.assertIn("Energy: 5.0 steady (range 2-8)", window.properties["text"])  # no font here: as text
+        window.onFocus(203)
+        self.assertTrue(os.path.isfile(window.properties["image"]))
+        self.assertIn("in the mix's order", window.properties["text"])
+        window.onFocus(204)
+        self.assertEqual(window.properties["image"], "")
+        self.assertIn("[B]Last tidy-up[/B]\nwilfried - fire walk -> Medeski Martin & Wood - Think", window.properties["text"])
+        self.run_plugin(action="mix_info", cache_path=self.cache_path)  # a new chart; the older one is gone
+        charts = os.listdir(os.path.dirname(sound))
+        self.assertEqual(sorted(name.split("_")[0] for name in charts), ["course", "sound"])
+        self.assertNotIn(os.path.basename(sound), charts)
+
+    def test_with_a_font_the_charts_carry_their_text(self):
+        result = plan()
+        for row in result["rows"]:
+            row["entry"] = {"energy": 5, "sounding_year": 1980}
+        self.tidy_up(result)
+        with mock.patch.object(main.mix_assist_chart, "can_draw_text", return_value=True):
+            self.run_plugin(action="mix_info", cache_path=self.cache_path)
+        window = kodi.windows[-1]
+        window.onFocus(202)
+        self.assertNotIn("Energy: 5.0", window.properties["text"])
+        self.assertIn("the bar is the mix's range, the dot its average", window.properties["text"])
 
     def test_without_a_check_the_page_has_no_ratings(self):
         self.assertNotIn("range", main.build_mix_info_page(self.cache_path))

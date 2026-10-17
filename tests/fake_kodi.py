@@ -247,7 +247,8 @@ class KodiState:
         self.media_files = set()
         self.media_entries = {}  # media_key -> (original path, is_folder), for listdir()
         self.playlist = []
-        self.windows = []  # WindowDialogs shown with doModal()
+        self.windows = []  # windows shown with doModal()
+        self.window_error = ""  # set: a window can't be created (its XML is broken)
         self.player = PlayerState()
         self.sleeps = 0
         self.abort_after_waits = 1
@@ -600,37 +601,34 @@ class DialogProgressBG:
         kodi.dialog_calls.append(("progress.close", (), {}))
 
 
-class ControlImage:
-    def __init__(self, x, y, width, height, filename, aspectRatio=0, colorDiffuse=None):
-        self.position, self.filename = (x, y, width, height), filename
+class WindowXMLDialog:
+    """A window from a skin XML file. doModal() runs onInit and returns at once (as if closed); the window is
+    recorded in kodi.windows with its properties and focus, so a test can move between its controls."""
 
+    def __init__(self, xmlFilename, scriptPath, defaultSkin="Default", defaultRes="720p", isMedia=False):
+        self.xml = (xmlFilename, scriptPath, defaultSkin, defaultRes)
+        self.properties, self.focus = {}, None
+        if kodi.window_error:
+            raise RuntimeError(kodi.window_error)
 
-class ControlLabel:
-    def __init__(self, x, y, width, height, label, font=None, textColor=None, disabledColor=None, alignment=0,
-                 hasPath=False, angle=0):
-        self.position, self.label, self.textColor, self.alignment = (x, y, width, height), label, textColor, alignment
+    def setProperty(self, key, value):
+        self.properties[key] = value
 
-    def getLabel(self):
-        return self.label
+    def getProperty(self, key):
+        return self.properties.get(key, "")
 
-
-class WindowDialog:
-    """Records its controls; doModal() returns at once (as if closed) and is recorded in kodi.windows."""
-
-    def __init__(self):
-        self.controls = []
-
-    def addControl(self, control):
-        self.controls.append(control)
+    def setFocusId(self, control_id):
+        self.focus = control_id
 
     def doModal(self):
         kodi.windows.append(self)
+        self.onInit()
+
+    def onInit(self):
+        pass
 
     def close(self):
         pass
-
-    def labels(self):
-        return [control.label for control in self.controls if isinstance(control, ControlLabel)]
 
 
 class Keyboard:
@@ -766,7 +764,7 @@ def install():
 
     xbmcgui = types.ModuleType("xbmcgui")
     xbmcgui.ListItem, xbmcgui.Dialog, xbmcgui.DialogProgressBG = ListItem, Dialog, DialogProgressBG
-    xbmcgui.WindowDialog, xbmcgui.ControlImage, xbmcgui.ControlLabel = WindowDialog, ControlImage, ControlLabel
+    xbmcgui.WindowXMLDialog = WindowXMLDialog
     xbmcgui.NOTIFICATION_INFO = NOTIFICATION_INFO
     xbmcgui.NOTIFICATION_WARNING = NOTIFICATION_WARNING
     xbmcgui.NOTIFICATION_ERROR = NOTIFICATION_ERROR
