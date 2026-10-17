@@ -4073,7 +4073,7 @@ def get_kodi_music_track_template() -> str:
         value = get_kodi_setting_value_safe(setting_id)
         if isinstance(value, str) and "%" in value:
             KODI_MUSIC_TRACK_TEMPLATE_CACHE = value
-            log(f"Using Kodi music track template from {setting_id!r}: {value!r}", xbmc.LOGINFO)
+            log(f"Using Kodi music track template from {setting_id!r}: {value!r}", xbmc.LOGDEBUG)
             return value
 
     KODI_MUSIC_TRACK_TEMPLATE_CACHE = KODI_MUSIC_TRACK_TEMPLATE_FALLBACK
