@@ -524,7 +524,7 @@ def confirm_mix_generation(params: dict) -> dict | None:
             f"Variety: {int(current.get('variety') or 0)}",
             f"Filter: {filter_value}",
             f"Artist repeat: {reject_label}",
-        ]
+        ] + mix_assist_dialog_lines(current)
 
         choice = xbmcgui.Dialog().select(
             "Generate MusicIP mix",
@@ -535,6 +535,9 @@ def confirm_mix_generation(params: dict) -> dict | None:
             return None
         if choice == 0:
             return normalize_mix_parameters(current)
+        if choice >= MIX_ASSIST_DIALOG_FIRST:
+            current = edit_mix_assist_dialog_choice(current, choice - MIX_ASSIST_DIALOG_FIRST)
+            continue
 
         current = edit_mix_generation_parameter(current, choice)
 
@@ -2505,6 +2508,7 @@ def fetch_mix_confirmed(seed_song: str, size: int) -> list[str]:
         raise MusicIPError("Mix generation cancelled.")
 
     remember_mix_generation_parameters(seed_song, size, params)
+    remember_mix_assist_choices(mix_cache_path(seed_song, size), params)
     with BackgroundProgress("Creating a MusicIP mix") as progress:
         return fetch_mix(seed_song, int(params.get("size") or size), mix_params=params, progress=progress)
 
@@ -2735,7 +2739,8 @@ def insert_more_like_this_into_mix(seed: str, size: int, index: int, path: str, 
         raise MusicIPError("Could not locate the selected track in the source mix.")
 
     target_count = get_more_like_this_target_size()
-    checking = mix_assist_for_more_like_this()
+    checking = mix_assist_for_more_like_this() and \
+        mix_openness_index(get_saved_mix_metadata(target_cache_path, source_tracks)) != MIX_OPENNESS_OFF
     request_size = mix_assist.MUSICIP_MAX_MIX if checking else get_playlist_size()
     submix_tracks = fetch_mix_with_defaults(path, request_size, progress=progress)
     existing = {
@@ -4471,10 +4476,7 @@ def add_saved_mix_item(cache_path: str) -> None:
                 repair_readiness_action_label(repair_readiness),
                 build_update_library_before_repair_action(cache_path),
             ))
-    context_items.append(("Tidy up with AI Mix Assist", build_mix_assist_action("mix_assist_tidy_up", cache_path)))
-    context_items.append(("Edit what this mix is about", build_mix_assist_action("mix_assist_edit_intent", cache_path)))
-    if get_mix_assist_section(meta).get("previous_tracks"):
-        context_items.append(("Undo AI Mix Assist changes", build_mix_assist_action("mix_assist_undo", cache_path)))
+    context_items.append(("AI Mix Assist…", build_mix_assist_action("mix_assist_menu", cache_path)))
     context_items.append(("Cleanup this mix", build_cleanup_saved_mix_action(cache_path)))
     list_item.addContextMenuItems(context_items)
 
@@ -5511,7 +5513,16 @@ def format_history_intent_edited(event: dict) -> list[str]:
     return [f"You described the mix: \"{text}\""] if text else ["You removed your description; the AI's is used again"]
 
 
+def format_history_assist_settings(event: dict) -> list[str]:
+    parts = [f"openness {event['openness']}"] if event.get("openness") else []
+    if event.get("intent"):
+        parts.append(f"about \"{event['intent']}\"")
+    who = "When you created the mix, you set AI Mix Assist to" if event.get("at_creation") else "You set AI Mix Assist to"
+    return [f"{who} {'; '.join(parts)}"]
+
+
 MIX_HISTORY_FORMATTERS = {
+    "assist_settings": format_history_assist_settings,
     "ai_tidy_up": format_history_ai_tidy_up,
     "ai_undone": format_history_ai_undone,
     "intent_edited": format_history_intent_edited,
@@ -5908,12 +5919,12 @@ def compute_mix_assist_plan(tracks: list[str], meta: dict, progress=None, find_r
             resolve=lambda paths: mix_assist_library.resolve(paths, execute_jsonrpc, recorded),
             fetch_mix=mix_assist_fetcher(),
             intent=str(section.get("listener_intent") or ""),
-            strictness=get_mix_assist_strictness()[0],
+            strictness=mix_strictness_for(meta)[0],
             artist_window=get_mix_reject_size() or mix_assist.ARTIST_WINDOW,
             model=mix_assist_claude.DEFAULT_MODEL,
             progress=progress,
             find_replacements=find_replacements,
-            accept_borderline=get_mix_assist_strictness()[1],
+            accept_borderline=mix_strictness_for(meta)[1],
         )
     finally:
         store.close()
@@ -6021,6 +6032,8 @@ def build_mix_assist_info_lines(meta: dict) -> list[str]:
     """The AI Mix Assist page of the mix information."""
     section = get_mix_assist_section(meta)
     lines = []
+    if mix_openness_index(meta) == MIX_OPENNESS_OFF:
+        lines += ["AI Mix Assist is off for this mix: no automatic checks.", ""]
     intent = section.get("listener_intent") or section.get("intent")
     if intent:
         source = "in your words" if section.get("listener_intent") else "as the AI put it"
@@ -6035,8 +6048,11 @@ def build_mix_assist_info_lines(meta: dict) -> list[str]:
         lines += [f"Removed: {label}" for label in removed]
     elif section.get("checked_ts"):
         lines.append("Every track fitted.")
-    lines += ["", "Context menu of the mix: \"Edit what this mix is about\" to put it in your own words, "
-              "\"Undo AI Mix Assist changes\" to restore the mix. All changes are in the History page."]
+    index = mix_openness_index(meta)
+    lines.append(f"Openness: {mix_openness_label(index)}"
+                 + (" (chosen for this mix)" if "openness" in section else " (the default)"))
+    lines += ["", "Context menu of the mix → \"AI Mix Assist…\": change what the mix is about or its openness, "
+              "tidy it up, or undo the changes. All changes are in the History page."]
     return lines
 
 
@@ -6082,11 +6098,11 @@ def check_more_like_this(cache_path: str, tracks: list[str], selected: int, cand
                 tracks[selected], candidates, count, store, ask,
                 resolve=lambda paths: mix_assist_library.resolve(paths, execute_jsonrpc, mix_assist_track_metadata(meta)),
                 neighbours=tracks[max(0, selected + 1 - window):selected] + tracks[selected + 1:selected + 1 + window],
-                strictness=get_mix_assist_strictness()[0],
+                strictness=mix_strictness_for(meta)[0],
                 artist_window=window,
                 model=mix_assist_claude.DEFAULT_MODEL,
                 progress=mix_assist_step_reporter(progress, MORE_LIKE_THIS_STEPS, start=60),
-                accept_borderline=get_mix_assist_strictness()[1],
+                accept_borderline=mix_strictness_for(meta)[1],
             )
         finally:
             store.close()
@@ -6095,13 +6111,147 @@ def check_more_like_this(cache_path: str, tracks: list[str], selected: int, cand
         return None
 
 
+# --- AI Mix Assist per mix: openness and description, chosen in the generate dialog or later -------------
+
+MIX_OPENNESS_OFF = -1
+MIX_OPENNESS_LABELS = ("Focused", "Close", "Balanced", "Open", "Adventurous")
+MIX_ASSIST_DIALOG_FIRST = 6  # the generate dialog's lines for AI Mix Assist follow the six MusicIP lines
+PENDING_MIX_ASSIST_CHOICES: dict[str, dict] = {}  # cache path -> choices made in the dialog, until the mix is saved
+
+
+def mix_openness_label(index: int) -> str:
+    if index == MIX_OPENNESS_OFF:
+        return "Off"
+    return MIX_OPENNESS_LABELS[max(0, min(len(MIX_OPENNESS_LABELS) - 1, index))]
+
+
+def default_mix_openness() -> int:
+    return max(0, min(len(MIX_OPENNESS_LABELS) - 1, get_setting_int("mix_assist_mix_strictness", 2)))
+
+
+def mix_openness_index(meta: dict) -> int:
+    """This mix's openness: its own choice, else the "Mix openness" setting. MIX_OPENNESS_OFF: no automatic checks."""
+    section = get_mix_assist_section(meta)
+    try:
+        index = int(section["openness"])
+    except (KeyError, TypeError, ValueError):
+        return default_mix_openness()
+    return index if index == MIX_OPENNESS_OFF else max(0, min(len(MIX_OPENNESS_LABELS) - 1, index))
+
+
+def mix_strictness_for(meta: dict) -> tuple[float, bool]:
+    """(limit, accept borderline) for a mix; when it is off, a tidy-up you start uses the default level."""
+    index = mix_openness_index(meta)
+    return strictness_level(default_mix_openness() if index == MIX_OPENNESS_OFF else index)
+
+
+def mix_assist_dialog_lines(params: dict) -> list[str]:
+    openness = int(params.get("assist_openness", default_mix_openness()))
+    intent = str(params.get("assist_intent") or "").strip()
+    return [f"AI Mix Assist: {mix_openness_label(openness)}",
+            f"What this mix is about: {shorten(intent, 50) if intent else '<worked out by the AI>'}"]
+
+
+def shorten(text: str, length: int) -> str:
+    return text if len(text) <= length else text[:length - 1].rstrip() + "…"
+
+
+def edit_mix_assist_dialog_choice(params: dict, line: int) -> dict:
+    updated = dict(params)
+    if line == 0:
+        current = int(updated.get("assist_openness", default_mix_openness()))
+        choice = select_mix_openness("AI Mix Assist for this mix", current)
+        if choice is not None:
+            updated["assist_openness"] = choice
+    else:
+        value = ask_text("What is this mix about?", str(updated.get("assist_intent") or ""))
+        if value is not None:
+            updated["assist_intent"] = value.strip()
+    return updated
+
+
+def select_mix_openness(heading: str, current: int) -> int | None:
+    """Off or one of the openness levels; None when cancelled."""
+    options = [MIX_OPENNESS_OFF] + list(range(len(MIX_OPENNESS_LABELS)))
+    labels = ["Off: no automatic checks"] + [
+        label + (" (default)" if index == default_mix_openness() else "") for index, label in enumerate(MIX_OPENNESS_LABELS)]
+    choice = xbmcgui.Dialog().select(heading, labels, preselect=options.index(current) if current in options else 0)
+    if choice is None or choice < 0:
+        return None
+    return options[choice]
+
+
+def remember_mix_assist_choices(cache_path: str, params: dict) -> None:
+    """Keep the dialog's AI Mix Assist choices until the new mix is saved (queue_mix_assist_for_new_mix)."""
+    choices = {}
+    if "assist_openness" in params and int(params["assist_openness"]) != default_mix_openness():
+        choices["openness"] = int(params["assist_openness"])
+    if str(params.get("assist_intent") or "").strip():
+        choices["listener_intent"] = str(params["assist_intent"]).strip()
+    if choices:
+        PENDING_MIX_ASSIST_CHOICES[cache_path] = choices
+    else:
+        PENDING_MIX_ASSIST_CHOICES.pop(cache_path, None)
+
+
+def apply_mix_assist_choices(cache_path: str, tracks: list[str]) -> None:
+    choices = PENDING_MIX_ASSIST_CHOICES.pop(cache_path, None)
+    if not choices:
+        return
+    meta = get_saved_mix_metadata(cache_path, tracks)
+    section = get_mix_assist_section(meta)
+    section.update(choices)
+    meta[MIX_ASSIST_SECTION] = section
+    save_json_file(mix_meta_path_from_cache_path(cache_path), meta)
+    record_mix_history(cache_path, "assist_settings", at_creation=True,
+                       openness=mix_openness_label(choices["openness"]) if "openness" in choices else "",
+                       intent=choices.get("listener_intent", ""))
+
+
+def choose_from_mix_assist_menu(cache_path: str) -> str:
+    """The context menu entry "AI Mix Assist…": returns the action picked, "" when cancelled."""
+    meta = get_saved_mix_metadata(cache_path, load_mix_by_cache_path(cache_path))
+    section = get_mix_assist_section(meta)
+    intent = str(section.get("listener_intent") or section.get("intent") or "")
+    entries = [
+        (f"What this mix is about: {shorten(intent, 50) if intent else '<not worked out yet>'}", "mix_assist_edit_intent"),
+        (f"Openness: {mix_openness_label(mix_openness_index(meta))}", "mix_assist_openness"),
+        ("Tidy up now", "mix_assist_tidy_up"),
+    ]
+    if section.get("previous_tracks"):
+        entries.append(("Undo the AI Mix Assist changes", "mix_assist_undo"))
+    choice = xbmcgui.Dialog().select("AI Mix Assist", [label for label, _action in entries])
+    if choice is None or choice < 0 or choice >= len(entries):
+        return ""
+    return entries[choice][1]
+
+
+def choose_mix_openness(cache_path: str) -> bool:
+    meta = get_saved_mix_metadata(cache_path, load_mix_by_cache_path(cache_path))
+    current = mix_openness_index(meta)
+    choice = select_mix_openness("Openness of this mix", current)
+    if choice is None or choice == current:
+        return False
+    section = get_mix_assist_section(meta)
+    section["openness"] = choice
+    meta[MIX_ASSIST_SECTION] = section
+    save_json_file(mix_meta_path_from_cache_path(cache_path), meta)
+    record_mix_history(cache_path, "assist_settings", openness=mix_openness_label(choice))
+    return True
+
+
 def mix_assist_queue_path() -> str:
     return os.path.join(get_profile_dir(), "mixassist", "queue.json")
 
 
 def queue_mix_assist_for_new_mix(cache_path: str, tracks: list[str]) -> None:
-    """Ask the service to tidy up a mix that was just created (unless switched off)."""
+    """Ask the service to tidy up a mix that was just created (unless switched off, globally or for this mix).
+    The AI Mix Assist choices made in the generate dialog are stored with the mix first."""
+    apply_mix_assist_choices(cache_path, tracks)
     if not mix_assist_for_new_mixes() or len(tracks) < 2:
+        return
+    if mix_openness_index(get_saved_mix_metadata(cache_path, tracks)) == MIX_OPENNESS_OFF:
+        log_info(f"AI Mix Assist: off for {cache_path!r}; not queued.")
         return
     try:
         queue = [entry for entry in load_json_file(mix_assist_queue_path()).get("entries", [])
@@ -6442,13 +6592,20 @@ def router() -> None:
         xbmc.executebuiltin("Container.Refresh")
         return
 
-    if action in ("mix_assist_tidy_up", "mix_assist_undo", "mix_assist_edit_intent"):
+    if action in ("mix_assist_menu", "mix_assist_tidy_up", "mix_assist_undo", "mix_assist_edit_intent"):
         cache_path = params.get("cache_path", "").strip()
         if not cache_path:
             notify("No saved mix was selected.", xbmcgui.NOTIFICATION_ERROR)
             return
+        if action == "mix_assist_menu":
+            action = choose_from_mix_assist_menu(cache_path)
+            if not action:
+                return
         try:
-            if action == "mix_assist_tidy_up":
+            if action == "mix_assist_openness":
+                if choose_mix_openness(cache_path):
+                    notify("Saved. AI Mix Assist uses it for this mix from now on.")
+            elif action == "mix_assist_tidy_up":
                 notify(mix_assist_result_message(run_mix_assist_on_saved_mix(cache_path)))
             elif action == "mix_assist_undo":
                 undo_mix_assist_on_saved_mix(cache_path)
