@@ -213,6 +213,8 @@ def tidy_up(paths: Sequence[str], cache: RatingCache, ask: Ask, resolve: Resolve
         return result
 
     def evaluate(candidate_paths: List[str]) -> Dict[str, dict]:
+        # Gaps that share a submix share its tracks: each candidate is rated and judged once.
+        candidate_paths = list(dict.fromkeys(candidate_paths))
         if not candidate_paths:
             return {}
         step("Checking the replacements")
