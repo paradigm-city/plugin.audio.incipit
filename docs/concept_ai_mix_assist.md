@@ -154,7 +154,7 @@ The subscription route must not pass `ANTHROPIC_API_KEY` to the CLI, or the call
 | **Vector misfit** | rating cache | arithmetic only |
 | **Seed-intent check** | an AI call: it first states the seed's intent as 5–8 musical qualities (not instrumentation or scene), then judges each track against it, with the rest of the mix as context only | one call per mix |
 
-- **Flagged:** one signal reports an outlier. The track is shown, not changed.
+- **Flagged:** one signal reports an outlier. The track stays and nothing is shown; it is not used as a submix seed, and a new track in this state is not added. (Showing flagged tracks for the listener to decide was dropped with "Show only" on 2026-10-15: tidy-ups act on their own, the history and Undo show what they did.)
 - **Clearly inconsistent:** both signals agree. Such tracks are replaced during refinement without asking, also when they are **guessed units** (rated from hints alone).
 
 For a guessed unit the two signals are not independent: the seed-intent check reads the description written in the same rating. The decision is deliberate (principle 3): both guessed outliers in the first mix were right, and a wrong removal is cheap.
@@ -211,7 +211,7 @@ Replacing an outlier works like "More like this": a **submix** is created and in
 ### Undo and decisions
 
 - The sidecar keeps the track list before each change, so refinement and style checks can be undone.
-- In a style check, "keep" is remembered: the track is not flagged again in that mix.
+- Decisions per track (replace, remove, keep) were planned for a style check where the listener decides; that check was not built. Tidy-ups decide on their own; the history records what they did and why.
 - All decisions (replace, remove, keep) are recorded. Over time they show which dimensions and thresholds match the listener's ears.
 
 ### Relation to repair and "Less like this"

@@ -8,7 +8,7 @@ Terms used in [concept_ai_mix_assist.md](concept_ai_mix_assist.md) and in the pi
 |---|---|
 | **AI Mix Assist** | the feature as a whole; developed as *style consistency* |
 | "Keep … on track" (automatic) | refinement |
-| "Tidy up with AI Mix Assist" (context menu) | style check |
+| "AI Mix Assist..." > "Tidy up now" (context menu) | tidy-up (on demand) |
 | "What this mix is about" | seed intent |
 | "didn't fit" | clearly inconsistent |
 
@@ -72,7 +72,7 @@ Terms used in [concept_ai_mix_assist.md](concept_ai_mix_assist.md) and in the pi
 | **Seed-intent check** | An AI call that first states the seed's intent as 5–8 musical qualities (not instrumentation, scene or production details) and then judges every track against it: fits, borderline or outlier, with a reason. The rest of the mix is context only. | "holistic check" (its general name), "AI teacher" |
 | **Seed intent** | The intent stated by the seed-intent check, e.g. "Freely improvised, open-ended structure; … abstract and instrumental rather than song-like …". | "mix character" (that was the earlier check against the mix as a whole) |
 | **Outlier** | A track whose relative misfit exceeds the strictness, or that the seed-intent check calls an outlier. | |
-| **Flagged** | Shown as a possible outlier. One signal is enough. | |
+| **Flagged** | Internal status: one signal reports an outlier. The track stays; it is not used as a submix seed, and a new track in this state is not added. Not shown to the listener. | |
 | **Clearly inconsistent** | Both signals agree. Replaced without asking during refinement, guessed units included. | |
 | **Agreement** | How well the vector misfit ranks tracks like the seed-intent check or the user (AUC: 1.0 perfect, 0.5 chance). Used to choose and compare dimension sets. | "agreement score" |
 
@@ -95,7 +95,7 @@ Terms used in [concept_ai_mix_assist.md](concept_ai_mix_assist.md) and in the pi
 | Term | Meaning | Retired or ambiguous words |
 |---|---|---|
 | **Refinement** | A style-based change made **while a mix is being created**: in the background for new mixes and Radio's first refill, before queueing for later refills. Patches the playlist and the saved mix, notifies, and can be undone. | "style repair", "filter" |
-| **Style check** | The **on-demand** check of a saved mix: shows flagged tracks with reasons and candidates; the user decides per track. | "repair" |
+| **Style check** | Planned on-demand check of a saved mix that would show flagged tracks for the listener to decide. Not built: the on-demand action is the tidy-up ("Tidy up now"), with Undo and the history. | "repair" |
 | **Repair** | **Only** the existing recovery of moved or deleted files. | |
 | **Over-fetch** | Requesting more tracks from MusicIP than the mix needs (e.g. 3×), so there is a choice. | |
 | **Submix** | A small MusicIP mix created to replace an outlier, as in "More like this". It goes through the same consistency mechanisms as the master mix, measured against the master seed. | |
@@ -104,7 +104,7 @@ Terms used in [concept_ai_mix_assist.md](concept_ai_mix_assist.md) and in the pi
 | **Artist window** | The add-on's "Do not repeat artist within this many tracks" (5); replacements respect it, with artist names compared loosely. | |
 | **Rebuild** | When much of a mix fails the seed's intent, fetching a new, larger selection instead of patching track by track. | |
 | **Protected zone** | The playing track and the next one; refinement never changes them. | |
-| **Decision record** | The user's choices in a style check (replace, remove, keep). Kept tracks are not flagged again in that mix; the decisions serve as labels for calibration. | "labels", "feedback" |
+| **Decision record** | Planned: the listener's choices per track in a style check, as labels for calibration. Not built (no style check). | |
 
 ## Pilot (`tools/style_pilot`)
 
