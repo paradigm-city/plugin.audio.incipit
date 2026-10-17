@@ -353,8 +353,9 @@ Tested from Kodi 21's Python (3.8.15) on Windows, inside the running add-on:
 
 ## Next steps
 
-1. **Fix F12 in the add-on** (seed paths must be sent as cp1252), so every track can seed a mix or submix.
-2. **Rebuild instead of patch:** a dry run for mixes where much fails (the first mix: 14 outliers and 19 flagged tracks of 49), after MusicIP has rescanned the moved files.
-3. **Calibrate** slider labels by library percentiles.
-4. **Decide the description length** (15 words now; about 40 would keep later context features possible without re-rating).
-5. **Then the add-on:** rating cache and routes in the service, style check for saved mixes, refinement for new mixes and Radio.
+Updated 2026-10-17. Done since the pilot: F12, the add-on (cache, CLI route, checks for saved mixes, new mixes, "More like this" and Radio), naming, the single-dimension rule. Open:
+
+1. **Rebuild instead of patch:** the plan already marks mixes where more than a third fails (`rebuild_suggested`), but nothing acts on it yet.
+2. **Description length:** 15 words now; about 40 would keep later context features possible without re-rating.
+3. **Slider labels by library percentiles:** only needed for the advanced sliders, which are not built.
+4. The ideas under *Deferred*, and the known gaps (acoustic vs. electric sound, sub-genres).
