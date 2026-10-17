@@ -56,6 +56,12 @@ Found on 2026-10-11 while removing the Discovery command channel (F6). They are 
 
 ## Resolved
 
+### F19 · AI Mix Assist judged replacement candidates several times
+
+Found by the user on 2026-10-17: tidying up a new 40-track mix showed "asking the AI about 300 tracks". The mix had 7 gaps; gaps that share a submix seed share one larger submix (F16), but the shared list was added to the round's candidates once per gap. Rating was not affected (each album is rated once), but the AI's judging call got the same tracks two or three times: slower and costlier, with the same result.
+
+Fixed in 982a7a6 (2026-10-17): the candidates are deduplicated. `test_mixassist_tidy_up.AssistTest.test_gaps_sharing_a_submix_seed_share_one_larger_submix` counts the tracks the AI judges.
+
 ### F18 · Radio songs were labelled "(Unknown Artist)"
 
 Found by the user on 2026-10-15: a new station's playlist showed many songs as "(Unknown Artist) - <file name>". Starting a station and topping it up built the labels from the metadata cache only (`allow_live_lookup=False`), and a station's songs are mostly new to that cache. A Radio test even expected the unknown artist.

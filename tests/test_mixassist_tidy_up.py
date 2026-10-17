@@ -265,8 +265,17 @@ class AssistTest(unittest.TestCase):
             requests.append((seed, size))
             return [seed, "candbad", "cand1", "cand2", "cand3"] if seed == "fit4" else [seed]
 
-        plan = assist.tidy_up(paths, self.store, self.ask, self.resolve, fetch_mix, artist_window=0)
+        judged = []
+
+        def ask(system, schema, message):
+            if system is checks.INTENT_PROMPT:
+                judged.append([line for line in message.splitlines() if line[:1].isdigit()])
+            return self.ask(system, schema, message)
+
+        plan = assist.tidy_up(paths, self.store, ask, self.resolve, fetch_mix, artist_window=0)
         self.assertEqual(requests, [("fit4", assist.MUSICIP_MAX_MIX), ("seed", assist.MUSICIP_MAX_MIX)])
+        self.assertEqual(len(judged), 1)
+        self.assertEqual(len(judged[0]), 4)  # candbad, cand1-3: once each, although two gaps share the submix
         self.assertEqual(sorted(change["old"] for change in plan["changes"]), ["bad1", "bad2"])
         self.assertEqual({change["source"] for change in plan["changes"]}, {"submix"})
         self.assertEqual(len(plan["paths"]), len(paths))
