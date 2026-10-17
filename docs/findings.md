@@ -29,6 +29,8 @@ The add-on can't check whether Kodi still waits for a listing. The 2026-10-17 cr
 
 `test_radio_mode.StartFromAnySongTest.test_new_station_is_not_mistaken_for_other_playback` failed once on 2026-10-15 during a full test run (`stop_reason` was `''` instead of `external_playback`) and passed in the next 10 runs, alone and in the full suite. It failed once more later the same day (1 of about 20 full runs). The test uses the fake clock, so the cause is probably state left behind by another test (a background thread or the fake MusicIP server) rather than real time. Not reproduced yet.
 
+Mitigated in 6f6ba14 (2026-10-17), not fixed (the fault is in Kodi): listings are handed to Kodi in one call (`addDirectoryItems`), and screen redraws from the background (the service, AI Mix Assist's tidy-up) wait while Kodi is loading a list (`Container.IsUpdating`, busy dialog). If it happens again, the next step is the one above: generate mixes outside a listing.
+
 ### F3 · "Unknown date" is listed first among recent mix dates
 
 `group_saved_mixes_by_date()` in `main.py` gives "Unknown date" a sort key meant to put it last, but then sorts with `reverse=True`, so it comes first. This only affects mixes whose save time can't be read.
