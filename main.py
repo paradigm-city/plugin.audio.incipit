@@ -30,6 +30,7 @@ import xbmcvfs
 from mixassist import assist as mix_assist
 from mixassist import dimensions as mix_assist_dimensions
 from mixassist import cache as mix_assist_cache
+from mixassist import chart as mix_assist_chart
 from mixassist import claude as mix_assist_claude
 from mixassist import library as mix_assist_library
 
@@ -5667,11 +5668,14 @@ def show_info_pages(heading: str, pages: list[tuple[str, str]]) -> None:
         choice = xbmcgui.Dialog().select(heading, [title for title, _text in pages], preselect=choice)
         if choice is None or choice < 0 or choice >= len(pages):
             return
-        title, text = pages[choice]
+        title, page = pages[choice]
+        if callable(page):  # a page of its own, e.g. a chart window
+            page()
+            continue
         try:
-            xbmcgui.Dialog().textviewer(f"{heading}: {title}", text)
+            xbmcgui.Dialog().textviewer(f"{heading}: {title}", page)
         except Exception:
-            xbmcgui.Dialog().ok(f"{heading}: {title}", text)
+            xbmcgui.Dialog().ok(f"{heading}: {title}", page)
 
 
 def selected_mix_cache_path() -> str:
@@ -6475,6 +6479,7 @@ def radio_info_pages(state: dict) -> list[tuple[str, str]]:
         ("Overview", build_radio_overview(state, events)),
         ("What it is about", build_radio_about(events)),
         ("Drift", build_radio_drift(events)),
+        ("Drift chart", show_radio_drift_chart),
         (f"History ({len(events)})", build_radio_history(events)),
     ]
 
@@ -6536,10 +6541,15 @@ def dimension_value_text(key: str, value: float) -> str:
     return f"{value:.1f} {dimension.labels[max(0, min(4, int(round(value / 2.5))))]}"
 
 
+def radio_profiles(events: list[dict]) -> list[tuple[int, dict]]:
+    """The station's profile at each measurement: (time, profile), oldest first."""
+    return [(int(event.get("ts") or 0), event["profile"]) for event in events
+            if isinstance(event.get("profile"), dict) and event.get("kind") in ("start_check", "refill", "profile")]
+
+
 def build_radio_drift(events: list[dict]) -> str:
     """The station's profile over time: where it started (the picked song), where it is, the course between."""
-    profiles = [(event.get("ts"), event["profile"]) for event in events
-                if isinstance(event.get("profile"), dict) and event.get("kind") in ("start_check", "refill", "profile")]
+    profiles = radio_profiles(events)
     if not profiles:
         return "Drift is measured when AI Mix Assist checks the station's songs."
     first, last = profiles[0][1], profiles[-1][1]
@@ -6562,6 +6572,125 @@ def build_radio_drift(events: list[dict]) -> str:
     lines.insert(3, ("Moved most: " + ", ".join(moved)) if moved else "The station has stayed close to the picked song.")
     lines.insert(4, "")
     return "\n".join(lines)
+
+
+# The drift chart: one line per dimension; the seven scales share the left axis (0-10), the sounding year has
+# its own on the right. Kodi draws the text, mixassist.chart the panel and lines (window coordinates: 1280 x 720).
+DRIFT_COLORS = ("#E45756", "#4C9BE8", "#F2C14E", "#59C27A", "#B07AE8", "#F28E2B", "#4FD1C5", "#DADADA")
+CHART_PANEL = (90, 40, 1100, 640)  # x, y, width, height of the chart window
+CHART_PLOT = (70, 90, 730, 570)  # left, top, right, bottom of the plot inside the panel
+
+
+def drift_chart_series(events: list[dict]) -> dict | None:
+    """What the chart shows: times, one series per dimension, the year range; None without measurements."""
+    profiles = radio_profiles(events)
+    if not profiles:
+        return None
+    keys = [(d.key, d.name, "left") for d in mix_assist_dimensions.DIMENSIONS] + \
+        [(mix_assist_dimensions.ERA_KEY, "Sounding year", "right")]
+    series = []
+    for (key, name, axis), color in zip(keys, DRIFT_COLORS):
+        values = [float(profile[key]) for _ts, profile in profiles if isinstance(profile.get(key), (int, float))]
+        if len(values) == len(profiles):
+            series.append({"key": key, "name": name, "axis": axis, "color": color, "values": values})
+    years = [value for item in series if item["axis"] == "right" for value in item["values"]]
+    low = (int(min(years) - 3) // 5) * 5 if years else 1960
+    high = -(-int(max(years) + 3) // 5) * 5 if years else 2020
+    if high - low < 10:
+        high = low + 10
+    return {"times": [ts for ts, _profile in profiles], "series": series, "years": (low, high)}
+
+
+def render_drift_chart(data: dict, path: str) -> str:
+    _x, _y, width, height = CHART_PANEL
+    series = [mix_assist_chart.Series(item["name"], mix_assist_chart.hex_color(item["color"]), item["values"], item["axis"])
+              for item in data["series"]]
+    return mix_assist_chart.render_chart(path, data["times"], series, (width, height), CHART_PLOT, (0, 10), data["years"])
+
+
+def drift_legend_text(key: str, start: float, now: float) -> str:
+    """"3.7 → 3.6 mostly played": both values, and the scale word for now; years as years."""
+    if key == mix_assist_dimensions.ERA_KEY:
+        return f"{int(round(start))} → {int(round(now))}"
+    return f"{start:.1f} → {dimension_value_text(key, now)}"
+
+
+def drift_chart_path() -> str:
+    """A new file each time (Kodi caches images by path); older charts are removed."""
+    folder = os.path.join(get_profile_dir(), "charts")
+    os.makedirs(folder, exist_ok=True)
+    for name in os.listdir(folder):
+        if name.startswith("drift_") and name.endswith(".png"):
+            try:
+                os.remove(os.path.join(folder, name))
+            except OSError:
+                pass
+    return os.path.join(folder, f"drift_{int(time.time() * 1000)}.png")
+
+
+class ChartWindow(xbmcgui.WindowDialog):
+    """A chart over the current screen; any key or click closes it."""
+
+    def onAction(self, action) -> None:
+        if action.getId() != 107:  # mouse movement
+            self.close()
+
+    def onControl(self, control) -> None:
+        self.close()
+
+
+def show_radio_drift_chart() -> None:
+    state = get_radio_state()
+    events = [event for event in state.get("events") or [] if isinstance(event, dict)]
+    data = drift_chart_series(events)
+    if not data:
+        xbmcgui.Dialog().ok("Radio station: Drift chart", "Drift is measured when AI Mix Assist checks the station's songs.")
+        return
+    path = drift_chart_path()
+    render_drift_chart(data, path)
+    window = ChartWindow()
+    for control in drift_chart_controls(data, path, state):
+        window.addControl(control)
+    window.doModal()
+    del window
+
+
+def drift_chart_controls(data: dict, path: str, state: dict) -> list:
+    x, y, width, height = CHART_PANEL
+    left, top, right, bottom = CHART_PLOT
+    white, grey = "0xFFF0F0F0", "0xFF9AA0AA"
+    started = next((event for event in state.get("events") or [] if event.get("kind") == "started"), {})
+    controls = [
+        xbmcgui.ControlImage(x, y, width, height, path),
+        xbmcgui.ControlLabel(x + 30, y + 20, width - 60, 40, f"Station drift: {started.get('seed', '')}", textColor=white),
+        xbmcgui.ControlLabel(x + 30, y + 52, width - 60, 30, "Seven scales from 0 to 10 (left), sounding year (right). "
+                             "Any key closes.", textColor=grey),
+    ]
+    for value in (0, 5, 10):
+        ty = y + bottom - (bottom - top) * value / 10
+        controls.append(xbmcgui.ControlLabel(x + 10, int(ty) - 14, left - 18, 28, str(value), textColor=grey,
+                                             alignment=1))
+    low, high = data["years"]
+    for year in (low, (low + high) // 2, high):
+        ty = y + bottom - (bottom - top) * (year - low) / (high - low)
+        controls.append(xbmcgui.ControlLabel(x + right + 8, int(ty) - 14, 70, 28, str(year), textColor=grey))
+    times = data["times"]
+    same_day = time.strftime("%Y%m%d", time.localtime(times[0])) == time.strftime("%Y%m%d", time.localtime(times[-1]))
+    clock = "%H:%M" if same_day else "%Y-%m-%d %H:%M"
+    controls.append(xbmcgui.ControlLabel(x + left, y + bottom + 12, 300, 28,
+                                         time.strftime(clock, time.localtime(times[0])), textColor=grey))
+    controls.append(xbmcgui.ControlLabel(x + right - 300, y + bottom + 12, 300, 28,
+                                         f"{time.strftime(clock, time.localtime(times[-1]))} · {len(times)} measurements",
+                                         textColor=grey, alignment=1))
+    legend_x, legend_y = x + right + 90, y + top
+    for index, item in enumerate(data["series"]):
+        ly = legend_y + index * 60
+        color = "0xFF" + item["color"].lstrip("#")
+        start, now = item["values"][0], item["values"][-1]
+        controls.append(xbmcgui.ControlLabel(legend_x, ly, width - right - 110, 28, item["name"], textColor=color))
+        controls.append(xbmcgui.ControlLabel(legend_x, ly + 26, width - right - 110, 28,
+                                             drift_legend_text(item["key"], start, now), textColor=grey))
+    return controls
 
 
 def format_radio_event(event: dict) -> list[str]:
