@@ -184,8 +184,8 @@ class RadioMixAssistTest(RadioBase):
         self.assertIn("AI Mix Assist: on | Station openness: Balanced | Station drift: Drift slowly", pages["Overview"])
         self.assertIn("Refills: 1 (1 checked, 0 unchecked)", pages["Overview"])
         self.assertIn("The picked song:\ndark metal", pages["What it is about"])
-        self.assertIn("Energy: 5.0 steady -> 6.0 steady (+1.0) | course: 5.0, 6.0", pages["Drift"])
-        self.assertIn("Sounding year: 1983 -> 1984 (+1.0 years)", pages["Drift"])
+        self.assertIn("Energy: 5.0 steady » 6.0 steady (+1.0) | course: 5.0, 6.0", pages["Drift"])
+        self.assertIn("Sounding year: 1983 » 1984 (+1.0 years)", pages["Drift"])
         self.assertIn("Moved most: Energy (+1.0)", pages["Drift"])
         history = pages[f"History ({len(kinds)})"]
         self.assertTrue(history.split("\n")[0].endswith("2 song(s), checked"))
@@ -220,7 +220,7 @@ class RadioMixAssistTest(RadioBase):
         self.finish_check()
         radio = self.tick()
         texts = [text.text for text in main.drift_chart_texts(main.drift_chart_series(radio["events"]))]
-        for text in ("Energy", "5.0 -> 6.0 steady", "Sounding year", "1983 -> 1984", "0", "10"):
+        for text in ("Energy", "5.0 » 6.0 steady", "Sounding year", "1983 » 1984", "0", "10"):
             self.assertIn(text, texts)
         self.assertTrue(any(text.endswith("| 2 measurements") for text in texts))
         self.run_plugin(action="radio_info")

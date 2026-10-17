@@ -70,11 +70,14 @@ class MixHistoryTest(HistoryTestCase):
 class PlainTextTest(HistoryTestCase):
     def test_punctuation_becomes_ascii_and_letters_stay(self):
         text = "Mot\u00f6rhead \u2013 \u201cOverkill\u201d \u2192 Sigur R\u00f3s\u2026 4.0 \u00b7 \u00d7 \u2212 it\u2019s"
-        self.assertEqual(main.plain(text), "Mot\u00f6rhead - \"Overkill\" -> Sigur R\u00f3s... 4.0 | x - it's")
+        self.assertEqual(main.plain(text), "Mot\u00f6rhead - \"Overkill\" » Sigur R\u00f3s... 4.0 | x - it's")
+
+    def test_arrows_become_angle_quotes_which_every_skin_font_has(self):
+        self.assertEqual(main.plain("a → b ⇒ c » d « e"), "a » b » c » d « e")
 
     def test_notifications_and_pages_are_plain(self):
         main.notify("Done \u2192 next \u2026")
-        self.assertEqual(kodi.notification_messages()[-1], "Done -> next ...")
+        self.assertEqual(kodi.notification_messages()[-1], "Done » next ...")
         cache_path = self.save_mix([A, B], size=2)
         main.record_mix_history(cache_path, "more_like_this", song="Sigur R\u00f3s \u2013 Hopp\u00edpolla",
                                 added=["Mot\u00f6rhead \u2013 Overkill"])

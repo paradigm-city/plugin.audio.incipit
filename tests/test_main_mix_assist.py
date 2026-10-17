@@ -228,12 +228,12 @@ class SavedMixMenuTest(MixAssistTestCase):
         page = main.build_mix_info_page(self.cache_path)
         self.assertIn("[B]What it is about[/B]\ndark, abstract, instrumental\n(as the AI put it)\n"
                       "AI Mix Assist: openness Balanced, last checked", page)
-        self.assertIn("[B]Last tidy-up[/B]\nwilfried - fire walk -> Medeski Martin & Wood - Think (Danceable disco, bright)",
+        self.assertIn("[B]Last tidy-up[/B]\nwilfried - fire walk » Medeski Martin & Wood - Think (Danceable disco, bright)",
                       page)
         self.assertIn("can undo it", page)
         history = page.split("[B]History[/B]")[1]
         self.assertIn("AI Mix Assist tidied up the mix: 1 replaced, 0 removed\n"
-                      "    wilfried - fire walk -> Medeski Martin & Wood - Think (Danceable disco, bright)", history)
+                      "    wilfried - fire walk » Medeski Martin & Wood - Think (Danceable disco, bright)", history)
 
     def test_a_check_stores_how_the_mix_sounds(self):
         result = plan(changes=[REPLACE_DISCO])
@@ -281,7 +281,7 @@ class SavedMixMenuTest(MixAssistTestCase):
         self.assertIn("in the mix's order", window.properties["text"])
         window.onFocus(204)
         self.assertEqual(window.properties["image"], "")
-        self.assertIn("[B]Last tidy-up[/B]\nwilfried - fire walk -> Medeski Martin & Wood - Think", window.properties["text"])
+        self.assertIn("[B]Last tidy-up[/B]\nwilfried - fire walk » Medeski Martin & Wood - Think", window.properties["text"])
         self.run_plugin(action="mix_info", cache_path=self.cache_path)  # a new chart; the older one is gone
         charts = os.listdir(os.path.dirname(sound))
         self.assertEqual(sorted(name.split("_")[0] for name in charts), ["course", "sound"])
