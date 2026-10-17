@@ -1406,7 +1406,10 @@ def apply_radio_check(state: dict, plugin, position: int) -> None:
             removed_songs.insert(0, {"track": entry.get("label") or path_to_label(str(entry["file"])), "reason": reason})
         state["intent"] = result.get("intent") or ""
         state["reference"] = result.get("reference")
-        add_radio_event(state, "start_check", removed=removed_songs, intent=state["intent"], profile=state["reference"])
+        if result.get("name") and not state.get("favourite_id"):
+            state["name"] = result["name"]
+        add_radio_event(state, "start_check", removed=removed_songs, intent=state["intent"], profile=state["reference"],
+                        name=result.get("name") or "")
         log_info(f"Radio mode: AI Mix Assist took out {removed} song(s) that didn't fit the station.")
         return
 

@@ -191,18 +191,18 @@ def tidy_up(paths: Sequence[str], cache: RatingCache, ask: Ask, resolve: Resolve
 
     step("Working out what this mix is about")
     if intent:
-        judged = checks.judge(intent, units[0], entries[0], units[1:], entries[1:], ask)
+        judged, name = checks.judge_named(intent, units[0], entries[0], units[1:], entries[1:], ask)
         verdicts = {position + 1: verdict for position, verdict in judged.items()}
         verdicts[1] = {"verdict": "fits", "reason": ""}
         intent_source = "listener"
     else:
-        intent, verdicts = checks.state_intent(units, entries, ask)
+        intent, verdicts, name = checks.describe(units, entries, ask)
         intent_source = "ai"
 
     analysis = analyze(units, entries, verdicts, cache.library(), strictness)
     rows = analysis["rows"]
     outliers = [row["position"] for row in rows if row.get("status") == "outlier"]
-    plan = {"intent": intent, "intent_source": intent_source, "rows": rows, "outliers": outliers, "changes": [],
+    plan = {"intent": intent, "intent_source": intent_source, "name": name, "rows": rows, "outliers": outliers, "changes": [],
             "removed": [], "paths": paths, "rebuild_suggested": False}
     if not analysis["ready"] or not outliers or not find_replacements:
         return plan

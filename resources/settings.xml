@@ -90,42 +90,47 @@
                     </constraints>
                     <control type="spinner" format="string"/>
                 </setting>
-                <setting id="mix_assist_auto_radio" type="boolean" label="30412" help="30413">
+                <setting id="mix_assist_name_mixes" type="boolean" label="30412" help="30413">
                     <level>0</level>
                     <default>true</default>
                     <control type="toggle"/>
                 </setting>
-                <setting id="mix_assist_radio_drift" type="integer" label="30414" help="30415">
+                <setting id="mix_assist_auto_radio" type="boolean" label="30414" help="30415">
+                    <level>0</level>
+                    <default>true</default>
+                    <control type="toggle"/>
+                </setting>
+                <setting id="mix_assist_radio_drift" type="integer" label="30416" help="30417">
                     <level>0</level>
                     <default>1</default>
                     <constraints>
                         <options>
-                            <option label="30416">0</option>
-                            <option label="30417">1</option>
-                            <option label="30418">2</option>
+                            <option label="30418">0</option>
+                            <option label="30419">1</option>
+                            <option label="30420">2</option>
                         </options>
                     </constraints>
                     <control type="spinner" format="string"/>
                 </setting>
-                <setting id="mix_assist_station_strictness" type="integer" label="30419" help="30420">
+                <setting id="mix_assist_station_strictness" type="integer" label="30421" help="30422">
                     <level>0</level>
                     <default>2</default>
                     <constraints>
                         <options>
-                            <option label="30421">0</option>
-                            <option label="30422">1</option>
-                            <option label="30423">2</option>
-                            <option label="30424">3</option>
-                            <option label="30425">4</option>
+                            <option label="30423">0</option>
+                            <option label="30424">1</option>
+                            <option label="30425">2</option>
+                            <option label="30426">3</option>
+                            <option label="30427">4</option>
                         </options>
                     </constraints>
                     <control type="spinner" format="string"/>
                 </setting>
-                <setting id="mix_assist_cli_path" type="string" label="30426" help="30427">
+                <setting id="mix_assist_cli_path" type="string" label="30428" help="30429">
                     <level>0</level>
                     <default/>
                     <constraints><allowempty>true</allowempty></constraints>
-                    <control type="edit" format="string"><heading>30426</heading></control>
+                    <control type="edit" format="string"><heading>30428</heading></control>
                 </setting>
             </group>
         </category>

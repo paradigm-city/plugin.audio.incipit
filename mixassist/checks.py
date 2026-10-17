@@ -35,6 +35,9 @@ most 12 words, naming the qualities that clash. Give the seed itself the verdict
 
 """ + TRACK_LINES_NOTE
 
+NAME_NOTE = """Also give the mix a name (field "name"): 2 to 4 words in title case that capture its character, like
+"Cosmic Analog Journeys" or "Dark Ambitious 80s Metal". No artist or song names, no quotation marks."""
+
 INTENT_PROMPT = """You judge tracks for a music mix against the listener's intent.
 The listener started the mix from a seed track. The intent is given below together with the seed; it is either
 stated earlier from the seed or written by the listener.
@@ -46,8 +49,8 @@ in the field "character".
 """ + TRACK_LINES_NOTE
 
 
-def schema() -> dict:
-    return {
+def schema(with_name: bool = False) -> dict:
+    result = {
         "type": "object",
         "properties": {
             "character": {"type": "string"},
@@ -68,6 +71,17 @@ def schema() -> dict:
         "required": ["character", "tracks"],
         "additionalProperties": False,
     }
+    if with_name:
+        result["properties"]["name"] = {"type": "string"}
+        result["required"].append("name")
+    return result
+
+
+def parse_name(payload: Optional[dict]) -> str:
+    """The mix's name: 2 to 4 words, without quotes; "" when missing or unusable."""
+    name = " ".join(str((payload or {}).get("name") or "").replace('"', "").replace("\u201c", "").replace("\u201d", "").split())
+    words = name.split()
+    return " ".join(words[:5]) if words and len(name) <= 60 else ""
 
 
 def track_line(number: int, unit: dict, entry: Optional[dict]) -> str:
@@ -99,3 +113,19 @@ def judge(intent: str, seed: dict, seed_entry: Optional[dict], units: Sequence[d
     lines = [f"Intent: {intent}", "", "Seed: " + track_line(0, seed, seed_entry)[3:], "", "Tracks:"]
     lines += [track_line(number, unit, entry) for number, (unit, entry) in enumerate(zip(units, entries), start=1)]
     return parse_verdicts(ask(INTENT_PROMPT, schema(), "\n".join(lines)), len(units))
+
+
+def describe(units: Sequence[dict], entries: Sequence[Optional[dict]], ask: Ask) -> Tuple[str, Dict[int, dict], str]:
+    """As state_intent, plus a short name for the mix (2 to 4 words), in the same call."""
+    lines = [track_line(number, unit, entry) for number, (unit, entry) in enumerate(zip(units, entries), start=1)]
+    payload = ask(SEED_INTENT_PROMPT + "\n\n" + NAME_NOTE, schema(with_name=True), "\n".join(lines))
+    return str((payload or {}).get("character", "")), parse_verdicts(payload, len(units)), parse_name(payload)
+
+
+def judge_named(intent: str, seed: dict, seed_entry: Optional[dict], units: Sequence[dict],
+                entries: Sequence[Optional[dict]], ask: Ask) -> Tuple[Dict[int, dict], str]:
+    """As judge, plus a short name for the mix taken from the intent, in the same call."""
+    lines = [f"Intent: {intent}", "", "Seed: " + track_line(0, seed, seed_entry)[3:], "", "Tracks:"]
+    lines += [track_line(number, unit, entry) for number, (unit, entry) in enumerate(zip(units, entries), start=1)]
+    payload = ask(INTENT_PROMPT + "\n\n" + NAME_NOTE, schema(with_name=True), "\n".join(lines))
+    return parse_verdicts(payload, len(units)), parse_name(payload)

@@ -141,66 +141,74 @@ msgid "Adventurous"
 msgstr ""
 
 msgctxt "#30412"
-msgid "Keep Radio on track"
+msgid "Name mixes and stations"
 msgstr ""
 
 msgctxt "#30413"
-msgid "Takes the songs that clearly don't fit out of a new station's first songs, and checks every refill before it is queued. Runs in the background; the radio keeps playing."
+msgid "At its first check, AI Mix Assist gives a mix or radio station a short name of 2 to 4 words saying what it is about, like \"Cosmic Analog Journeys\". It is shown instead of the seed song; a mix can be renamed in its \"AI Mix Assist...\" menu. Off: mixes and stations are named after their seed song."
 msgstr ""
 
 msgctxt "#30414"
-msgid "Station drift"
+msgid "Keep Radio on track"
 msgstr ""
 
 msgctxt "#30415"
-msgid "How far a station may wander from the song you picked. Stay close: every song is measured against the picked song. Drift slowly: the station has moved half the way to where it went after about 60 songs (about 4 hours). Wander freely: after about 20 songs (about 1 hour 20 minutes)."
+msgid "Takes the songs that clearly don't fit out of a new station's first songs, and checks every refill before it is queued. Runs in the background; the radio keeps playing."
 msgstr ""
 
 msgctxt "#30416"
-msgid "Stay close to the picked song"
+msgid "Station drift"
 msgstr ""
 
 msgctxt "#30417"
-msgid "Drift slowly"
+msgid "How far a station may wander from the song you picked. Stay close: every song is measured against the picked song. Drift slowly: the station has moved half the way to where it went after about 60 songs (about 4 hours). Wander freely: after about 20 songs (about 1 hour 20 minutes)."
 msgstr ""
 
 msgctxt "#30418"
-msgid "Wander freely"
+msgid "Stay close to the picked song"
 msgstr ""
 
 msgctxt "#30419"
-msgid "Station openness"
+msgid "Drift slowly"
 msgstr ""
 
 msgctxt "#30420"
-msgid "How much each new song on the radio may surprise you. Focused keeps every song close to the one before; Adventurous welcomes bold steps, including songs the AI calls borderline. Same scale as Mix openness, set separately."
+msgid "Wander freely"
 msgstr ""
 
 msgctxt "#30421"
-msgid "Focused"
+msgid "Station openness"
 msgstr ""
 
 msgctxt "#30422"
-msgid "Close"
+msgid "How much each new song on the radio may surprise you. Focused keeps every song close to the one before; Adventurous welcomes bold steps, including songs the AI calls borderline. Same scale as Mix openness, set separately."
 msgstr ""
 
 msgctxt "#30423"
-msgid "Balanced"
+msgid "Focused"
 msgstr ""
 
 msgctxt "#30424"
-msgid "Open"
+msgid "Close"
 msgstr ""
 
 msgctxt "#30425"
-msgid "Adventurous"
+msgid "Balanced"
 msgstr ""
 
 msgctxt "#30426"
-msgid "Claude Code CLI (empty: find it automatically)"
+msgid "Open"
 msgstr ""
 
 msgctxt "#30427"
+msgid "Adventurous"
+msgstr ""
+
+msgctxt "#30428"
+msgid "Claude Code CLI (empty: find it automatically)"
+msgstr ""
+
+msgctxt "#30429"
 msgid "Full path to the Claude Code program (claude.exe). Leave empty to find it automatically, for example in the VS Code extension. AI Mix Assist uses your claude.ai subscription through it."
 msgstr ""
 

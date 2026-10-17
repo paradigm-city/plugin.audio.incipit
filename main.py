@@ -2250,7 +2250,7 @@ def ensure_repair_ready(cache_path: str) -> None:
 
 
 def format_saved_mix_label(meta: dict) -> str:
-    label = meta.get("label") or path_to_label(meta.get("seed", ""))
+    label = mix_name(meta) or meta.get("label") or path_to_label(meta.get("seed", ""))
     track_count = int(meta.get("track_count") or 0)
     if track_count > 0:
         return f"{label} ({track_count} tracks)"
@@ -4739,7 +4739,8 @@ def show_radio_mode_menu() -> None:
         title = f"Radio: scanning - {current}" if current else "Radio: scanning"
     elif phase == "playing":
         current = str(state.get("current_label") or "").strip()
-        title = f"Radio: {current}" if current else "Radio: playing"
+        name = station_name(state)
+        title = f"Radio: {name}" if name else (f"Radio: {current}" if current else "Radio: playing")
     else:
         title = "MusicIP radio"
 
@@ -4753,9 +4754,13 @@ def show_radio_mode_menu() -> None:
     elif phase == "playing":
         add_radio_action_item("Scan again", "radio_retune")
         add_radio_action_item("Station information", "radio_info")
+        if not state.get("favourite_id"):
+            add_radio_action_item("Save as favourite station", "radio_save_favourite")
+        add_radio_favourites_folder()
         add_radio_action_item("Stop radio", "radio_stop")
     else:
         add_radio_action_item("Scan stations", "radio_on")
+        add_radio_favourites_folder()
 
     xbmcplugin.endOfDirectory(HANDLE, cacheToDisc=False)
 
@@ -4833,9 +4838,11 @@ def start_radio_from_song(seed: str) -> None:
 RADIO_ASSISTED_START_SIZE = 8  # with AI Mix Assist: one refill's worth, so the station soon starts to meander
 
 
-def start_radio_station(seed: str) -> bool:
+def start_radio_station(seed: str, favourite: dict | None = None) -> bool:
     """Play an endless MusicIP mix seeded with seed, using the configured mix parameters. False on failure.
-    With AI Mix Assist the station starts small; otherwise with the mix size."""
+    With AI Mix Assist the station starts small; otherwise with the mix size. A station picked from a song that is a
+    favourite (or started from one) is that favourite: it keeps the favourite's name."""
+    favourite = favourite or find_radio_favourite(seed=seed)
     size = RADIO_ASSISTED_START_SIZE if mix_assist_for_radio() else get_playlist_size()
     try:
         tracks = fetch_mix(seed, size, get_effective_mix_parameters(size_override=size))
@@ -4885,6 +4892,8 @@ def start_radio_station(seed: str) -> bool:
         "playing_started_ts": now,
         "seed": seed,
         "seeds": [seed],
+        "favourite_id": (favourite or {}).get("id", ""),
+        "name": (favourite or {}).get("name", ""),
         "queue": queue,
         "seen": [normalize_track_identity(track) for track in tracks],
         "current_position": 0,
@@ -5556,6 +5565,9 @@ MIX_HISTORY_FORMATTERS = {
     "ai_tidy_up": format_history_ai_tidy_up,
     "ai_undone": format_history_ai_undone,
     "intent_edited": format_history_intent_edited,
+    "named": lambda event: [f"AI Mix Assist named the mix \"{event.get('name', '')}\""],
+    "renamed": lambda event: [f"You named the mix \"{event['name']}\"" if event.get("name")
+                              else "You removed your name; the AI's is used again"],
     "created": format_history_created,
     "removed": format_history_removed,
     "more_like_this": format_history_more_like_this,
@@ -5609,6 +5621,7 @@ def build_mix_info_message(cache_path: str) -> str:
         readiness = {}
 
     lines = [
+        *([f"Name: {mix_name(meta)} ({format_calendar_date(int(meta.get('updated_ts') or 0))})"] if mix_name(meta) else []),
         f"Label: {meta.get('label') or path_to_label(meta.get('seed') or cache_path)}",
         f"Seed: {meta.get('seed') or 'unknown'}",
         f"Tracks: {meta.get('track_count') or len(tracks)}",
@@ -5994,8 +6007,13 @@ def record_mix_assist_result(cache_path: str, original: list[str], plan: dict, a
     section.pop("not_fitting", None)
     if changed:
         section["previous_tracks"] = list(original)
+    named = bool(plan.get("name")) and plan["name"] != section.get("ai_name") and not section.get("ai_name_fixed")
+    if named:
+        section["ai_name"] = plan["name"]
     meta[MIX_ASSIST_SECTION] = section
     save_json_file(mix_meta_path_from_cache_path(cache_path), meta)
+    if named and mix_naming_enabled() and not section.get("listener_name"):
+        record_mix_history(cache_path, "named", name=plan["name"])
     record_mix_history(
         cache_path, "ai_tidy_up", automatic=automatic, intent=plan["intent"],
         replaced=[{"old": change["old_label"], "new": change["new_label"], "reason": change["reason"]}
@@ -6255,6 +6273,7 @@ def choose_from_mix_assist_menu(cache_path: str) -> str:
     entries = [
         (f"What this mix is about: {shorten(intent, 50) if intent else '<not worked out yet>'}", "mix_assist_edit_intent"),
         (f"Openness: {mix_openness_label(mix_openness_index(meta))}", "mix_assist_openness"),
+    ] + ([(f"Name: {mix_name(meta) or '<given at the first check>'}", "mix_assist_rename")] if mix_naming_enabled() else []) + [
         ("Tidy up now", "mix_assist_tidy_up"),
     ]
     if section.get("previous_tracks"):
@@ -6276,6 +6295,43 @@ def choose_mix_openness(cache_path: str) -> bool:
     meta[MIX_ASSIST_SECTION] = section
     save_json_file(mix_meta_path_from_cache_path(cache_path), meta)
     record_mix_history(cache_path, "assist_settings", openness=mix_openness_label(choice))
+    return True
+
+
+# --- Names: what a mix or station is about in a few words (by the AI at the first check, or by the listener) --
+
+def mix_naming_enabled() -> bool:
+    """Setting "Name mixes and stations": the AI's short name instead of the seed song."""
+    return get_setting_bool("mix_assist_name_mixes", True)
+
+
+def mix_name(meta: dict) -> str:
+    """The mix's name: the listener's, else the AI's; "" without one (or with naming switched off)."""
+    if not mix_naming_enabled():
+        return ""
+    section = get_mix_assist_section(meta)
+    return str(section.get("listener_name") or section.get("ai_name") or "").strip()
+
+
+def rename_mix(cache_path: str) -> bool:
+    """Your own name for the mix; an empty name goes back to the AI's."""
+    meta = get_saved_mix_metadata(cache_path, load_mix_by_cache_path(cache_path))
+    section = get_mix_assist_section(meta)
+    current = mix_name(meta)
+    value = ask_text("Name of this mix", plain(current))
+    if value is None:
+        return False
+    value = " ".join(value.split())
+    if value == current or (not value and not section.get("listener_name")):
+        return False
+    if value:
+        section["listener_name"] = value
+    else:
+        section.pop("listener_name", None)
+    meta[MIX_ASSIST_SECTION] = section
+    save_json_file(mix_meta_path_from_cache_path(cache_path), meta)
+    record_mix_history(cache_path, "renamed", name=value)
+    xbmc.executebuiltin("Container.Refresh")
     return True
 
 
@@ -6448,7 +6504,7 @@ def check_radio_start(tracks: list[str], check=None) -> dict:
                 "reason": rows[position - 1].get("reason") or rows[position - 1].get("why", "")}
                for position in plan["outliers"]]
     return {"remove": [entry["path"] for entry in removed], "removed": removed, "intent": plan["intent"],
-            "reference": rows[0].get("entry") if rows else None}
+            "name": plan.get("name") or "", "reference": rows[0].get("entry") if rows else None}
 
 
 def check_radio_refill(reference_song: str, candidates: list[str], count: int, reference: dict | None,
@@ -6481,6 +6537,132 @@ def check_radio_refill(reference_song: str, candidates: list[str], count: int, r
 # --- Station information: what the radio station is, what it was about, how it drifted, what happened ------
 
 RADIO_DRIFT_LABELS = ("Stay close to the picked song", "Drift slowly", "Wander freely")
+
+
+def station_name(state: dict) -> str:
+    """The station's name: a favourite's, else the AI's (from the check of its first songs); "" without one."""
+    if not mix_naming_enabled() and not state.get("favourite_id"):
+        return ""
+    return str(state.get("name") or "").strip()
+
+
+# --- Favourite stations: a station's picked song and name, kept to play again; it always starts fresh -----------
+
+def radio_favourites_path() -> str:
+    return os.path.join(get_profile_dir(), "radio_favourites.json")
+
+
+def load_radio_favourites() -> list[dict]:
+    stations = load_json_file(radio_favourites_path()).get("stations")
+    return [station for station in stations or [] if isinstance(station, dict) and station.get("seed")]
+
+
+def save_radio_favourites(stations: list[dict]) -> None:
+    save_json_file(radio_favourites_path(), {"stations": stations})
+
+
+def find_radio_favourite(favourite_id: str = "", seed: str = "") -> dict | None:
+    for station in load_radio_favourites():
+        if favourite_id and station.get("id") == favourite_id:
+            return station
+        if seed and canonical_audio_path(str(station.get("seed"))) == canonical_audio_path(seed):
+            return station
+    return None
+
+
+def add_radio_favourites_folder() -> None:
+    count = len(load_radio_favourites())
+    if not count:
+        return
+    label = f"Favourite stations ({count})"
+    item = xbmcgui.ListItem(label=label, offscreen=True)
+    apply_music_metadata(item, label)
+    xbmcplugin.addDirectoryItem(HANDLE, addon_url(action="radio_favourites"), item, isFolder=True)
+
+
+def save_station_as_favourite() -> None:
+    state = get_radio_state()
+    seed = str(state.get("seed") or "")
+    if radio_phase() != "playing" or not seed:
+        notify("No station is playing.", xbmcgui.NOTIFICATION_WARNING)
+        return
+    existing = find_radio_favourite(seed=seed)
+    if existing:
+        notify(f"Already a favourite: {existing['name']}")
+        return
+    picked = next((event.get("seed") for event in state.get("events") or [] if event.get("kind") == "started"), "")
+    favourite = {
+        "id": new_nonce(),
+        "name": station_name(state) or picked or path_to_label(seed),
+        "seed": seed,
+        "seed_label": picked or path_to_label(seed),
+        "intent": str(state.get("intent") or ""),
+        "saved_ts": int(time.time()),
+    }
+    save_radio_favourites(load_radio_favourites() + [favourite])
+    state.update(favourite_id=favourite["id"], name=favourite["name"], ui_refresh_requested=True)
+    save_radio_state(state)
+    notify(f"Saved as favourite station: {favourite['name']}")
+    replace_with_radio_mode_menu()
+
+
+def show_radio_favourites() -> None:
+    xbmcplugin.setPluginCategory(HANDLE, "Favourite stations")
+    xbmcplugin.setContent(HANDLE, "files")
+    for station in sorted(load_radio_favourites(), key=lambda entry: str(entry.get("name") or "").casefold()):
+        label = plain(station.get("name") or station.get("seed_label") or path_to_label(station["seed"]))
+        item = xbmcgui.ListItem(label=label, offscreen=True)
+        apply_music_metadata(item, label)
+        item.setLabel2(plain(station.get("seed_label") or ""))
+        item.setProperty("IsPlayable", "false")
+        item.addContextMenuItems([
+            ("Rename", f"RunPlugin({addon_url(action='radio_rename_favourite', id=station['id'], nonce=new_nonce())})"),
+            ("Remove from favourites",
+             f"RunPlugin({addon_url(action='radio_remove_favourite', id=station['id'], nonce=new_nonce())})"),
+        ])
+        url = addon_url(action="radio_play_favourite", id=station["id"], nonce=new_nonce())
+        xbmcplugin.addDirectoryItem(HANDLE, url, item, isFolder=False)
+    xbmcplugin.endOfDirectory(HANDLE, cacheToDisc=False)
+
+
+def play_radio_favourite(favourite_id: str) -> None:
+    """A favourite always starts fresh from its picked song."""
+    favourite = find_radio_favourite(favourite_id=favourite_id)
+    if not favourite:
+        notify("This favourite station no longer exists.", xbmcgui.NOTIFICATION_WARNING)
+        return
+    if start_radio_station(str(favourite["seed"]), favourite=favourite):
+        replace_with_radio_mode_menu()
+
+
+def rename_radio_favourite(favourite_id: str) -> None:
+    stations = load_radio_favourites()
+    station = next((entry for entry in stations if entry.get("id") == favourite_id), None)
+    if not station:
+        return
+    value = ask_text("Name of this station", plain(station.get("name") or ""))
+    if value is None or not " ".join(value.split()):
+        return
+    station["name"] = " ".join(value.split())
+    save_radio_favourites(stations)
+    state = get_radio_state()
+    if state.get("favourite_id") == favourite_id:
+        state["name"] = station["name"]
+        save_radio_state(state)
+    xbmc.executebuiltin("Container.Refresh")
+
+
+def remove_radio_favourite(favourite_id: str) -> None:
+    stations = load_radio_favourites()
+    station = next((entry for entry in stations if entry.get("id") == favourite_id), None)
+    if not station or not xbmcgui.Dialog().yesno("Favourite stations", plain(f"Remove \"{station.get('name')}\" from the favourites?")):
+        return
+    save_radio_favourites([entry for entry in stations if entry.get("id") != favourite_id])
+    state = get_radio_state()
+    if state.get("favourite_id") == favourite_id:
+        state["favourite_id"] = ""
+        save_radio_state(state)
+    xbmc.executebuiltin("Container.Refresh")
 
 
 def show_radio_info() -> None:
@@ -6516,7 +6698,7 @@ def build_radio_overview(state: dict, events: list[dict]) -> str:
     checked = [event for event in refills if event.get("kind") == "refill" and event.get("checked")]
     kept = sum(len(event.get("added") or []) for event in checked)
     skipped = sum(int(event.get("skipped_count") or 0) for event in checked)
-    lines = [
+    lines = ([f"Station: {station_name(state)}"] if station_name(state) else []) + [
         f"Picked song: {started.get('seed') or path_to_label(str(state.get('seed') or ''))}",
         f"Playing since: {format_sidecar_ts(state.get('playing_started_ts'))} "
         f"({format_play_time(int(time.time()) - int(state.get('playing_started_ts') or time.time()))})",
@@ -6681,7 +6863,8 @@ def drift_chart_controls(data: dict, path: str, state: dict) -> list:
     started = next((event for event in state.get("events") or [] if event.get("kind") == "started"), {})
     controls = [
         xbmcgui.ControlImage(x, y, width, height, path),
-        xbmcgui.ControlLabel(x + 30, y + 20, width - 60, 40, plain(f"Station drift: {started.get('seed', '')}"),
+        xbmcgui.ControlLabel(x + 30, y + 20, width - 60, 40,
+                             plain(f"Station drift: {station_name(state) or started.get('seed', '')}"),
                              textColor=white),
         xbmcgui.ControlLabel(x + 30, y + 52, width - 60, 30, "Seven scales from 0 to 10 (left), sounding year (right). "
                              "Any key closes.", textColor=grey),
@@ -6832,6 +7015,26 @@ def router() -> None:
         start_radio_from_song(params.get("seed", ""))
         return
 
+    if action == "radio_favourites":
+        show_radio_favourites()
+        return
+
+    if action == "radio_save_favourite":
+        save_station_as_favourite()
+        return
+
+    if action == "radio_play_favourite":
+        play_radio_favourite(params.get("id", ""))
+        return
+
+    if action == "radio_rename_favourite":
+        rename_radio_favourite(params.get("id", ""))
+        return
+
+    if action == "radio_remove_favourite":
+        remove_radio_favourite(params.get("id", ""))
+        return
+
     if action == "radio_info":
         show_radio_info()
         return
@@ -6927,6 +7130,8 @@ def router() -> None:
             if action == "mix_assist_openness":
                 if choose_mix_openness(cache_path):
                     notify("Saved. AI Mix Assist uses it for this mix from now on.")
+            elif action == "mix_assist_rename":
+                rename_mix(cache_path)
             elif action == "mix_assist_tidy_up":
                 notify(mix_assist_result_message(run_mix_assist_on_saved_mix(cache_path)))
             elif action == "mix_assist_undo":
