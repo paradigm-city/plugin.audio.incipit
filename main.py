@@ -6438,6 +6438,19 @@ def patch_playlist_for_mix(original: list[str], plan: dict) -> int:
     return patched
 
 
+def wait_until_kodi_has_loaded(timeout: float = 5.0) -> bool:
+    """Wait (up to timeout seconds) while Kodi loads a list or shows its busy dialog: a redraw then would make Kodi
+    drop that list while it is being filled (findings F14). False if it is still loading."""
+    monitor = xbmc.Monitor()
+    waited = 0.0
+    while any(xbmc.getCondVisibility(condition) for condition in
+              ("Container.IsUpdating", "Window.IsActive(busydialog)", "Window.IsActive(busydialognocancel)")):
+        if waited >= timeout or monitor.waitForAbort(0.5):
+            return False
+        waited += 0.5
+    return True
+
+
 def process_mix_assist_request(entry: dict) -> None:
     """Tidy up a newly created mix in the background (run by the service), with a small progress bar."""
     cache_path = str(entry.get("cache_path") or "")
@@ -6475,7 +6488,7 @@ def process_mix_assist_request(entry: dict) -> None:
     patched = patch_playlist_for_mix(original, plan)
     log_info(f"AI Mix Assist: {cache_path!r}: {len(plan['changes'])} replaced, {len(plan['removed'])} removed, "
              f"{patched} playlist entries patched.")
-    if is_addon_mix_container_active():
+    if is_addon_mix_container_active() and wait_until_kodi_has_loaded():
         xbmc.executebuiltin("Container.Refresh")
     notify(mix_assist_result_message(plan))
 
@@ -6615,7 +6628,7 @@ def add_radio_favourites_folder() -> None:
     label = f"Favourite stations ({count})"
     item = xbmcgui.ListItem(label=label, offscreen=True)
     apply_music_metadata(item, label)
-    xbmcplugin.addDirectoryItem(HANDLE, addon_url(action="radio_favourites"), item, isFolder=True)
+    add_directory_item(HANDLE, addon_url(action="radio_favourites"), item, isFolder=True)
 
 
 def save_station_as_favourite() -> None:
@@ -6659,8 +6672,8 @@ def show_radio_favourites() -> None:
              f"RunPlugin({addon_url(action='radio_remove_favourite', id=station['id'], nonce=new_nonce())})"),
         ])
         url = addon_url(action="radio_play_favourite", id=station["id"], nonce=new_nonce())
-        xbmcplugin.addDirectoryItem(HANDLE, url, item, isFolder=False)
-    xbmcplugin.endOfDirectory(HANDLE, cacheToDisc=False)
+        add_directory_item(HANDLE, url, item, isFolder=False)
+    end_directory(HANDLE, cacheToDisc=False)
 
 
 def play_radio_favourite(favourite_id: str) -> None:
