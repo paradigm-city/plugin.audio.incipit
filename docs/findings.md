@@ -56,6 +56,12 @@ Found on 2026-10-11 while removing the Discovery command channel (F6). They are 
 
 ## Resolved
 
+### F20 · The Radio screen kept the first snippet's title while scanning
+
+Found by the user on 2026-10-17: while scanning, the Radio screen's title ("Radio: scanning - <song>") showed the first snippet correctly but was not updated when the next snippet started. The screen was only rebuilt after an action on it.
+
+Fixed in a03ba20 (2026-10-17): the service requests a redraw whenever the snippet changes, if the Radio screen is open. `test_radio_mode.TuningTest.test_the_radio_screen_follows_the_snippets` covers it.
+
 ### F19 · AI Mix Assist judged replacement candidates several times
 
 Found by the user on 2026-10-17: tidying up a new 40-track mix showed "asking the AI about 300 tracks". The mix had 7 gaps; gaps that share a submix seed share one larger submix (F16), but the shared list was added to the round's candidates once per gap. Rating was not affected (each album is rated once), but the AI's judging call got the same tracks two or three times: slower and costlier, with the same result.
