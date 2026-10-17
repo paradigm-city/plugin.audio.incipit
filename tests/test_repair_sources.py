@@ -100,6 +100,7 @@ class UnavailableSourceTest(SourcesTestCase):
     def test_saved_mix_entry_names_the_sources(self):
         kodi.add_music_source(METAL, present=False)
         main.add_saved_mix_item(self.cache_path)
+        self.finish_listing()
         _url, item, _folder = kodi.directory_items[-1]
         self.assertIn("Check music sources before repair", [label for label, _action in item.context_menu])
         self.assertTrue(item.getLabel2().endswith("· Check music sources before repair"))
@@ -318,6 +319,7 @@ class UnscannedSourceTest(SourcesTestCase):
     def test_mix_entry_offers_the_scan(self):
         service.run_consistency_check()
         main.add_saved_mix_item(self.cache_path)
+        self.finish_listing()
         _url, item, _folder = kodi.directory_items[-1]
         self.assertIn("Scan music source before repair", [label for label, _action in item.context_menu])
 
