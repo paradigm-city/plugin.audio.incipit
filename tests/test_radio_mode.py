@@ -140,7 +140,7 @@ class StartRadioTest(RadioTestCase):
         kodi.settings.update({"playlist_size": "10", "mix_style_preference": "5", "mix_variety": "3"})
         seed = self.start()
 
-        self.assertEqual(kodi.dialog_calls, [])
+        self.assertEqual([call for call in kodi.dialog_calls if not call[0].startswith("progress")], [])  # no questions
         query = self.musicip.mix_requests()[0]
         self.assertEqual((query["song"], query["size"], query["style"], query["variety"]), (seed, "10", "100", "3"))
 
@@ -156,6 +156,15 @@ class StartRadioTest(RadioTestCase):
 
         discovery = main.get_discovery_state()
         self.assertEqual((discovery["enabled"], discovery["stop_reason"]), (False, "radio_started"))
+
+    def test_opening_a_station_shows_progress(self):
+        seed = self.turn_on()
+        kodi.dialog_calls.clear()
+        self.run_plugin(action="radio_play")
+        index = SONGS.index(seed) + 1
+        calls = [call for call in kodi.dialog_calls if call[0].startswith("progress")]
+        self.assertEqual(calls[0], ("progress.create", (f"Opening Artist {index} - Song {index}...", ""), {}))
+        self.assertEqual(calls[-1][0], "progress.close")
 
     def test_labels_have_no_numbers_and_no_snippet_title(self):
         seed = self.start()
@@ -201,7 +210,7 @@ class StartFromAnySongTest(RadioTestCase):
         self.assertEqual(kodi.playlist_files()[0], SONGS[5])
         self.assertEqual((kodi.player.position, kodi.player.file), (0, SONGS[5]))
         self.assertEqual(self.musicip.mix_requests()[0]["size"], "10")
-        self.assertEqual(kodi.dialog_calls, [])
+        self.assertEqual([call for call in kodi.dialog_calls if not call[0].startswith("progress")], [])  # no questions
         self.assertNotified("Station picked.")
         self.assertFalse(main.get_discovery_state().get("enabled"))
 

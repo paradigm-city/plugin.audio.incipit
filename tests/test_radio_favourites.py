@@ -55,6 +55,23 @@ class FavouriteStationsTest(RadioBase):
         self.assertEqual(kodi.player.file, seed)
         self.assertIn(("setPluginCategory", f"Radio: {favourite['name']}"), self.menu_calls())
 
+    def test_opening_a_favourite_shows_progress_at_once(self):
+        self.save_playlist_and_stop()
+        favourite = self.favourites()[0]
+        kodi.dialog_calls.clear()
+        self.run_plugin(action="radio_play_favourite", id=favourite["id"])
+        calls = [call for call in kodi.dialog_calls if call[0].startswith("progress")]
+        self.assertEqual(calls[0], ("progress.create", (f"Opening {favourite['name']}...", ""), {}))
+        texts = [call[1][2] for call in calls if call[0] == "progress.update"]
+        self.assertEqual([text for text in texts if text in ("MusicIP is mixing", "Starting playback")],
+                         ["MusicIP is mixing", "Starting playback"])
+        self.assertEqual(calls[-1][0], "progress.close")
+        self.assertNotified(f"Playing {favourite['name']}.")
+
+    def save_playlist_and_stop(self):
+        self.save_playing_station()
+        self.run_plugin(action="radio_stop")
+
     def menu_calls(self):
         self.menu()
         return kodi.directory_calls
