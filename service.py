@@ -1208,6 +1208,13 @@ def run_radio_tick() -> None:
         if not discovery.get("enabled") and not discovery.get("startup_in_progress"):
             # Tuning plays Discovery snippets; when they stop (player stop, other playback), so does the radio.
             end_radio(state, str(discovery.get("stop_reason") or "tuning_stopped"))
+            return
+        snippet = str(discovery.get("current_song") or "")
+        if snippet and snippet != state.get("scan_song"):
+            # The next snippet plays: the Radio screen shows it in its title, so it is redrawn (if it is open).
+            state["scan_song"] = snippet
+            state["ui_refresh_requested"] = True
+            save_radio_state(state)
         return
 
     if phase != "playing":
