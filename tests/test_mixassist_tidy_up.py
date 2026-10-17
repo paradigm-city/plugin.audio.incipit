@@ -348,6 +348,37 @@ class AssistTest(unittest.TestCase):
         self.assertEqual(result["seed_entry"]["exploration"], 9)
         self.assertEqual(list(result["entries"]), result["chosen"])
 
+    def test_one_dimension_clearly_off(self):
+        seed = vector(energy=8, sounding_year=1982)
+        self.assertEqual(assist.single_dimension_miss(vector(energy=3, sounding_year=1982), seed), "energy")  # 5 points
+        self.assertEqual(assist.single_dimension_miss(vector(energy=4, sounding_year=2006), seed), "")  # 4 points, 24 years
+        self.assertEqual(assist.single_dimension_miss(vector(energy=8, sounding_year=2007), seed), "sounding_year")
+        # several: the one furthest beyond its limit
+        self.assertEqual(assist.single_dimension_miss(vector(energy=2, mood=0, sounding_year=2010), seed), "energy")
+
+    def test_a_track_close_overall_but_off_on_one_dimension_is_flagged(self):
+        self.add("odd1", exploration=9, form=1, energy=0)  # like the seed, but 5 points less energy
+        paths = ["seed"] + [f"fit{i}" for i in range(1, 9)] + ["odd1"]
+        units = self.resolve(paths)
+        entries = [self.store.get(unit["key"]) for unit in units]
+        verdicts = {position: {"verdict": "fits", "reason": ""} for position in range(1, len(paths) + 1)}
+        analysis = assist.analyze(units, entries, verdicts, self.store.library())
+        odd = analysis["rows"][-1]
+        self.assertLessEqual(odd["relative"], 1.2)  # not far overall
+        self.assertEqual((odd["single"], odd["status"]), ("energy", "flagged"))
+        self.assertNotIn(len(paths), assist.clearly_fitting(analysis["rows"], 1.2))
+        verdicts[len(paths)] = {"verdict": "outlier", "reason": "much calmer"}
+        self.assertEqual(assist.analyze(units, entries, verdicts, self.store.library())["rows"][-1]["status"], "outlier")
+
+    def test_new_tracks_must_not_be_clearly_off_on_one_dimension(self):
+        self.assertFalse(assist.passes({"relative": 0.5, "verdict": "fits", "single": "energy"}, 1.2))
+        self.assertTrue(assist.passes({"relative": 0.5, "verdict": "fits", "single": ""}, 1.2))
+        self.add("odd1", exploration=9, form=1, energy=0)
+        result = assist.choose_additions("seed", ["odd1", "cand1", "cand2", "cand3", "cand4"], 1, self.store, self.ask,
+                                         self.resolve, artist_window=0)
+        self.assertEqual(result["chosen"], ["cand1"])
+        self.assertEqual([entry["path"] for entry in result["not_fitting"]], ["odd1"])
+
     def test_a_fitting_mix_is_left_alone(self):
         paths = ["seed"] + [f"fit{i}" for i in range(1, 9)]
         plan = assist.tidy_up(paths, self.store, self.ask, self.resolve, self.fetch_mix)
