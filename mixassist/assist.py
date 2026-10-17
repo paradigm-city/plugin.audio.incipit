@@ -23,6 +23,11 @@ MUSICIP_MAX_MIX = 75
 ARTIST_WINDOW = 5
 # A mix where more than this share fails would rather be rebuilt than patched.
 REBUILD_SHARE = 1 / 3
+# The second profile rule: a track whose single dimension is clearly off, however close it is overall. Tested on the
+# pilot's 5 mixes: with these limits the profile check caught 45 of the AI's 47 outliers (36 without) and all 9 of the
+# user's, and flagged 2 of 70 fitting tracks (1 without); at 4 points / 20 years it flagged 26 fitting tracks.
+SINGLE_DIMENSION_POINTS = 5  # on the 0-10 scales
+SINGLE_DIMENSION_YEARS = 25  # sounding year
 
 Resolve = Callable[[Sequence[str]], List[dict]]
 FetchMix = Callable[[str, int], List[str]]
@@ -35,6 +40,19 @@ def path_key(path: str) -> str:
 def artist_key(artist: str) -> str:
     """Artist names compared loosely: "Medeski Martin & Wood" and "Medeski, Martin and Wood" are the same."""
     return " ".join(word for word in normalize(artist).split() if word not in ("and", "the"))
+
+
+def single_dimension_miss(entry: dict, reference: dict) -> str:
+    """The dimension on which entry is clearly off from reference (the largest such), "" if none."""
+    misses = []
+    for key in dimensions.ALL_KEYS:
+        if not isinstance(entry.get(key), (int, float)) or not isinstance(reference.get(key), (int, float)):
+            continue
+        gap = abs(float(entry[key]) - float(reference[key]))
+        limit = SINGLE_DIMENSION_YEARS if key == dimensions.ERA_KEY else SINGLE_DIMENSION_POINTS
+        if gap >= limit:
+            misses.append((gap / limit, key))
+    return max(misses)[1] if misses else ""
 
 
 def analyze(units: Sequence[dict], entries: Sequence[Optional[dict]], verdicts: Dict[int, dict],
@@ -55,6 +73,7 @@ def analyze(units: Sequence[dict], entries: Sequence[Optional[dict]], verdicts: 
         if entry:
             row["misfit"], deviations = fit.misfit(entry, seed, weighted, inverse)
             row["why"] = fit.reason(entry, seed, deviations)
+            row["single"] = single_dimension_miss(entry, seed) if position > 1 else ""
             row["guessed"] = entry.get("familiarity", 1) == 0
         rows.append(row)
     typical = max(MIN_TYPICAL_MISFIT, median([row["misfit"] for row in rows[1:] if "misfit" in row]))
@@ -63,7 +82,7 @@ def analyze(units: Sequence[dict], entries: Sequence[Optional[dict]], verdicts: 
             row["status"] = "unrated"
             continue
         row["relative"] = row["misfit"] / typical
-        vector_flag = row["position"] > 1 and row["relative"] > strictness
+        vector_flag = row["position"] > 1 and (row["relative"] > strictness or bool(row.get("single")))
         holistic_flag = row["verdict"] == "outlier"
         if row["position"] == 1:
             row["status"] = "seed"
@@ -82,7 +101,8 @@ def analyze(units: Sequence[dict], entries: Sequence[Optional[dict]], verdicts: 
 def clearly_fitting(rows: Sequence[dict], strictness: float) -> set:
     fitting = {1}
     for row in rows:
-        if row.get("relative") is not None and row["relative"] <= strictness and row.get("verdict") == "fits":
+        if row.get("relative") is not None and row["relative"] <= strictness and row.get("verdict") == "fits" \
+                and not row.get("single"):
             fitting.add(row["position"])
     return fitting
 
@@ -137,16 +157,17 @@ def score_candidates(candidate_paths: Sequence[str], units: Sequence[dict], entr
         if entry:
             misfit, _ = fit.misfit(entry, entries[0], analysis["spreads"], analysis["inverse"])
             candidate["relative"] = misfit / analysis["typical"]
+            candidate["single"] = single_dimension_miss(entry, entries[0])
         scored[unit["path"]] = candidate
     return scored
 
 
 def passes(candidate: Optional[dict], strictness: float, accept_borderline: bool = False) -> bool:
-    """Both signals say the candidate fits: its misfit is within the strictness and the AI says "fits" (or
-    "borderline", when bolder steps are wanted)."""
+    """Both signals say the candidate fits: its misfit is within the strictness, no single dimension is clearly off,
+    and the AI says "fits" (or "borderline", when bolder steps are wanted)."""
     verdicts = ("fits", "borderline") if accept_borderline else ("fits",)
     return bool(candidate) and candidate.get("relative") is not None and candidate["relative"] <= strictness \
-        and candidate.get("verdict") in verdicts
+        and not candidate.get("single") and candidate.get("verdict") in verdicts
 
 
 def tidy_up(paths: Sequence[str], cache: RatingCache, ask: Ask, resolve: Resolve, fetch_mix: FetchMix,
