@@ -237,6 +237,33 @@ class BrowseMixTest(MusicIPServerTestCase):
         self.assertEqual(main.load_mix(SEED, 20), [SEED, T1, T2])
         self.assertTrue(kodi.ended[-1]["updateListing"])
 
+    def test_a_new_mix_plays_when_nothing_else_does(self):
+        kodi.respond("select", 0)
+        self.run_plugin(action="browse_mix", seed=SEED, size="20")
+        self.assertEqual(kodi.playlist_files(), [SEED, T1, T2])
+        self.assertEqual(kodi.player.file, SEED)
+        self.assertNotified("Playing the new mix.")
+        self.assertTrue(kodi.ended)  # the listing came first
+
+    def test_a_new_mix_never_interrupts_other_media(self):
+        kodi.play_file(T2)  # something else plays (or is paused)
+        kodi.respond("select", 0)
+        self.run_plugin(action="browse_mix", seed=SEED, size="20")
+        self.assertEqual(kodi.player.file, T2)
+        self.assertEqual(kodi.playlist_files(), [])
+        self.assertEqual(main.load_mix(SEED, 20), [SEED, T1, T2])  # created and listed all the same
+
+    def test_opening_a_stored_mix_does_not_play_it(self):
+        self.save_mix([SEED, T1, T2], size=20)
+        self.run_plugin(action="browse_mix", seed=SEED, size="20")
+        self.assertFalse(kodi.player.playing)
+
+    def test_a_refreshed_mix_plays_when_idle(self):
+        self.save_mix([SEED, T1], size=20)
+        kodi.respond("select", 0)
+        self.run_plugin(action="browse_mix", seed=SEED, size="20", refresh="1")
+        self.assertEqual(kodi.playlist_files(), [SEED, T1, T2])
+
     def test_cancelled_generation_shows_error_item(self):
         self.run_plugin(action="browse_mix", seed=SEED, size="20")
         self.assertEqual(self.listed_labels(), ["MusicIP mix failed: Mix generation cancelled."])
