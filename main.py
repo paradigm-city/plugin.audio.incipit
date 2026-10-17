@@ -187,8 +187,25 @@ def run_plugin_url(**query: str) -> str:
     return f"RunPlugin({addon_url(**query)})"
 
 
+# Visible texts use plain ASCII punctuation: some skin fonts lack arrows, dots and typographic quotes. Letters
+# (names from the library, like "Motörhead") stay as they are. AI-written texts are converted when shown.
+PLAIN_PUNCTUATION = {
+    "\u2018": "'", "\u2019": "'", "\u201a": "'", "\u201b": "'", "\u2032": "'",
+    "\u201c": '"', "\u201d": '"', "\u201e": '"', "\u201f": '"', "\u2033": '"', "\u00ab": '"', "\u00bb": '"',
+    "\u2010": "-", "\u2011": "-", "\u2012": "-", "\u2013": "-", "\u2014": "-", "\u2015": "-", "\u2212": "-",
+    "\u2026": "...", "\u00b7": "|", "\u2022": "*", "\u00d7": "x",
+    "\u2192": "->", "\u2190": "<-", "\u2194": "<->", "\u21d2": "=>",
+    "\u00a0": " ", "\u2009": " ", "\u202f": " ", "\u2007": " ",
+}
+
+
+def plain(text: object) -> str:
+    """text with plain ASCII punctuation (letters kept)."""
+    return "".join(PLAIN_PUNCTUATION.get(ch, ch) for ch in str(text))
+
+
 def notify(message: str, level=xbmcgui.NOTIFICATION_INFO) -> None:
-    xbmcgui.Dialog().notification(ADDON_NAME, message, level)
+    xbmcgui.Dialog().notification(ADDON_NAME, plain(message), level)
 
 
 class BackgroundProgress:
@@ -3611,10 +3628,10 @@ def format_repair_candidate_label(song: dict) -> str:
 
     label = " - ".join(parts) if parts else (file_value or "Unknown candidate")
     if score and reasons:
-        label = f"{label} · {', '.join(str(reason) for reason in reasons[:3])}"
+        label = f"{label} | {', '.join(str(reason) for reason in reasons[:3])}"
 
     if file_value:
-        return f"{label} · {file_value}"
+        return f"{label} | {file_value}"
 
     return label
 
@@ -4278,7 +4295,7 @@ def format_track_details(
     if duration_label:
         parts.append(duration_label)
 
-    return " · ".join(parts)
+    return " | ".join(parts)
 
 
 def apply_track_detail_display(
@@ -4427,7 +4444,7 @@ def add_saved_mix_date_item(date_key: str, cache_paths: list[str]) -> None:
     warning_label = ""
     if inconsistent:
         warning_label = f"{inconsistent} warning{'s' if inconsistent != 1 else ''}"
-        label = problem_marker_label(f"{label} · {warning_label}")
+        label = problem_marker_label(f"{label} | {warning_label}")
 
     list_item = xbmcgui.ListItem(label=label, offscreen=True)
     if warning_label:
@@ -4478,7 +4495,7 @@ def add_saved_mix_item(cache_path: str) -> None:
                 repair_readiness_action_label(repair_readiness),
                 build_update_library_before_repair_action(cache_path),
             ))
-    context_items.append(("AI Mix Assist…", build_mix_assist_action("mix_assist_menu", cache_path)))
+    context_items.append(("AI Mix Assist...", build_mix_assist_action("mix_assist_menu", cache_path)))
     context_items.append(("Cleanup this mix", build_cleanup_saved_mix_action(cache_path)))
     list_item.addContextMenuItems(context_items)
 
@@ -4491,7 +4508,7 @@ def add_saved_mix_item(cache_path: str) -> None:
     if inconsistent and repair_readiness and not is_repair_ready(repair_readiness):
         detail_parts.append(repair_readiness_action_label(repair_readiness))
     if detail_parts:
-        list_item.setLabel2(" · ".join(detail_parts))
+        list_item.setLabel2(" | ".join(detail_parts))
 
     xbmcplugin.addDirectoryItem(
         HANDLE,
@@ -5428,7 +5445,7 @@ MIX_HISTORY_LIMIT = 200
 
 
 def mix_track_labels(cache_path: str, paths: list[str]) -> list[str]:
-    """"Artist – Title" from the mix's recorded metadata, else from the file name."""
+    """"Artist - Title" from the mix's recorded metadata, else from the file name."""
     meta = load_json_file(mix_meta_path_from_cache_path(cache_path))
     snapshots = meta.get("track_metadata_by_path") if isinstance(meta, dict) else None
     snapshots = snapshots if isinstance(snapshots, dict) else {}
@@ -5438,7 +5455,7 @@ def mix_track_labels(cache_path: str, paths: list[str]) -> list[str]:
         title = str(snapshot.get("title") or "").strip() if isinstance(snapshot, dict) else ""
         artist = snapshot.get("artist") if isinstance(snapshot, dict) else ""
         artist = ", ".join(artist) if isinstance(artist, list) else str(artist or "").strip()
-        labels.append(f"{artist} – {title}" if title and artist else title or path_to_label(path))
+        labels.append(f"{artist} - {title}" if title and artist else title or path_to_label(path))
     return labels
 
 
@@ -5489,21 +5506,21 @@ def format_history_more_like_this(event: dict) -> list[str]:
     skipped = event.get("skipped") or []
     if skipped:
         lines.append(f"AI Mix Assist skipped {len(skipped)} that didn't fit:")
-        lines += [f"× {entry.get('track', '?')} ({entry.get('reason', '')})" for entry in skipped]
+        lines += [f"x {entry.get('track', '?')} ({entry.get('reason', '')})" for entry in skipped]
     return lines
 
 
 def format_history_less_like_this(event: dict) -> list[str]:
     removed = event.get("removed") or []
     return [f"\"Less like this\" for {event.get('song', '?')} removed {len(removed)} track(s):"] + \
-        history_list("−", removed)
+        history_list("-", removed)
 
 
 def format_history_repaired(event: dict) -> list[str]:
     replaced = event.get("replaced") or []
     how = "Repaired automatically" if event.get("automatic") else "Repaired"
     return [f"{how}: {len(replaced)} missing file(s) replaced:"] + \
-        [f"{entry.get('old', '?')} → {entry.get('new', '?')}" for entry in replaced]
+        [f"{entry.get('old', '?')} -> {entry.get('new', '?')}" for entry in replaced]
 
 
 def format_history_ai_tidy_up(event: dict) -> list[str]:
@@ -5512,8 +5529,8 @@ def format_history_ai_tidy_up(event: dict) -> list[str]:
     if not replaced and not removed:
         return [f"{who}: every track fits"]
     lines = [f"{who}: {len(replaced)} replaced, {len(removed)} removed"]
-    lines += [f"{entry.get('old', '?')} → {entry.get('new', '?')} ({entry.get('reason', '')})" for entry in replaced]
-    lines += [f"− {entry.get('track', '?')} ({entry.get('reason', '')})" for entry in removed]
+    lines += [f"{entry.get('old', '?')} -> {entry.get('new', '?')} ({entry.get('reason', '')})" for entry in replaced]
+    lines += [f"- {entry.get('track', '?')} ({entry.get('reason', '')})" for entry in removed]
     return lines
 
 
@@ -5644,10 +5661,11 @@ def mix_info_pages(cache_path: str) -> list[tuple[str, str]]:
     """The pages of the mix information: (title, text)."""
     meta = get_saved_mix_metadata(cache_path, load_mix_by_cache_path(cache_path))
     events = [event for event in meta.get(MIX_HISTORY_KEY) or [] if isinstance(event, dict)]
-    return [
+    pages = [
         ("Overview", build_mix_info_message(cache_path)),
         (f"History ({len(events)})", build_mix_history_text(meta)),
     ] + ([("AI Mix Assist", "\n".join(build_mix_assist_info_lines(meta)))] if get_mix_assist_section(meta) else [])
+    return [(title, plain(text)) for title, text in pages]
 
 
 def show_mix_info(cache_path: str) -> None:
@@ -5665,7 +5683,7 @@ def show_info_pages(heading: str, pages: list[tuple[str, str]]) -> None:
     """Pages, like tabs: a short list of pages; closing a page returns to the list."""
     choice = 0
     while True:
-        choice = xbmcgui.Dialog().select(heading, [title for title, _text in pages], preselect=choice)
+        choice = xbmcgui.Dialog().select(heading, [plain(title) for title, _text in pages], preselect=choice)
         if choice is None or choice < 0 or choice >= len(pages):
             return
         title, page = pages[choice]
@@ -5673,9 +5691,9 @@ def show_info_pages(heading: str, pages: list[tuple[str, str]]) -> None:
             page()
             continue
         try:
-            xbmcgui.Dialog().textviewer(f"{heading}: {title}", page)
+            xbmcgui.Dialog().textviewer(plain(f"{heading}: {title}"), plain(page))
         except Exception:
-            xbmcgui.Dialog().ok(f"{heading}: {title}", page)
+            xbmcgui.Dialog().ok(plain(f"{heading}: {title}"), plain(page))
 
 
 def selected_mix_cache_path() -> str:
@@ -6033,7 +6051,7 @@ def edit_mix_assist_intent(cache_path: str) -> bool:
     meta = get_saved_mix_metadata(cache_path, load_mix_by_cache_path(cache_path))
     section = get_mix_assist_section(meta)
     current = str(section.get("listener_intent") or section.get("intent") or "")
-    value = ask_text("What is this mix about?", current)
+    value = ask_text("What is this mix about?", plain(current))
     if value is None:  # cancelled
         return False
     value = value.strip()
@@ -6064,7 +6082,7 @@ def build_mix_assist_info_lines(meta: dict) -> list[str]:
     replaced, removed = section.get("replaced") or [], section.get("removed") or []
     if replaced or removed:
         lines += ["", "Changes of the last tidy-up:"]
-        lines += [f"{change.get('old_label', '')} → {change.get('new_label', '')} ({change.get('reason', '')})"
+        lines += [f"{change.get('old_label', '')} -> {change.get('new_label', '')} ({change.get('reason', '')})"
                   for change in replaced]
         lines += [f"Removed: {label}" for label in removed]
     elif section.get("checked_ts"):
@@ -6072,7 +6090,7 @@ def build_mix_assist_info_lines(meta: dict) -> list[str]:
     index = mix_openness_index(meta)
     lines.append(f"Openness: {mix_openness_label(index)}"
                  + (" (chosen for this mix)" if "openness" in section else " (the default)"))
-    lines += ["", "Context menu of the mix → \"AI Mix Assist…\": change what the mix is about or its openness, "
+    lines += ["", "Context menu of the mix -> \"AI Mix Assist...\": change what the mix is about or its openness, "
               "tidy it up, or undo the changes. All changes are in the History page."]
     return lines
 
@@ -6170,11 +6188,11 @@ def mix_assist_dialog_lines(params: dict) -> list[str]:
     openness = int(params.get("assist_openness", default_mix_openness()))
     intent = str(params.get("assist_intent") or "").strip()
     return [f"AI Mix Assist: {mix_openness_label(openness)}",
-            f"What this mix is about: {shorten(intent, 50) if intent else '<worked out by the AI>'}"]
+            plain(f"What this mix is about: {shorten(intent, 50) if intent else '<worked out by the AI>'}")]
 
 
 def shorten(text: str, length: int) -> str:
-    return text if len(text) <= length else text[:length - 1].rstrip() + "…"
+    return text if len(text) <= length else text[:length - 1].rstrip() + "..."
 
 
 def edit_mix_assist_dialog_choice(params: dict, line: int) -> dict:
@@ -6230,7 +6248,7 @@ def apply_mix_assist_choices(cache_path: str, tracks: list[str]) -> None:
 
 
 def choose_from_mix_assist_menu(cache_path: str) -> str:
-    """The context menu entry "AI Mix Assist…": returns the action picked, "" when cancelled."""
+    """The context menu entry "AI Mix Assist...": returns the action picked, "" when cancelled."""
     meta = get_saved_mix_metadata(cache_path, load_mix_by_cache_path(cache_path))
     section = get_mix_assist_section(meta)
     intent = str(section.get("listener_intent") or section.get("intent") or "")
@@ -6241,7 +6259,7 @@ def choose_from_mix_assist_menu(cache_path: str) -> str:
     ]
     if section.get("previous_tracks"):
         entries.append(("Undo the AI Mix Assist changes", "mix_assist_undo"))
-    choice = xbmcgui.Dialog().select("AI Mix Assist", [label for label, _action in entries])
+    choice = xbmcgui.Dialog().select("AI Mix Assist", [plain(label) for label, _action in entries])
     if choice is None or choice < 0 or choice >= len(entries):
         return ""
     return entries[choice][1]
@@ -6475,13 +6493,14 @@ def show_radio_info() -> None:
 
 def radio_info_pages(state: dict) -> list[tuple[str, str]]:
     events = [event for event in state.get("events") or [] if isinstance(event, dict)]
-    return [
+    pages = [
         ("Overview", build_radio_overview(state, events)),
         ("What it is about", build_radio_about(events)),
         ("Drift", build_radio_drift(events)),
         ("Drift chart", show_radio_drift_chart),
         (f"History ({len(events)})", build_radio_history(events)),
     ]
+    return [(title, page if callable(page) else plain(page)) for title, page in pages]
 
 
 def format_play_time(seconds: int) -> str:
@@ -6502,12 +6521,12 @@ def build_radio_overview(state: dict, events: list[dict]) -> str:
         f"Playing since: {format_sidecar_ts(state.get('playing_started_ts'))} "
         f"({format_play_time(int(time.time()) - int(state.get('playing_started_ts') or time.time()))})",
         f"Now playing: {state.get('current_label') or ''}",
-        f"Songs played: {int(state.get('played') or 0)} · coming up: {max(0, len(queue) - position - 1)}",
+        f"Songs played: {int(state.get('played') or 0)} | coming up: {max(0, len(queue) - position - 1)}",
         "",
         f"MusicIP: {started.get('parameters') or 'not recorded'}",
     ]
     if started.get("assisted"):
-        lines.append(f"AI Mix Assist: on · Station openness: {started.get('openness')} · "
+        lines.append(f"AI Mix Assist: on | Station openness: {started.get('openness')} | "
                      f"Station drift: {started.get('drift')}")
     else:
         lines.append("AI Mix Assist: off for this station")
@@ -6565,8 +6584,8 @@ def build_radio_drift(events: list[dict]) -> str:
         change = values[-1] - values[0]
         unit = " years" if not dimension else ""
         course = ", ".join(f"{value:.0f}" if not dimension else f"{value:.1f}" for value in values[-10:])
-        lines.append(f"{name}: {dimension_value_text(key, values[0])} → {dimension_value_text(key, values[-1])} "
-                     f"({change:+.1f}{unit}) · course: {course}")
+        lines.append(f"{name}: {dimension_value_text(key, values[0])} -> {dimension_value_text(key, values[-1])} "
+                     f"({change:+.1f}{unit}) | course: {course}")
         moves.append((abs(change) / (5 if not dimension else 1), name, f"{change:+.1f}{unit}"))
     moved = [f"{name} ({change})" for size, name, change in sorted(moves, reverse=True)[:3] if size >= 0.3]
     lines.insert(3, ("Moved most: " + ", ".join(moved)) if moved else "The station has stayed close to the picked song.")
@@ -6609,10 +6628,10 @@ def render_drift_chart(data: dict, path: str) -> str:
 
 
 def drift_legend_text(key: str, start: float, now: float) -> str:
-    """"3.7 → 3.6 mostly played": both values, and the scale word for now; years as years."""
+    """"3.7 -> 3.6 mostly played": both values, and the scale word for now; years as years."""
     if key == mix_assist_dimensions.ERA_KEY:
-        return f"{int(round(start))} → {int(round(now))}"
-    return f"{start:.1f} → {dimension_value_text(key, now)}"
+        return f"{int(round(start))} -> {int(round(now))}"
+    return f"{start:.1f} -> {dimension_value_text(key, now)}"
 
 
 def drift_chart_path() -> str:
@@ -6662,7 +6681,8 @@ def drift_chart_controls(data: dict, path: str, state: dict) -> list:
     started = next((event for event in state.get("events") or [] if event.get("kind") == "started"), {})
     controls = [
         xbmcgui.ControlImage(x, y, width, height, path),
-        xbmcgui.ControlLabel(x + 30, y + 20, width - 60, 40, f"Station drift: {started.get('seed', '')}", textColor=white),
+        xbmcgui.ControlLabel(x + 30, y + 20, width - 60, 40, plain(f"Station drift: {started.get('seed', '')}"),
+                             textColor=white),
         xbmcgui.ControlLabel(x + 30, y + 52, width - 60, 30, "Seven scales from 0 to 10 (left), sounding year (right). "
                              "Any key closes.", textColor=grey),
     ]
@@ -6680,7 +6700,7 @@ def drift_chart_controls(data: dict, path: str, state: dict) -> list:
     controls.append(xbmcgui.ControlLabel(x + left, y + bottom + 12, 300, 28,
                                          time.strftime(clock, time.localtime(times[0])), textColor=grey))
     controls.append(xbmcgui.ControlLabel(x + right - 300, y + bottom + 12, 300, 28,
-                                         f"{time.strftime(clock, time.localtime(times[-1]))} · {len(times)} measurements",
+                                         f"{time.strftime(clock, time.localtime(times[-1]))} | {len(times)} measurements",
                                          textColor=grey, alignment=1))
     legend_x, legend_y = x + right + 90, y + top
     for index, item in enumerate(data["series"]):
@@ -6702,7 +6722,7 @@ def format_radio_event(event: dict) -> list[str]:
         if not removed:
             return ["AI Mix Assist checked the first songs: all fit"]
         return [f"AI Mix Assist took out {len(removed)} of the first songs:"] + \
-            [f"− {entry.get('track', '?')} ({entry.get('reason', '')})" for entry in removed]
+            [f"- {entry.get('track', '?')} ({entry.get('reason', '')})" for entry in removed]
     if kind == "refill":
         added = event.get("added") or []
         how = "checked" if event.get("checked") else "unchecked (AI Mix Assist off)"
@@ -6710,7 +6730,7 @@ def format_radio_event(event: dict) -> list[str]:
         skipped = event.get("skipped") or []
         if skipped:
             lines.append(f"skipped {event.get('skipped_count', len(skipped))} that didn't fit, e.g.:")
-            lines += [f"× {entry.get('track', '?')} ({entry.get('reason', '')})" for entry in skipped[:5]]
+            lines += [f"x {entry.get('track', '?')} ({entry.get('reason', '')})" for entry in skipped[:5]]
         return lines
     if kind == "refill_unchecked":
         added = event.get("added") or []

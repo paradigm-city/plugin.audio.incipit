@@ -92,7 +92,7 @@ def unit_for_song(song: dict, album: dict) -> dict:
         return {
             "kind": "track",
             "key": track_key(song.get("displayartist", ""), song.get("title", ""), song.get("musicbrainztrackid", "")),
-            "label": f"{song.get('displayartist', '')} – {song.get('title', '')}",
+            "label": f"{song.get('displayartist', '')} - {song.get('title', '')}",
             "artist": song.get("displayartist", ""),
             "item": {"artist": song.get("displayartist", ""), "title": song.get("title", ""),
                      "album": album.get("title", ""), "year": year, "genres": genres},
@@ -106,7 +106,7 @@ def unit_for_song(song: dict, album: dict) -> dict:
         "kind": "album",
         "key": album_key(album.get("displayartist", ""), album.get("title", ""),
                          album.get("musicbrainzreleasegroupid", "")),
-        "label": f"{song.get('displayartist', '')} – {song.get('title', '')} ({album.get('title', '')})",
+        "label": f"{song.get('displayartist', '')} - {song.get('title', '')} ({album.get('title', '')})",
         "artist": song.get("displayartist", ""),
         "item": {"artist": album.get("displayartist", ""), "album": album.get("title", ""),
                  "year": int(album.get("year") or year), "genres": first_text(album.get("genre")) or genres,
@@ -125,7 +125,7 @@ def unit_for_unknown(path: str, metadata: Optional[dict] = None) -> dict:
     return {
         "kind": "track",
         "key": track_key(artist, title),
-        "label": f"{artist} – {title}" if artist else title,
+        "label": f"{artist} - {title}" if artist else title,
         "artist": artist,
         "item": {"artist": artist, "title": title, "album": metadata.get("album", ""),
                  "year": int(metadata.get("year") or 0), "genres": first_text(metadata.get("genre"))},
