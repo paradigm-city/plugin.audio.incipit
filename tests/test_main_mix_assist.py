@@ -63,14 +63,14 @@ class TidyUpTest(MixAssistTestCase):
         self.assertEqual(section["intent"], "dark, abstract, instrumental")
         self.assertEqual(section["intent_source"], "ai")
         self.assertEqual(section["previous_tracks"], TRACKS)
-        self.assertEqual(section["replaced"][0]["new_label"], "Medeski Martin & Wood – Think")
+        self.assertEqual(section["replaced"][0]["new_label"], "Medeski Martin & Wood – Think")  # stored as given
         self.assertEqual(section["removed"], ["Track 5"])
         self.assertNotified("AI Mix Assist: 1 track didn't fit and was replaced, 1 without a fitting replacement was removed.")
         self.assertBuiltin("Container.Refresh")
         event = self.history()[-1]
         self.assertEqual((event["kind"], event["automatic"], event["intent"]),
                          ("ai_tidy_up", False, "dark, abstract, instrumental"))
-        self.assertEqual(event["replaced"], [{"old": "wilfried – fire walk", "new": "Medeski Martin & Wood – Think",
+        self.assertEqual(event["replaced"], [{"old": "wilfried \u2013 fire walk", "new": "Medeski Martin & Wood \u2013 Think",
                                               "reason": "Danceable disco, bright"}])
         self.assertEqual(event["removed"], [{"track": "Track 5", "reason": ""}])
 
@@ -186,7 +186,7 @@ class SavedMixMenuTest(MixAssistTestCase):
 
     def test_one_context_menu_entry(self):
         labels = self.context_labels()
-        self.assertIn("AI Mix Assist…", labels)
+        self.assertIn("AI Mix Assist...", labels)
         for old in ("Tidy up with AI Mix Assist", "Edit what this mix is about", "Undo AI Mix Assist changes"):
             self.assertNotIn(old, labels)
 
@@ -226,11 +226,11 @@ class SavedMixMenuTest(MixAssistTestCase):
         pages = dict(main.mix_info_pages(self.cache_path))
         self.assertEqual(list(pages), ["Overview", "History (2)", "AI Mix Assist"])
         self.assertIn("What this mix is about (as the AI put it):\ndark, abstract, instrumental", pages["AI Mix Assist"])
-        self.assertIn("wilfried – fire walk → Medeski Martin & Wood – Think (Danceable disco, bright)",
+        self.assertIn("wilfried - fire walk -> Medeski Martin & Wood - Think (Danceable disco, bright)",
                       pages["AI Mix Assist"])
         self.assertNotIn("dark, abstract", pages["Overview"])
         self.assertIn("AI Mix Assist tidied up the mix: 1 replaced, 0 removed\n"
-                      "    wilfried – fire walk → Medeski Martin & Wood – Think (Danceable disco, bright)",
+                      "    wilfried - fire walk -> Medeski Martin & Wood - Think (Danceable disco, bright)",
                       pages["History (2)"])
 
 
@@ -472,7 +472,7 @@ class MoreLikeThisTest(MusicIPServerTestCase):
         event = self.read_json(main.mix_meta_path_from_cache_path(self.cache_path))["history"][-1]
         self.assertEqual(event["skipped"], [{"track": "New 0", "reason": "too bright"}])
         text = main.build_mix_history_text({"history": [event]})
-        self.assertIn("AI Mix Assist skipped 1 that didn't fit:\n    × New 0 (too bright)", text)
+        self.assertIn("AI Mix Assist skipped 1 that didn't fit:\n    x New 0 (too bright)", text)
 
     def test_a_mix_switched_off_gets_musicips_tracks_unchecked(self):
         sidecar = self.read_json(main.mix_meta_path_from_cache_path(self.cache_path))

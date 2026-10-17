@@ -181,11 +181,11 @@ class RadioMixAssistTest(RadioBase):
         self.assertEqual(refill["seed"], radio["queue"][4]["label"])
         pages = dict(main.radio_info_pages(radio))
         self.assertEqual(list(pages)[:3], ["Overview", "What it is about", "Drift"])
-        self.assertIn("AI Mix Assist: on · Station openness: Balanced · Station drift: Drift slowly", pages["Overview"])
+        self.assertIn("AI Mix Assist: on | Station openness: Balanced | Station drift: Drift slowly", pages["Overview"])
         self.assertIn("Refills: 1 (1 checked, 0 unchecked)", pages["Overview"])
         self.assertIn("The picked song:\ndark metal", pages["What it is about"])
-        self.assertIn("Energy: 5.0 steady → 6.0 steady (+1.0) · course: 5.0, 6.0", pages["Drift"])
-        self.assertIn("Sounding year: 1983 → 1984 (+1.0 years)", pages["Drift"])
+        self.assertIn("Energy: 5.0 steady -> 6.0 steady (+1.0) | course: 5.0, 6.0", pages["Drift"])
+        self.assertIn("Sounding year: 1983 -> 1984 (+1.0 years)", pages["Drift"])
         self.assertIn("Moved most: Energy (+1.0)", pages["Drift"])
         history = pages[f"History ({len(kinds)})"]
         self.assertTrue(history.split("\n")[0].endswith("2 song(s), checked"))
@@ -210,9 +210,9 @@ class RadioMixAssistTest(RadioBase):
         labels = window.labels()
         self.assertTrue(labels[0].startswith("Station drift: "))
         self.assertIn("Energy", labels)
-        self.assertIn("5.0 → 6.0 steady", labels)
+        self.assertIn("5.0 -> 6.0 steady", labels)
         self.assertIn("Sounding year", labels)
-        self.assertIn("1983 → 1984", labels)
+        self.assertIn("1983 -> 1984", labels)
         image = window.controls[0].filename
         self.assertTrue(os.path.isfile(image))
         self.assertEqual(os.listdir(os.path.dirname(image)), [os.path.basename(image)])  # the older one is gone

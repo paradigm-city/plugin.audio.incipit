@@ -42,7 +42,7 @@ class MixHistoryTest(HistoryTestCase):
         sidecar = self.read_json(main.mix_meta_path_from_cache_path(cache_path))
         sidecar["track_metadata_by_path"] = {main.canonical_audio_path(B): {"artist": "Motörhead", "title": "Overkill"}}
         self.write_json(main.mix_meta_path_from_cache_path(cache_path), sidecar)
-        self.assertEqual(main.mix_track_labels(cache_path, [B, C]), ["Motörhead – Overkill", main.path_to_label(C)])
+        self.assertEqual(main.mix_track_labels(cache_path, [B, C]), ["Motörhead - Overkill", main.path_to_label(C)])
 
     def test_the_history_is_capped(self):
         cache_path = self.save_mix([A, B], size=2)
@@ -65,6 +65,22 @@ class MixHistoryTest(HistoryTestCase):
         text = main.build_mix_history_text({"history": [{"kind": "something_new", "ts": 0}]})
         self.assertIn("something_new", text)
         self.assertIn("Nothing recorded yet", main.build_mix_history_text({}))
+
+
+class PlainTextTest(HistoryTestCase):
+    def test_punctuation_becomes_ascii_and_letters_stay(self):
+        text = "Mot\u00f6rhead \u2013 \u201cOverkill\u201d \u2192 Sigur R\u00f3s\u2026 4.0 \u00b7 \u00d7 \u2212 it\u2019s"
+        self.assertEqual(main.plain(text), "Mot\u00f6rhead - \"Overkill\" -> Sigur R\u00f3s... 4.0 | x - it's")
+
+    def test_notifications_and_pages_are_plain(self):
+        main.notify("Done \u2192 next \u2026")
+        self.assertEqual(kodi.notification_messages()[-1], "Done -> next ...")
+        cache_path = self.save_mix([A, B], size=2)
+        main.record_mix_history(cache_path, "more_like_this", song="Sigur R\u00f3s \u2013 Hopp\u00edpolla",
+                                added=["Mot\u00f6rhead \u2013 Overkill"])
+        history = dict(main.mix_info_pages(cache_path))["History (2)"]
+        self.assertIn('"More like this" for Sigur R\u00f3s - Hopp\u00edpolla added 1 track(s):', history)
+        self.assertTrue(all(ord(ch) < 128 or ch.isalpha() for ch in history))
 
 
 class MixInformationPagesTest(HistoryTestCase):

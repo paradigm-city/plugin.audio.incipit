@@ -239,7 +239,7 @@ class LabelFormattingTest(KodiTestCase):
         self.assertEqual(main.cleanup_music_label(" - ", "fallback"), "fallback")
 
     def test_track_details(self):
-        self.assertEqual(main.format_track_details(year=1980, genres=["Metal"], duration=169), "1980s · Metal · 2:49")
+        self.assertEqual(main.format_track_details(year=1980, genres=["Metal"], duration=169), "1980s | Metal | 2:49")
         self.assertEqual(main.format_track_details(), "")
 
     def test_list_item_decoration(self):

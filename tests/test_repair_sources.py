@@ -102,7 +102,7 @@ class UnavailableSourceTest(SourcesTestCase):
         main.add_saved_mix_item(self.cache_path)
         _url, item, _folder = kodi.directory_items[-1]
         self.assertIn("Check music sources before repair", [label for label, _action in item.context_menu])
-        self.assertTrue(item.getLabel2().endswith("· Check music sources before repair"))
+        self.assertTrue(item.getLabel2().endswith("| Check music sources before repair"))
 
 
 class VirtualLibraryRootTest(unittest.TestCase):
