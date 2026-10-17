@@ -190,18 +190,21 @@ def run_plugin_url(**query: str) -> str:
 
 # Visible texts use plain ASCII punctuation: some skin fonts lack arrows, dots and typographic quotes. Letters
 # (names from the library, like "Motörhead") stay as they are. AI-written texts are converted when shown.
+# "»" stands for an arrow: skin fonts such as Roboto Condensed have no arrows (U+2190 ff.), but all have the
+# angle quotes (Latin-1).
+ARROW = "\u00bb"
 PLAIN_PUNCTUATION = {
     "\u2018": "'", "\u2019": "'", "\u201a": "'", "\u201b": "'", "\u2032": "'",
-    "\u201c": '"', "\u201d": '"', "\u201e": '"', "\u201f": '"', "\u2033": '"', "\u00ab": '"', "\u00bb": '"',
+    "\u201c": '"', "\u201d": '"', "\u201e": '"', "\u201f": '"', "\u2033": '"',
     "\u2010": "-", "\u2011": "-", "\u2012": "-", "\u2013": "-", "\u2014": "-", "\u2015": "-", "\u2212": "-",
     "\u2026": "...", "\u00b7": "|", "\u2022": "*", "\u00d7": "x",
-    "\u2192": "->", "\u2190": "<-", "\u2194": "<->", "\u21d2": "=>",
+    "\u2192": ARROW, "\u21d2": ARROW, "\u2190": "<-", "\u2194": "<->",
     "\u00a0": " ", "\u2009": " ", "\u202f": " ", "\u2007": " ",
 }
 
 
 def plain(text: object) -> str:
-    """text with plain ASCII punctuation (letters kept)."""
+    """text with punctuation every skin font has: plain ASCII, and "»" for arrows (letters kept)."""
     return "".join(PLAIN_PUNCTUATION.get(ch, ch) for ch in str(text))
 
 
@@ -5569,7 +5572,7 @@ def format_history_repaired(event: dict) -> list[str]:
     replaced = event.get("replaced") or []
     how = "Repaired automatically" if event.get("automatic") else "Repaired"
     return [f"{how}: {len(replaced)} missing file(s) replaced:"] + \
-        [f"{entry.get('old', '?')} -> {entry.get('new', '?')}" for entry in replaced]
+        [f"{entry.get('old', '?')} {ARROW} {entry.get('new', '?')}" for entry in replaced]
 
 
 def format_history_ai_tidy_up(event: dict) -> list[str]:
@@ -5578,7 +5581,7 @@ def format_history_ai_tidy_up(event: dict) -> list[str]:
     if not replaced and not removed:
         return [f"{who}: every track fits"]
     lines = [f"{who}: {len(replaced)} replaced, {len(removed)} removed"]
-    lines += [f"{entry.get('old', '?')} -> {entry.get('new', '?')} ({entry.get('reason', '')})" for entry in replaced]
+    lines += [f"{entry.get('old', '?')} {ARROW} {entry.get('new', '?')} ({entry.get('reason', '')})" for entry in replaced]
     lines += [f"- {entry.get('track', '?')} ({entry.get('reason', '')})" for entry in removed]
     return lines
 
@@ -5999,7 +6002,7 @@ def mix_info_parts(cache_path: str) -> dict:
     # What AI Mix Assist changed last
     changes: list[str] = []
     replaced, removed = section.get("replaced") or [], section.get("removed") or []
-    changes += [f"{change.get('old_label', '')} -> {change.get('new_label', '')} ({change.get('reason', '')})"
+    changes += [f"{change.get('old_label', '')} {ARROW} {change.get('new_label', '')} ({change.get('reason', '')})"
                 for change in replaced]
     changes += [f"Removed: {label}" for label in removed]
     if changes and section.get("previous_tracks"):
@@ -7251,7 +7254,7 @@ def build_radio_drift(events: list[dict]) -> str:
         change = values[-1] - values[0]
         unit = " years" if not dimension else ""
         course = ", ".join(f"{value:.0f}" if not dimension else f"{value:.1f}" for value in values[-10:])
-        lines.append(f"{name}: {dimension_value_text(key, values[0])} -> {dimension_value_text(key, values[-1])} "
+        lines.append(f"{name}: {dimension_value_text(key, values[0])} {ARROW} {dimension_value_text(key, values[-1])} "
                      f"({change:+.1f}{unit}) | course: {course}")
         moves.append((abs(change) / (5 if not dimension else 1), name, f"{change:+.1f}{unit}"))
     moved = [f"{name} ({change})" for size, name, change in sorted(moves, reverse=True)[:3] if size >= 0.3]
@@ -7315,10 +7318,10 @@ def drift_chart_texts(data: dict) -> list:
 
 
 def drift_legend_text(key: str, start: float, now: float) -> str:
-    """"3.7 -> 3.6 mostly played": both values, and the scale word for now; years as years."""
+    """"3.7 » 3.6 mostly played": both values, and the scale word for now; years as years."""
     if key == mix_assist_dimensions.ERA_KEY:
-        return f"{int(round(start))} -> {int(round(now))}"
-    return f"{start:.1f} -> {dimension_value_text(key, now)}"
+        return f"{int(round(start))} {ARROW} {int(round(now))}"
+    return f"{start:.1f} {ARROW} {dimension_value_text(key, now)}"
 
 
 def format_radio_event(event: dict) -> list[str]:
