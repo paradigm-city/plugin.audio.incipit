@@ -237,6 +237,10 @@ New songs (replacements, "More like this", Radio refills) must pass both signals
 
 The global settings are defaults; each mix can have its own. The "Generate MusicIP mix" dialog has two more lines: **AI Mix Assist** (Off or an openness level) and **What this mix is about** (the listener's words, used instead of the AI's statement). The mix keeps them in its sidecar (`mix_assist.openness`, `mix_assist.listener_intent`); its tidy-ups and "More like this" use its openness; Off means no automatic checks (a tidy-up started from the menu then uses the default level). The saved mix's context menu has one entry, **AI Mix Assist…**: what the mix is about, openness, tidy up now, undo. Choices and changes are in the mix history. Radio keeps its global "Station openness": picking a station has no dialog.
 
+### Names and favourite stations (2026-10-17)
+
+When the AI first describes a mix or a station, it also names it in 2 to 4 words in the same call ("Hypnotic Cosmic Analog Voyages", "Dark Epic 80s Metal"; no artist names). Mixes are listed by that name; the information shows it with the date; stations are named without a date ("timeless"). The listener can rename a mix in its "AI Mix Assist..." menu; the listener's name is kept, an empty one goes back to the AI's. Setting "Name mixes and stations" (on). Favourite stations keep a station's picked song and name; they always start fresh from the picked song.
+
 ## Drift
 
 Drift answers a different question than the style check: not *does this track belong to the mix?* but *which track should come next?* It applies when tracks are chosen one after another (Radio refills, journeys), not when a finished mix is judged.

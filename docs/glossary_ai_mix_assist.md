@@ -80,6 +80,7 @@ Terms used in [concept_ai_mix_assist.md](concept_ai_mix_assist.md) and in the pi
 
 | Term | Meaning | Retired or ambiguous words |
 |---|---|---|
+| **Name** | A mix's or station's short title, 2 to 4 words saying what it is about, given by the AI at the first check (or by the listener). | "title" |
 | **Openness** | What the listener sets: how much variety a mix or station welcomes. One scale for mixes and Radio, set separately ("Mix openness", "Station openness"): Focused, Close, Balanced (default), Open, Adventurous. Each level is a strictness. | "strictness" (in the settings), "station steps", "variety" (that is MusicIP's mix parameter) |
 | **Single-dimension miss** | A track that differs from the seed (or a station's profile) by at least 5 points on one dimension, or 25 years in sounding year: flagged by the profile check however close it is overall. | |
 | **Strictness** | Internal: the threshold on the relative misfit, plus whether new songs the AI calls borderline are accepted. The openness levels map to 1.0, 1.1, 1.2 (calibrated default), 1.35 and 1.5 with borderline songs. | "rigidity", "strength", "tolerance" |
