@@ -52,6 +52,12 @@ Found on 2026-10-11 while removing the Discovery command channel (F6). They are 
 
 ## Resolved
 
+### F20 · The Radio screen kept the first snippet's title while scanning
+
+Found by the user on 2026-10-17: while scanning, the Radio screen's title ("Radio: scanning - <song>") showed the first snippet correctly but was not updated when the next snippet started. The screen was only rebuilt after an action on it.
+
+Fixed in a03ba20 (2026-10-17): the service requests a redraw whenever the snippet changes, if the Radio screen is open. `test_radio_mode.TuningTest.test_the_radio_screen_follows_the_snippets` covers it.
+
 ### F18 · Radio songs were labelled "(Unknown Artist)"
 
 Found by the user on 2026-10-15: a new station's playlist showed many songs as "(Unknown Artist) - <file name>". Starting a station and topping it up built the labels from the metadata cache only (`allow_live_lookup=False`), and a station's songs are mostly new to that cache. A Radio test even expected the unknown artist.

@@ -85,6 +85,28 @@ class TuningTest(RadioTestCase):
         self.assertNotified("Scanning stations.")
         self.assertEqual(plugin_query(kodi.builtins[-1])["action"], "radio_mode")
 
+    def test_the_radio_screen_follows_the_snippets(self):
+        self.turn_on()
+        kodi.info_labels["Container.FolderPath"] = "plugin://plugin.audio.musicip/?action=radio_mode&nonce=1"
+        self.tick(service.RADIO_STOP_GRACE_SECONDS)
+        service.refresh_radio_menu_if_visible()
+        kodi.builtins.clear()
+        self.tick()
+        service.refresh_radio_menu_if_visible()
+        self.assertEqual(kodi.builtins, [])  # same snippet: no redraw
+        main.skip_discovery_song()  # the next snippet
+        self.tick()
+        service.refresh_radio_menu_if_visible()
+        self.assertEqual(kodi.builtins, ["Container.Update(plugin://plugin.audio.musicip/?action=radio_mode&nonce=1,replace)"])
+
+    def test_the_radio_screen_is_not_redrawn_elsewhere(self):
+        self.turn_on()
+        kodi.info_labels["Container.FolderPath"] = "plugin://plugin.audio.musicip/?action=saved_mixes"
+        kodi.builtins.clear()
+        self.tick(service.RADIO_STOP_GRACE_SECONDS)
+        service.refresh_radio_menu_if_visible()
+        self.assertEqual(kodi.builtins, [])
+
     def test_turn_on_without_songs(self):
         kodi.library.songs.clear()
         self.turn_on()
