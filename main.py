@@ -28,6 +28,7 @@ import xbmcplugin
 import xbmcvfs
 
 from mixassist import assist as mix_assist
+from mixassist import dimensions as mix_assist_dimensions
 from mixassist import cache as mix_assist_cache
 from mixassist import claude as mix_assist_claude
 from mixassist import library as mix_assist_library
@@ -4733,6 +4734,7 @@ def show_radio_mode_menu() -> None:
         add_radio_action_item("Stop radio", "radio_stop")
     elif phase == "playing":
         add_radio_action_item("Scan again", "radio_retune")
+        add_radio_action_item("Station information", "radio_info")
         add_radio_action_item("Stop radio", "radio_stop")
     else:
         add_radio_action_item("Scan stations", "radio_on")
@@ -4849,7 +4851,17 @@ def start_radio_station(seed: str) -> bool:
         {"file": track, "label": format_mix_track_label(track, metadata, 0)}
         for track, metadata in zip(tracks, metadata_list)
     ]
+    assisted = mix_assist_for_radio()
+    started_event = {
+        "kind": "started", "ts": now, "seed": queue[0]["label"],
+        "parameters": describe_mix_parameters(compact_mix_generation_parameters(get_effective_mix_parameters())),
+        "assisted": assisted,
+        "openness": MIX_OPENNESS_LABELS[max(0, min(4, get_setting_int("mix_assist_station_strictness", 2)))],
+        "drift": RADIO_DRIFT_LABELS[max(0, min(2, get_setting_int("mix_assist_radio_drift", 1)))],
+    }
     save_radio_state({
+        "events": [started_event],
+        "played": 1,
         "phase": "playing",
         "started_ts": started_ts or now,
         "playing_started_ts": now,
@@ -5645,16 +5657,21 @@ def show_mix_info(cache_path: str) -> None:
         xbmcgui.Dialog().ok("MusicIP mix information", f"Could not read mix information.\n\n{exc}")
         return
 
+    show_info_pages("MusicIP mix information", pages)
+
+
+def show_info_pages(heading: str, pages: list[tuple[str, str]]) -> None:
+    """Pages, like tabs: a short list of pages; closing a page returns to the list."""
     choice = 0
     while True:
-        choice = xbmcgui.Dialog().select("MusicIP mix information", [title for title, _text in pages], preselect=choice)
+        choice = xbmcgui.Dialog().select(heading, [title for title, _text in pages], preselect=choice)
         if choice is None or choice < 0 or choice >= len(pages):
             return
         title, text = pages[choice]
         try:
-            xbmcgui.Dialog().textviewer(f"MusicIP mix information: {title}", text)
+            xbmcgui.Dialog().textviewer(f"{heading}: {title}", text)
         except Exception:
-            xbmcgui.Dialog().ok(f"MusicIP mix information: {title}", text)
+            xbmcgui.Dialog().ok(f"{heading}: {title}", text)
 
 
 def selected_mix_cache_path() -> str:
@@ -6405,7 +6422,10 @@ def check_radio_start(tracks: list[str], check=None) -> dict:
     finally:
         store.close()
     rows = plan["rows"]
-    return {"remove": [tracks[position - 1] for position in plan["outliers"]], "intent": plan["intent"],
+    removed = [{"path": tracks[position - 1], "label": rows[position - 1]["unit"]["label"],
+                "reason": rows[position - 1].get("reason") or rows[position - 1].get("why", "")}
+               for position in plan["outliers"]]
+    return {"remove": [entry["path"] for entry in removed], "removed": removed, "intent": plan["intent"],
             "reference": rows[0].get("entry") if rows else None}
 
 
@@ -6434,6 +6454,155 @@ def check_radio_refill(reference_song: str, candidates: list[str], count: int, r
     result["reference"] = mix_assist.drift_reference(
         base, [result["entries"].get(path) for path in result["chosen"]], get_radio_drift_half_life()) if base else None
     return result
+
+
+# --- Station information: what the radio station is, what it was about, how it drifted, what happened ------
+
+RADIO_DRIFT_LABELS = ("Stay close to the picked song", "Drift slowly", "Wander freely")
+
+
+def show_radio_info() -> None:
+    state = get_radio_state()
+    if radio_phase() != "playing":
+        notify("No station is playing.", xbmcgui.NOTIFICATION_WARNING)
+        return
+    show_info_pages("Radio station", radio_info_pages(state))
+
+
+def radio_info_pages(state: dict) -> list[tuple[str, str]]:
+    events = [event for event in state.get("events") or [] if isinstance(event, dict)]
+    return [
+        ("Overview", build_radio_overview(state, events)),
+        ("What it is about", build_radio_about(events)),
+        ("Drift", build_radio_drift(events)),
+        (f"History ({len(events)})", build_radio_history(events)),
+    ]
+
+
+def format_play_time(seconds: int) -> str:
+    minutes = max(0, int(seconds)) // 60
+    return f"{minutes // 60} h {minutes % 60:02d} min" if minutes >= 60 else f"{minutes} min"
+
+
+def build_radio_overview(state: dict, events: list[dict]) -> str:
+    started = next((event for event in events if event.get("kind") == "started"), {})
+    queue = state.get("queue") or []
+    position = int(state.get("current_position") or 0)
+    refills = [event for event in events if event.get("kind") in ("refill", "refill_unchecked")]
+    checked = [event for event in refills if event.get("kind") == "refill" and event.get("checked")]
+    kept = sum(len(event.get("added") or []) for event in checked)
+    skipped = sum(int(event.get("skipped_count") or 0) for event in checked)
+    lines = [
+        f"Picked song: {started.get('seed') or path_to_label(str(state.get('seed') or ''))}",
+        f"Playing since: {format_sidecar_ts(state.get('playing_started_ts'))} "
+        f"({format_play_time(int(time.time()) - int(state.get('playing_started_ts') or time.time()))})",
+        f"Now playing: {state.get('current_label') or ''}",
+        f"Songs played: {int(state.get('played') or 0)} · coming up: {max(0, len(queue) - position - 1)}",
+        "",
+        f"MusicIP: {started.get('parameters') or 'not recorded'}",
+    ]
+    if started.get("assisted"):
+        lines.append(f"AI Mix Assist: on · Station openness: {started.get('openness')} · "
+                     f"Station drift: {started.get('drift')}")
+    else:
+        lines.append("AI Mix Assist: off for this station")
+    lines.append(f"Refills: {len(refills)} ({len(checked)} checked, {len(refills) - len(checked)} unchecked)")
+    if kept or skipped:
+        lines.append(f"Checked refills kept {kept} song(s) and skipped {skipped} "
+                     f"({round(100 * kept / max(1, kept + skipped))} % kept).")
+    return "\n".join(lines)
+
+
+def build_radio_about(events: list[dict]) -> str:
+    """What the station was about: the picked song's description, then each refill's, newest first."""
+    blocks = []
+    for event in reversed(events):
+        if not event.get("intent"):
+            continue
+        when = format_sidecar_ts(event.get("ts"))
+        if event.get("kind") == "start_check":
+            blocks.append(f"{when}  The picked song:\n{event['intent']}")
+        else:
+            blocks.append(f"{when}  Refill from {event.get('seed', '?')}:\n{event['intent']}")
+    if not blocks:
+        return "Not worked out yet. AI Mix Assist describes the picked song when it checks the station's first songs."
+    return "\n\n".join(blocks)
+
+
+def dimension_value_text(key: str, value: float) -> str:
+    if key == mix_assist_dimensions.ERA_KEY:
+        return str(int(round(value)))
+    dimension = next(d for d in mix_assist_dimensions.DIMENSIONS if d.key == key)
+    return f"{value:.1f} {dimension.labels[max(0, min(4, int(round(value / 2.5))))]}"
+
+
+def build_radio_drift(events: list[dict]) -> str:
+    """The station's profile over time: where it started (the picked song), where it is, the course between."""
+    profiles = [(event.get("ts"), event["profile"]) for event in events
+                if isinstance(event.get("profile"), dict) and event.get("kind") in ("start_check", "refill", "profile")]
+    if not profiles:
+        return "Drift is measured when AI Mix Assist checks the station's songs."
+    first, last = profiles[0][1], profiles[-1][1]
+    lines = ["The station's profile starts as the picked song and moves with the songs the station adds; new songs "
+             "are measured against it.", f"Measured {len(profiles)} time(s), last at {format_sidecar_ts(profiles[-1][0])}.", ""]
+    moves = []
+    for dimension in mix_assist_dimensions.DIMENSIONS + (None,):
+        key = dimension.key if dimension else mix_assist_dimensions.ERA_KEY
+        name = dimension.name if dimension else "Sounding year"
+        values = [float(profile[key]) for _ts, profile in profiles if isinstance(profile.get(key), (int, float))]
+        if not values:
+            continue
+        change = values[-1] - values[0]
+        unit = " years" if not dimension else ""
+        course = ", ".join(f"{value:.0f}" if not dimension else f"{value:.1f}" for value in values[-10:])
+        lines.append(f"{name}: {dimension_value_text(key, values[0])} → {dimension_value_text(key, values[-1])} "
+                     f"({change:+.1f}{unit}) · course: {course}")
+        moves.append((abs(change) / (5 if not dimension else 1), name, f"{change:+.1f}{unit}"))
+    moved = [f"{name} ({change})" for size, name, change in sorted(moves, reverse=True)[:3] if size >= 0.3]
+    lines.insert(3, ("Moved most: " + ", ".join(moved)) if moved else "The station has stayed close to the picked song.")
+    lines.insert(4, "")
+    return "\n".join(lines)
+
+
+def format_radio_event(event: dict) -> list[str]:
+    kind = event.get("kind")
+    if kind == "started":
+        return [f"Station picked: {event.get('seed', '?')}"]
+    if kind == "start_check":
+        removed = event.get("removed") or []
+        if not removed:
+            return ["AI Mix Assist checked the first songs: all fit"]
+        return [f"AI Mix Assist took out {len(removed)} of the first songs:"] + \
+            [f"− {entry.get('track', '?')} ({entry.get('reason', '')})" for entry in removed]
+    if kind == "refill":
+        added = event.get("added") or []
+        how = "checked" if event.get("checked") else "unchecked (AI Mix Assist off)"
+        lines = [f"Refill from {event.get('seed', '?')}: {len(added)} song(s), {how}"] + [f"+ {label}" for label in added]
+        skipped = event.get("skipped") or []
+        if skipped:
+            lines.append(f"skipped {event.get('skipped_count', len(skipped))} that didn't fit, e.g.:")
+            lines += [f"× {entry.get('track', '?')} ({entry.get('reason', '')})" for entry in skipped[:5]]
+        return lines
+    if kind == "refill_unchecked":
+        added = event.get("added") or []
+        return [f"Refill from {event.get('seed', '?')}: {len(added)} song(s) unchecked, {event.get('reason', '')}"] + \
+            [f"+ {label}" for label in added]
+    if kind == "nothing_fitted":
+        return [f"Nothing from {event.get('seed', '?')} fitted ({event.get('skipped_count', 0)} songs); "
+                "trying an earlier song"]
+    if kind == "profile":
+        return ["The late AI check updated the station's profile"]
+    return [str(kind)]
+
+
+def build_radio_history(events: list[dict]) -> str:
+    if not events:
+        return "Nothing recorded yet."
+    blocks = []
+    for event in reversed(events):
+        lines = format_radio_event(event)
+        blocks.append("\n".join([f"{format_sidecar_ts(event.get('ts'))}  {lines[0]}"] + [f"    {line}" for line in lines[1:]]))
+    return "\n\n".join(blocks)
 
 
 def router() -> None:
@@ -6512,6 +6681,10 @@ def router() -> None:
     if action == "radio_start_seed":
         # From the library context menu (context_radio.py), run as an action: the current view stays.
         start_radio_from_song(params.get("seed", ""))
+        return
+
+    if action == "radio_info":
+        show_radio_info()
         return
 
     if action == "radio_stop":

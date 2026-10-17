@@ -1254,6 +1254,7 @@ def run_radio_tick() -> None:
             state["current_position"] = position
             state["current_song"] = entry["file"]
             state["current_label"] = entry.get("label") or path_to_label(entry["file"])
+            state["played"] = int(state.get("played") or 0) + (1 if position > 0 else 0)
             log_info(f"Radio mode: now playing {state['current_label']!r} (position {position}).")
 
     position = prune_radio_backlog(state, position)
@@ -1273,6 +1274,21 @@ def run_radio_tick() -> None:
         refill_radio_queue(state, checked=assisted)
 
     save_radio_state(state)
+
+
+RADIO_MAX_EVENTS = 200
+
+
+def add_radio_event(state: dict, kind: str, **details) -> None:
+    """Record what happened to the station (shown in "Station information")."""
+    events = [event for event in state.get("events") or [] if isinstance(event, dict)]
+    events.append(dict(details, kind=kind, ts=int(time.time())))
+    state["events"] = events[-RADIO_MAX_EVENTS:]
+
+
+def radio_song_label(state: dict, path: str) -> str:
+    return next((str(entry.get("label")) for entry in state.get("queue") or [] if entry.get("file") == path and entry.get("label")),
+                path_to_label(path))
 
 
 def radio_mix_assist_enabled(plugin) -> bool:
@@ -1335,7 +1351,8 @@ def keep_radio_from_running_dry(state: dict, plugin, position: int) -> None:
         return
     RADIO_CHECK["superseded"] = True
     log_info("Radio mode: the refill check is taking long; adding MusicIP's songs unchecked so the music goes on.")
-    append_radio_tracks(state, plugin, RADIO_CHECK["seed"], RADIO_CHECK["fallback"])
+    append_radio_tracks(state, plugin, RADIO_CHECK["seed"], RADIO_CHECK["fallback"],
+                        event={"kind": "refill_unchecked", "reason": "the AI check took too long"})
 
 
 def apply_radio_check(state: dict, plugin, position: int) -> None:
@@ -1350,6 +1367,7 @@ def apply_radio_check(state: dict, plugin, position: int) -> None:
     if superseded:
         if result.get("reference"):
             state["reference"] = result["reference"]  # its songs were replaced by the unchecked ones
+            add_radio_event(state, "profile", profile=result["reference"])
         return
 
     error = result.get("error")
@@ -1357,12 +1375,15 @@ def apply_radio_check(state: dict, plugin, position: int) -> None:
         log(f"Radio mode: AI Mix Assist check failed: {error}", xbmc.LOGWARNING)
         if getattr(error, "kind", ""):
             plugin.report_automatic_mix_assist_error(error)
-        if kind == "refill" and fallback:
-            append_radio_tracks(state, plugin, seed, fallback)  # keep the station going, unchecked
+        if kind == "refill" and fallback:  # keep the station going, unchecked
+            append_radio_tracks(state, plugin, seed, fallback,
+                                event={"kind": "refill_unchecked", "reason": "the AI check failed"})
         return
 
     if kind == "start":
         remove = {plugin.normalize_track_identity(track) for track in result.get("remove") or []}
+        reasons = {plugin.normalize_track_identity(entry.get("path", "")): entry for entry in result.get("removed") or []}
+        removed_songs = []
         removed = 0
         for index in range(len(state["queue"]) - 1, position + 1, -1):  # never the playing song or the next one
             if plugin.normalize_track_identity(str(state["queue"][index]["file"])) not in remove:
@@ -1372,10 +1393,13 @@ def apply_radio_check(state: dict, plugin, position: int) -> None:
             except Exception as exc:
                 log_info(f"Radio mode: removing a song that doesn't fit failed: {exc}")
                 continue
-            state["queue"].pop(index)
+            entry = state["queue"].pop(index)
             removed += 1
+            reason = reasons.get(plugin.normalize_track_identity(str(entry["file"])), {}).get("reason", "")
+            removed_songs.insert(0, {"track": entry.get("label") or path_to_label(str(entry["file"])), "reason": reason})
         state["intent"] = result.get("intent") or ""
         state["reference"] = result.get("reference")
+        add_radio_event(state, "start_check", removed=removed_songs, intent=state["intent"], profile=state["reference"])
         log_info(f"Radio mode: AI Mix Assist took out {removed} song(s) that didn't fit the station.")
         return
 
@@ -1384,16 +1408,23 @@ def apply_radio_check(state: dict, plugin, position: int) -> None:
         state["reference"] = result["reference"]
     skipped = len(result.get("not_fitting") or [])
     if chosen:
-        append_radio_tracks(state, plugin, seed, chosen)
+        not_fitting = result.get("not_fitting") or []
+        append_radio_tracks(state, plugin, seed, chosen, event={
+            "kind": "refill", "checked": True, "intent": result.get("intent") or "", "profile": result.get("reference"),
+            "skipped_count": skipped,
+            "skipped": [{"track": entry.get("label", ""), "reason": entry.get("reason", "")} for entry in not_fitting[:10]]})
         state["refill_seed_offset"] = 0
         log_info(f"Radio mode: AI Mix Assist kept {len(chosen)} song(s), skipped {skipped}.")
         return
     remaining = len(state["queue"]) - position - 1 if position >= 0 else len(state["queue"])
     if remaining <= 1 and fallback:
         log_info("Radio mode: nothing fitted and the station is about to run dry; adding MusicIP's songs unchecked.")
-        append_radio_tracks(state, plugin, seed, fallback)
+        append_radio_tracks(state, plugin, seed, fallback, event={
+            "kind": "refill_unchecked", "reason": "nothing fitted and the station was about to run dry"})
         return
     # Nothing fitted the song before this refill: next time, seed from an earlier song.
+    add_radio_event(state, "nothing_fitted", seed=radio_song_label(state, seed), skipped_count=skipped,
+                    intent=result.get("intent") or "")
     state["refill_seed_offset"] = int(state.get("refill_seed_offset") or 0) + 1
     state["next_refill_ts"] = int(time.time()) + RADIO_REFILL_RETRY_SECONDS
     log_info(f"Radio mode: none of {skipped} song(s) fitted; trying an earlier seed.")
@@ -1474,12 +1505,15 @@ def refill_radio_queue(state: dict, checked: bool = False) -> int:
             fallback=fallback, seed=used_seed)
         return 0
 
-    return append_radio_tracks(state, plugin, used_seed, new_tracks)
+    return append_radio_tracks(state, plugin, used_seed, new_tracks, event={"kind": "refill", "checked": False})
 
 
-def append_radio_tracks(state: dict, plugin, used_seed: str, new_tracks: list[str]) -> int:
-    """Queue songs at the end of the station's playlist; they count as seen for the rest of the session."""
+def append_radio_tracks(state: dict, plugin, used_seed: str, new_tracks: list[str], event: dict | None = None) -> int:
+    """Queue songs at the end of the station's playlist; they count as seen for the rest of the session. event
+    (with its "kind") is recorded for "Station information", with the seed and the songs added."""
     queue = state["queue"]
+    seed_label = radio_song_label(state, used_seed)
+    first_new = len(queue)
     seen = list(state.get("seen") or [])
     # Look songs up in the library: a station's songs are mostly new to the metadata cache (labels need artists).
     metadata_list = plugin.collect_mix_track_metadata(new_tracks, allow_live_lookup=True, include_player_metadata=False)
@@ -1494,6 +1528,10 @@ def append_radio_tracks(state: dict, plugin, used_seed: str, new_tracks: list[st
     state["seen"] = seen[-RADIO_MAX_SEEN:]
     state["seeds"] = (list(state.get("seeds") or []) + [used_seed])[-50:]
     state["next_refill_ts"] = 0
+    if event:
+        details = dict(event)
+        add_radio_event(state, details.pop("kind"), seed=seed_label,
+                        added=[str(entry.get("label") or "") for entry in queue[first_new:]], **details)
     log_info(f"Radio mode: added {len(new_tracks)} song(s) seeded from {used_seed!r}.")
     return len(new_tracks)
 
