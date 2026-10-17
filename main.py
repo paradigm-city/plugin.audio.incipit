@@ -5709,26 +5709,151 @@ def build_mix_info_message(cache_path: str) -> str:
     return "\n".join(lines)
 
 
-def mix_info_pages(cache_path: str) -> list[tuple[str, str]]:
-    """The pages of the mix information: (title, text)."""
-    meta = get_saved_mix_metadata(cache_path, load_mix_by_cache_path(cache_path))
-    events = [event for event in meta.get(MIX_HISTORY_KEY) or [] if isinstance(event, dict)]
-    pages = [
-        ("Overview", build_mix_info_message(cache_path)),
-        (f"History ({len(events)})", build_mix_history_text(meta)),
-    ] + ([("AI Mix Assist", "\n".join(build_mix_assist_info_lines(meta)))] if get_mix_assist_section(meta) else [])
-    return [(title, plain(text)) for title, text in pages]
-
-
 def show_mix_info(cache_path: str) -> None:
-    """The mix information as pages, like tabs: a short list of pages; closing a page returns to the list."""
+    """The mix information: one scrollable page, the most important first."""
     try:
-        pages = mix_info_pages(cache_path)
+        page = build_mix_info_page(cache_path)
     except Exception as exc:
         xbmcgui.Dialog().ok("MusicIP mix information", f"Could not read mix information.\n\n{exc}")
         return
+    try:
+        xbmcgui.Dialog().textviewer("MusicIP mix information", page)
+    except Exception:
+        xbmcgui.Dialog().ok("MusicIP mix information", page)
 
-    show_info_pages("MusicIP mix information", pages)
+
+# --- The mix information page ---------------------------------------------------------------------------------
+# Top to bottom: what the mix is, what it is about, how it sounds, what AI Mix Assist changed, how it was made,
+# its files, its history. Kodi's text viewer shows [B]...[/B] as bold headings.
+
+def info_heading(text: str) -> str:
+    return f"[B]{text}[/B]"
+
+
+def format_play_length(seconds: int) -> str:
+    minutes = max(0, int(seconds)) // 60
+    return f"{minutes // 60} h {minutes % 60:02d} min" if minutes >= 60 else f"{minutes} min"
+
+
+def mix_track_snapshots(meta: dict, tracks: list[str]) -> list[dict]:
+    snapshots = meta.get("track_metadata_by_path") if isinstance(meta.get("track_metadata_by_path"), dict) else {}
+    return [snapshots.get(canonical_audio_path(track)) or {} for track in tracks]
+
+
+def mix_sound_profile(rows: list[dict], kept: set) -> dict | None:
+    """The mix's average rating per dimension, with its range, from the ratings of the tracks it keeps (a check's
+    rows); None when too few are rated. Worked out at each AI Mix Assist check and stored with the mix, so the
+    information page shows it at once."""
+    rated = [row["entry"] for row in rows if row.get("entry") and row["position"] in kept]
+    if len(rated) < max(3, len(kept) // 2):
+        return None
+    values = {}
+    for key in mix_assist_dimensions.ALL_KEYS:
+        numbers = [float(entry[key]) for entry in rated if isinstance(entry.get(key), (int, float))]
+        if numbers:
+            values[key] = [sum(numbers) / len(numbers), min(numbers), max(numbers)]
+    return {"rated": len(rated), "tracks": len(kept), "ts": int(time.time()), "values": values}
+
+
+def build_mix_info_page(cache_path: str) -> str:
+    tracks = load_mix_by_cache_path(cache_path)
+    meta = get_saved_mix_metadata(cache_path, tracks)
+    section = get_mix_assist_section(meta)
+    snapshots = mix_track_snapshots(meta, tracks)
+    lines: list[str] = []
+
+    # What the mix is
+    title = mix_name(meta) or meta.get("label") or path_to_label(meta.get("seed") or cache_path)
+    lines.append(info_heading(title))
+    durations = [int(snapshot.get("duration") or 0) for snapshot in snapshots]
+    length = format_play_length(sum(durations))
+    if durations and not all(durations):
+        length = "about " + length
+    lines.append(f"Created {format_sidecar_ts(meta.get('updated_ts'))} | {len(tracks)} tracks | {length}")
+    seed = str(meta.get("seed") or (tracks[0] if tracks else ""))
+    if seed:
+        seed_snapshot = mix_track_snapshots(meta, [seed])[0]
+        details = ", ".join(str(part) for part in (seed_snapshot.get("album"), seed_snapshot.get("year")) if part)
+        lines.append(f"From: {mix_track_labels(cache_path, [seed])[0]}" + (f" ({details})" if details else ""))
+
+    # What it is about
+    intent = section.get("listener_intent") or section.get("intent")
+    if intent or section.get("checked_ts") or "openness" in section:
+        lines += ["", info_heading("What it is about")]
+        if intent:
+            lines.append(str(intent))
+            lines.append("(in your words)" if section.get("listener_intent") else "(as the AI put it)")
+        index = mix_openness_index(meta)
+        state = (f"off for this mix" if index == MIX_OPENNESS_OFF else
+                 f"openness {mix_openness_label(index)}" + (" (chosen for this mix)" if "openness" in section else ""))
+        checked = f", last checked {format_sidecar_ts(section.get('checked_ts'))}" if section.get("checked_ts") else ""
+        lines.append(f"AI Mix Assist: {state}{checked}")
+
+    # How it sounds
+    sound: list[str] = []
+    profile = section.get("profile") if isinstance(section.get("profile"), dict) else None
+    if profile and profile.get("values"):
+        for key, (average, low, high) in profile["values"].items():
+            name = "Sounding year" if key == mix_assist_dimensions.ERA_KEY else \
+                next(d.name for d in mix_assist_dimensions.DIMENSIONS if d.key == key)
+            spread = f"{int(round(low))}-{int(round(high))}" if key == mix_assist_dimensions.ERA_KEY else f"{low:.0f}-{high:.0f}"
+            sound.append(f"{name}: {dimension_value_text(key, average)} (range {spread})")
+        sound.append(f"(ratings of {profile['rated']} tracks, at the check on {format_sidecar_ts(profile.get('ts'))})")
+    years = sorted(int(snapshot["year"]) for snapshot in snapshots if int(snapshot.get("year") or 0) > 0)
+    if years:
+        sound.append(f"Released {years[0]}-{years[-1]}, the middle half {years[len(years) // 4]}-{years[(3 * len(years)) // 4]}")
+    artists = [str(snapshot.get("artist") or "") for snapshot in snapshots if snapshot.get("artist")]
+    if artists:
+        counts: dict[str, int] = {}
+        for artist in artists:
+            counts[artist] = counts.get(artist, 0) + 1
+        repeated = [f"{artist} ({count})" for artist, count in sorted(counts.items(), key=lambda item: -item[1]) if count > 1][:5]
+        sound.append(f"{len(counts)} artists" + (f"; more than once: {', '.join(repeated)}" if repeated else ""))
+    genres: dict[str, int] = {}
+    for snapshot in snapshots:
+        for genre in snapshot.get("genre") or []:
+            genres[str(genre)] = genres.get(str(genre), 0) + 1
+    if genres:
+        sound.append("Genres: " + ", ".join(f"{genre} ({count})" for genre, count in
+                                             sorted(genres.items(), key=lambda item: -item[1])[:5]))
+    if sound:
+        lines += ["", info_heading("How it sounds")] + sound
+
+    # What AI Mix Assist changed last
+    replaced, removed = section.get("replaced") or [], section.get("removed") or []
+    if replaced or removed:
+        lines += ["", info_heading("Last tidy-up")]
+        lines += [f"{change.get('old_label', '')} -> {change.get('new_label', '')} ({change.get('reason', '')})"
+                  for change in replaced]
+        lines += [f"Removed: {label}" for label in removed]
+        if section.get("previous_tracks"):
+            lines.append("(\"AI Mix Assist...\" in the context menu can undo it)")
+
+    # How it was made
+    params = meta.get("mix_generation_parameters") if isinstance(meta.get("mix_generation_parameters"), dict) else {}
+    lines += ["", info_heading("How it was made")]
+    if params:
+        lines.append(f"MusicIP: {params.get('size', '?')} tracks, {describe_mix_parameters(params)}")
+    else:
+        lines.append("MusicIP: no parameters recorded")
+
+    # Its files
+    consistency = meta.get("consistency") if isinstance(meta.get("consistency"), dict) else {}
+    readiness = meta.get("repair_readiness") if isinstance(meta.get("repair_readiness"), dict) else {}
+    lines += ["", info_heading("Files")]
+    missing = int(consistency.get("missing_files") or 0)
+    if not consistency:
+        lines.append("Not checked yet")
+    elif missing:
+        lines.append(f"{missing} missing (checked {format_sidecar_ts(consistency.get('checked_ts'))})")
+        if readiness:
+            lines.append(f"Repair: {readiness.get('reason') or readiness.get('status') or ''}")
+    else:
+        lines.append(f"All present (checked {format_sidecar_ts(consistency.get('checked_ts'))})")
+
+    # What happened
+    lines += ["", info_heading("History"), build_mix_history_text(meta)]
+    return plain("\n".join(lines))
 
 
 def show_info_pages(heading: str, pages: list[tuple[str, str]]) -> None:
@@ -6054,6 +6179,12 @@ def record_mix_assist_result(cache_path: str, original: list[str], plan: dict, a
         "rebuild_suggested": bool(plan["rebuild_suggested"]),
     })
     section.pop("not_fitting", None)
+    replaced_positions = {change["position"] for change in plan["changes"]}
+    profile = mix_sound_profile(plan["rows"], {row["position"] for row in plan["rows"]
+                                               if row["position"] not in replaced_positions
+                                               and row["position"] not in plan["removed"]})
+    if profile:
+        section["profile"] = profile
     if changed:
         section["previous_tracks"] = list(original)
     named = bool(plan.get("name")) and plan["name"] != section.get("ai_name") and not section.get("ai_name_fixed")
@@ -6132,34 +6263,6 @@ def edit_mix_assist_intent(cache_path: str) -> bool:
     save_json_file(mix_meta_path_from_cache_path(cache_path), meta)
     record_mix_history(cache_path, "intent_edited", text=value)
     return True
-
-
-def build_mix_assist_info_lines(meta: dict) -> list[str]:
-    """The AI Mix Assist page of the mix information."""
-    section = get_mix_assist_section(meta)
-    lines = []
-    if mix_openness_index(meta) == MIX_OPENNESS_OFF:
-        lines += ["AI Mix Assist is off for this mix: no automatic checks.", ""]
-    intent = section.get("listener_intent") or section.get("intent")
-    if intent:
-        source = "in your words" if section.get("listener_intent") else "as the AI put it"
-        lines += [f"What this mix is about ({source}):", intent, ""]
-    if section.get("checked_ts"):
-        lines.append(f"Last tidied up: {format_sidecar_ts(section.get('checked_ts'))}")
-    replaced, removed = section.get("replaced") or [], section.get("removed") or []
-    if replaced or removed:
-        lines += ["", "Changes of the last tidy-up:"]
-        lines += [f"{change.get('old_label', '')} -> {change.get('new_label', '')} ({change.get('reason', '')})"
-                  for change in replaced]
-        lines += [f"Removed: {label}" for label in removed]
-    elif section.get("checked_ts"):
-        lines.append("Every track fitted.")
-    index = mix_openness_index(meta)
-    lines.append(f"Openness: {mix_openness_label(index)}"
-                 + (" (chosen for this mix)" if "openness" in section else " (the default)"))
-    lines += ["", "Context menu of the mix -> \"AI Mix Assist...\": change what the mix is about or its openness, "
-              "tidy it up, or undo the changes. All changes are in the History page."]
-    return lines
 
 
 def build_mix_assist_action(action: str, cache_path: str) -> str:
