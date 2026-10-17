@@ -179,13 +179,46 @@ class SavedMixMenuTest(MixAssistTestCase):
         main.add_saved_mix_item(self.cache_path)
         return [label for label, _action in kodi.directory_items[-1][1].context_menu]
 
-    def test_entries_and_undo_only_after_a_change(self):
+    def menu(self):
+        kodi.dialog_calls.clear()
+        self.run_plugin(action="mix_assist_menu", cache_path=self.cache_path)
+        return kodi.dialogs("select")[0][1][1]
+
+    def test_one_context_menu_entry(self):
         labels = self.context_labels()
-        self.assertIn("Tidy up with AI Mix Assist", labels)
-        self.assertIn("Edit what this mix is about", labels)
-        self.assertNotIn("Undo AI Mix Assist changes", labels)
+        self.assertIn("AI Mix Assist…", labels)
+        for old in ("Tidy up with AI Mix Assist", "Edit what this mix is about", "Undo AI Mix Assist changes"):
+            self.assertNotIn(old, labels)
+
+    def test_the_menu_offers_undo_only_after_a_change(self):
+        self.assertEqual(self.menu(), ["What this mix is about: <not worked out yet>", "Openness: Balanced",
+                                       "Tidy up now"])
         self.tidy_up(plan(changes=[REPLACE_DISCO]))
-        self.assertIn("Undo AI Mix Assist changes", self.context_labels())
+        self.assertEqual(self.menu(), ["What this mix is about: dark, abstract, instrumental", "Openness: Balanced",
+                                       "Tidy up now", "Undo the AI Mix Assist changes"])
+
+    def test_tidy_up_now_from_the_menu(self):
+        kodi.respond("select", 2)
+        with mock.patch.object(main.mix_assist, "tidy_up", return_value=plan(changes=[REPLACE_DISCO])):
+            self.run_plugin(action="mix_assist_menu", cache_path=self.cache_path)
+        self.assertEqual(self.read_mix(self.cache_path)[2], REPLACEMENT)
+
+    def test_the_openness_of_a_mix_can_be_changed(self):
+        kodi.respond("select", 1, 4)  # Openness, then: Off, Focused, Close, Balanced, Open, ...
+        self.run_plugin(action="mix_assist_menu", cache_path=self.cache_path)
+        _method, (heading, options), _kwargs = kodi.dialogs("select")[-1]
+        self.assertEqual(heading, "Openness of this mix")
+        self.assertEqual(options[0], "Off: no automatic checks")
+        self.assertEqual(options[3], "Balanced (default)")
+        self.assertEqual(self.section()["openness"], 3)
+        self.assertEqual(self.history()[-1]["openness"], "Open")
+        self.assertNotified("Saved. AI Mix Assist uses it for this mix from now on.")
+        self.assertIn("Openness: Open (chosen for this mix)", dict(main.mix_info_pages(self.cache_path))["AI Mix Assist"])
+
+    def test_cancelling_the_menu_does_nothing(self):
+        self.run_plugin(action="mix_assist_menu", cache_path=self.cache_path)
+        self.assertNotIn("Container.Refresh", kodi.builtins)
+        self.assertEqual(kodi.notifications, [])
 
     def test_mix_information_has_an_ai_mix_assist_page(self):
         self.assertEqual([title for title, _text in main.mix_info_pages(self.cache_path)], ["Overview", "History (1)"])
@@ -199,6 +232,73 @@ class SavedMixMenuTest(MixAssistTestCase):
         self.assertIn("AI Mix Assist tidied up the mix: 1 replaced, 0 removed\n"
                       "    wilfried – fire walk → Medeski Martin & Wood – Think (Danceable disco, bright)",
                       pages["History (2)"])
+
+
+class PerMixLevelTest(MixAssistTestCase):
+    def set_openness(self, index):
+        sidecar = self.read_json(main.mix_meta_path_from_cache_path(self.cache_path))
+        sidecar["mix_assist"] = {"openness": index}
+        self.write_json(main.mix_meta_path_from_cache_path(self.cache_path), sidecar)
+
+    def test_a_tidy_up_uses_the_mixs_openness(self):
+        self.set_openness(4)
+        tidy_up = self.tidy_up(plan())
+        self.assertEqual((tidy_up.call_args[1]["strictness"], tidy_up.call_args[1]["accept_borderline"]), (1.5, True))
+
+    def test_without_a_choice_the_setting_counts(self):
+        kodi.settings["mix_assist_mix_strictness"] = "0"
+        tidy_up = self.tidy_up(plan())
+        self.assertEqual(tidy_up.call_args[1]["strictness"], 1.0)
+
+    def test_a_mix_switched_off_is_tidied_up_on_request_with_the_default(self):
+        self.set_openness(main.MIX_OPENNESS_OFF)
+        tidy_up = self.tidy_up(plan())
+        self.assertEqual(tidy_up.call_args[1]["strictness"], 1.2)
+        self.assertIn("AI Mix Assist is off for this mix", dict(main.mix_info_pages(self.cache_path))["AI Mix Assist"])
+
+
+class GenerateDialogTest(MusicIPServerTestCase):
+    def setUp(self):
+        super().setUp()
+        self.musicip.set_mix(TRACKS[0], TRACKS[1:])
+        self.cache_path = main.mix_cache_path(TRACKS[0], 20)
+
+    def sidecar(self):
+        return self.read_json(main.mix_meta_path_from_cache_path(self.cache_path))
+
+    def queued(self):
+        return self.read_json(main.mix_assist_queue_path()).get("entries", [])
+
+    def test_the_dialog_shows_the_ai_mix_assist_lines(self):
+        params = main.confirm_mix_generation({}) or {}
+        choices = kodi.dialogs("select")[0][1][1]
+        self.assertEqual(choices[6:], ["AI Mix Assist: Balanced", "What this mix is about: <worked out by the AI>"])
+        self.assertEqual(params, {})  # cancelled
+
+    def test_choices_made_when_generating_are_kept_with_the_mix(self):
+        kodi.respond("select", 6, 5, 7, 0)  # AI Mix Assist -> Adventurous, What it is about -> ..., Generate
+        kodi.respond("keyboard", "  dark cosmic electronics  ")
+        self.run_plugin(action="browse_mix", seed=TRACKS[0], size="20")
+        section = self.sidecar()["mix_assist"]
+        self.assertEqual((section["openness"], section["listener_intent"]), (4, "dark cosmic electronics"))
+        event = [e for e in self.sidecar()["history"] if e["kind"] == "assist_settings"][0]
+        self.assertEqual((event["at_creation"], event["openness"]), (True, "Adventurous"))
+        self.assertIn('When you created the mix, you set AI Mix Assist to openness Adventurous; about "dark cosmic electronics"',
+                      main.build_mix_history_text(self.sidecar()))
+        self.assertEqual([entry["cache_path"] for entry in self.queued()], [self.cache_path])
+        self.assertNotIn("assist_openness", self.sidecar()["mix_generation_parameters"])  # MusicIP's stay clean
+
+    def test_a_mix_created_with_ai_mix_assist_off_is_not_tidied_up(self):
+        kodi.respond("select", 6, 0, 0)  # AI Mix Assist -> Off, Generate
+        self.run_plugin(action="browse_mix", seed=TRACKS[0], size="20")
+        self.assertEqual(self.sidecar()["mix_assist"]["openness"], main.MIX_OPENNESS_OFF)
+        self.assertEqual(self.queued(), [])
+
+    def test_default_choices_store_nothing_extra(self):
+        kodi.respond("select", 0)
+        self.run_plugin(action="browse_mix", seed=TRACKS[0], size="20")
+        self.assertNotIn("mix_assist", self.sidecar())
+        self.assertEqual(len(self.queued()), 1)
 
 
 class SubmixFetcherTest(MusicIPServerTestCase):
@@ -373,6 +473,14 @@ class MoreLikeThisTest(MusicIPServerTestCase):
         self.assertEqual(event["skipped"], [{"track": "New 0", "reason": "too bright"}])
         text = main.build_mix_history_text({"history": [event]})
         self.assertIn("AI Mix Assist skipped 1 that didn't fit:\n    × New 0 (too bright)", text)
+
+    def test_a_mix_switched_off_gets_musicips_tracks_unchecked(self):
+        sidecar = self.read_json(main.mix_meta_path_from_cache_path(self.cache_path))
+        sidecar["mix_assist"] = {"openness": main.MIX_OPENNESS_OFF}
+        self.write_json(main.mix_meta_path_from_cache_path(self.cache_path), sidecar)
+        choose = self.more_like_this({"chosen": [], "not_fitting": [], "checked": True})
+        choose.assert_not_called()
+        self.assertEqual(self.read_mix(self.cache_path), TRACKS[:2] + self.NEW[:2] + TRACKS[2:])
 
     def test_nothing_fits(self):
         self.more_like_this({"intent": "x", "chosen": [], "checked": True,
