@@ -810,9 +810,21 @@ def choose_discovery_song(song_cache: list[dict]) -> dict:
     return random.choice(song_cache)
 
 
+def kodi_is_loading_a_list() -> bool:
+    """Kodi is still loading a list (or shows its busy dialog). A redraw now would make Kodi drop that list while it
+    is being filled, which has crashed Kodi (findings F14); the service redraws a second later instead."""
+    for condition in ("Container.IsUpdating", "Window.IsActive(busydialog)", "Window.IsActive(busydialognocancel)"):
+        try:
+            if xbmc.getCondVisibility(condition):
+                return True
+        except Exception:
+            pass
+    return False
+
+
 def refresh_discovery_menu_if_visible() -> None:
     state = load_discovery_state()
-    if not state.get("ui_refresh_requested"):
+    if not state.get("ui_refresh_requested") or kodi_is_loading_a_list():
         return
 
     try:
@@ -1338,7 +1350,7 @@ def refill_radio_queue(state: dict) -> int:
 
 def refresh_radio_menu_if_visible() -> None:
     state = load_radio_state()
-    if not state.get("ui_refresh_requested"):
+    if not state.get("ui_refresh_requested") or kodi_is_loading_a_list():
         return
     try:
         container_folder = xbmc.getInfoLabel("Container.FolderPath")
@@ -2167,7 +2179,7 @@ def apply_pending_metadata_refresh_on_selection_change() -> None:
     global METADATA_REFRESH_LAST_SELECTION_TOKEN
     global METADATA_REFRESH_LAST_REFRESH_TS
 
-    if not METADATA_REFRESH_PENDING_VIEW_REFRESH:
+    if not METADATA_REFRESH_PENDING_VIEW_REFRESH or kodi_is_loading_a_list():
         return
 
     context = get_visible_musicip_mix_context()
