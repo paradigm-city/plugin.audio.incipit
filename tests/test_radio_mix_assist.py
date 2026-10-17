@@ -1,5 +1,6 @@
 """Radio with AI Mix Assist: the station's first songs are checked, refills are checked before they are queued."""
 
+import os
 import threading
 import unittest
 from unittest import mock
@@ -195,8 +196,32 @@ class RadioMixAssistTest(RadioBase):
         kodi.respond("select", 2, -1)  # Drift, then close
         self.run_plugin(action="radio_info")
         self.assertEqual(kodi.dialogs("select")[0][1], ("Radio station", ["Overview", "What it is about", "Drift",
-                                                                          "History (2)"]))
+                                                                          "Drift chart", "History (2)"]))
         self.assertEqual(kodi.dialogs("textviewer")[0][1][0], "Radio station: Drift")
+
+    def test_the_drift_chart(self):
+        self.started_station()
+        self.finish_check()
+        self.tick()
+        kodi.respond("select", 3, 3, -1)  # Drift chart, again (a new image), then close
+        self.run_plugin(action="radio_info")
+        self.assertEqual(len(kodi.windows), 2)
+        window = kodi.windows[-1]
+        labels = window.labels()
+        self.assertTrue(labels[0].startswith("Station drift: "))
+        self.assertIn("Energy", labels)
+        self.assertIn("5.0 → 6.0 steady", labels)
+        self.assertIn("Sounding year", labels)
+        self.assertIn("1983 → 1984", labels)
+        image = window.controls[0].filename
+        self.assertTrue(os.path.isfile(image))
+        self.assertEqual(os.listdir(os.path.dirname(image)), [os.path.basename(image)])  # the older one is gone
+
+    def test_the_drift_chart_needs_measurements(self):
+        self.start()
+        main.show_radio_drift_chart()
+        self.assertEqual(kodi.windows, [])
+        self.assertIn("Drift is measured when", kodi.dialogs("ok")[0][1][1])
 
     def test_without_the_claude_cli_radio_works_as_before(self):
         with mock.patch.object(main, "mix_assist_available", return_value=False):

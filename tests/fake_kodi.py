@@ -245,6 +245,7 @@ class KodiState:
         self.media_files = set()
         self.media_entries = {}  # media_key -> (original path, is_folder), for listdir()
         self.playlist = []
+        self.windows = []  # WindowDialogs shown with doModal()
         self.player = PlayerState()
         self.sleeps = 0
         self.abort_after_waits = 1
@@ -597,6 +598,39 @@ class DialogProgressBG:
         kodi.dialog_calls.append(("progress.close", (), {}))
 
 
+class ControlImage:
+    def __init__(self, x, y, width, height, filename, aspectRatio=0, colorDiffuse=None):
+        self.position, self.filename = (x, y, width, height), filename
+
+
+class ControlLabel:
+    def __init__(self, x, y, width, height, label, font=None, textColor=None, disabledColor=None, alignment=0,
+                 hasPath=False, angle=0):
+        self.position, self.label, self.textColor, self.alignment = (x, y, width, height), label, textColor, alignment
+
+    def getLabel(self):
+        return self.label
+
+
+class WindowDialog:
+    """Records its controls; doModal() returns at once (as if closed) and is recorded in kodi.windows."""
+
+    def __init__(self):
+        self.controls = []
+
+    def addControl(self, control):
+        self.controls.append(control)
+
+    def doModal(self):
+        kodi.windows.append(self)
+
+    def close(self):
+        pass
+
+    def labels(self):
+        return [control.label for control in self.controls if isinstance(control, ControlLabel)]
+
+
 class Keyboard:
     """Kodi's keyboard dialog. A queued "keyboard" response is the confirmed text; None (or no response) means
     the dialog was cancelled."""
@@ -723,6 +757,7 @@ def install():
 
     xbmcgui = types.ModuleType("xbmcgui")
     xbmcgui.ListItem, xbmcgui.Dialog, xbmcgui.DialogProgressBG = ListItem, Dialog, DialogProgressBG
+    xbmcgui.WindowDialog, xbmcgui.ControlImage, xbmcgui.ControlLabel = WindowDialog, ControlImage, ControlLabel
     xbmcgui.NOTIFICATION_INFO = NOTIFICATION_INFO
     xbmcgui.NOTIFICATION_WARNING = NOTIFICATION_WARNING
     xbmcgui.NOTIFICATION_ERROR = NOTIFICATION_ERROR
