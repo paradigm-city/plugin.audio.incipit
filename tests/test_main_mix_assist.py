@@ -177,6 +177,7 @@ class SavedMixMenuTest(MixAssistTestCase):
     def context_labels(self):
         kodi.directory_items.clear()
         main.add_saved_mix_item(self.cache_path)
+        self.finish_listing()
         return [label for label, _action in kodi.directory_items[-1][1].context_menu]
 
     def menu(self):
@@ -459,6 +460,14 @@ class ProcessNewMixTest(MixAssistTestCase):
         self.play_mix(0)
         self.process(plan(changes=[REPLACE_DISCO], removed=[5]))
         self.assertEqual(kodi.playlist_files(), [TRACKS[0], TRACKS[1], REPLACEMENT, TRACKS[3]])
+
+    def test_the_list_is_not_redrawn_while_kodi_loads_one(self):
+        kodi.info_labels["Container.PluginName"] = "plugin.audio.musicip"
+        kodi.conditions["Container.IsUpdating"] = True
+        with mock.patch.object(main.xbmc.Monitor, "waitForAbort", return_value=False):
+            self.process(plan(changes=[REPLACE_DISCO]))
+        self.assertNotIn("Container.Refresh", kodi.builtins)
+        self.assertNotified("1 track didn't fit and was replaced")  # the change itself is done
 
     def test_a_patched_track_is_labelled_with_its_artist(self):
         kodi.library.add_song(REPLACEMENT, title="Think", artist="Medeski Martin & Wood")
