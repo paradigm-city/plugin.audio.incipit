@@ -1497,7 +1497,8 @@ def refill_radio_queue(state: dict, checked: bool = False) -> int:
         reference = state.get("reference") if isinstance(state.get("reference"), dict) else None
         neighbours = [str(entry["file"]) for entry in queue]
         candidates, fallback = list(new_tracks), list(new_tracks[:RADIO_CHECKED_BATCH])
-        log_info(f"Radio mode: AI Mix Assist checks {len(candidates)} song(s) seeded from {used_seed!r}.")
+        log_info(f"Radio mode: AI Mix Assist picks {RADIO_CHECKED_BATCH} song(s) from MusicIP's {len(candidates)} "
+                 f"suggestion(s) for {used_seed!r} (closest first, checked in groups).")
         start_radio_check(
             state, "refill",
             lambda check: plugin.check_radio_refill(reference_song, candidates, RADIO_CHECKED_BATCH, reference, neighbours,
