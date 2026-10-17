@@ -223,6 +223,27 @@ class RadioMixAssistTest(RadioBase):
         self.assertEqual(kodi.windows, [])
         self.assertIn("Drift is measured when", kodi.dialogs("ok")[0][1][1])
 
+    def test_the_first_check_names_the_station(self):
+        self.start_check.return_value = {"remove": [], "intent": "x", "reference": REFERENCE,
+                                         "name": "Bombastic Heroic Metal"}
+        radio = self.started_station()
+        self.assertEqual(radio["name"], "Bombastic Heroic Metal")
+        self.assertIn(("setPluginCategory", "Radio: Bombastic Heroic Metal"), self.menu_calls())
+        self.assertTrue(dict(main.radio_info_pages(radio))["Overview"].startswith("Station: Bombastic Heroic Metal"))
+
+    def test_a_favourite_keeps_its_name(self):
+        self.start()
+        main.save_radio_favourites([{"id": "f1", "name": "Night Drive", "seed": self.radio()["seed"]}])
+        main.save_radio_state(dict(self.radio(), favourite_id="f1", name="Night Drive"))
+        self.start_check.return_value = {"remove": [], "intent": "x", "reference": REFERENCE, "name": "Other"}
+        self.tick()
+        self.finish_check()
+        self.assertEqual(self.tick()["name"], "Night Drive")
+
+    def menu_calls(self):
+        self.menu()
+        return kodi.directory_calls
+
     def test_without_the_claude_cli_radio_works_as_before(self):
         with mock.patch.object(main, "mix_assist_available", return_value=False):
             self.start()

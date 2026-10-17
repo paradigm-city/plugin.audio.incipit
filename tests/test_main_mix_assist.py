@@ -192,13 +192,13 @@ class SavedMixMenuTest(MixAssistTestCase):
 
     def test_the_menu_offers_undo_only_after_a_change(self):
         self.assertEqual(self.menu(), ["What this mix is about: <not worked out yet>", "Openness: Balanced",
-                                       "Tidy up now"])
+                                       "Name: <given at the first check>", "Tidy up now"])
         self.tidy_up(plan(changes=[REPLACE_DISCO]))
         self.assertEqual(self.menu(), ["What this mix is about: dark, abstract, instrumental", "Openness: Balanced",
-                                       "Tidy up now", "Undo the AI Mix Assist changes"])
+                                       "Name: <given at the first check>", "Tidy up now", "Undo the AI Mix Assist changes"])
 
     def test_tidy_up_now_from_the_menu(self):
-        kodi.respond("select", 2)
+        kodi.respond("select", 3)
         with mock.patch.object(main.mix_assist, "tidy_up", return_value=plan(changes=[REPLACE_DISCO])):
             self.run_plugin(action="mix_assist_menu", cache_path=self.cache_path)
         self.assertEqual(self.read_mix(self.cache_path)[2], REPLACEMENT)
@@ -299,6 +299,50 @@ class GenerateDialogTest(MusicIPServerTestCase):
         self.run_plugin(action="browse_mix", seed=TRACKS[0], size="20")
         self.assertNotIn("mix_assist", self.sidecar())
         self.assertEqual(len(self.queued()), 1)
+
+
+class MixNameTest(MixAssistTestCase):
+    def named_plan(self, name="Cosmic Analog Journeys"):
+        result = plan()
+        result["name"] = name
+        return result
+
+    def label(self):
+        return main.format_saved_mix_label(main.get_saved_mix_metadata(self.cache_path, TRACKS))
+
+    def test_the_first_check_names_the_mix(self):
+        self.tidy_up(self.named_plan())
+        self.assertEqual(self.section()["ai_name"], "Cosmic Analog Journeys")
+        self.assertEqual(self.label(), "Cosmic Analog Journeys (5 tracks)")
+        self.assertEqual(self.history()[-2], dict(self.history()[-2], kind="named", name="Cosmic Analog Journeys"))
+        overview = dict(main.mix_info_pages(self.cache_path))["Overview"]
+        self.assertTrue(overview.startswith("Name: Cosmic Analog Journeys (20"))
+
+    def test_your_name_wins_and_can_be_removed(self):
+        self.tidy_up(self.named_plan())
+        kodi.respond("select", 2)  # Name
+        kodi.respond("keyboard", " My  Mix ")
+        self.run_plugin(action="mix_assist_menu", cache_path=self.cache_path)
+        self.assertEqual(self.label(), "My Mix (5 tracks)")
+        self.assertEqual(self.history()[-1]["kind"], "renamed")
+        self.tidy_up(self.named_plan("Something Else"))  # a later check renames only the AI's name
+        self.assertEqual(self.label(), "My Mix (5 tracks)")
+        kodi.respond("select", 2)
+        kodi.respond("keyboard", "")
+        self.run_plugin(action="mix_assist_menu", cache_path=self.cache_path)
+        self.assertEqual(self.label(), "Something Else (5 tracks)")
+
+    def test_naming_can_be_switched_off(self):
+        self.tidy_up(self.named_plan())
+        kodi.settings["mix_assist_name_mixes"] = "false"
+        self.assertEqual(self.label(), "Seed (5 tracks)")
+        kodi.respond("select", -1)
+        self.run_plugin(action="mix_assist_menu", cache_path=self.cache_path)
+        self.assertFalse(any(label.startswith("Name") for label in kodi.dialogs("select")[-1][1][1]))
+
+    def test_without_a_name_the_seed_names_the_mix(self):
+        self.tidy_up(plan())
+        self.assertEqual(self.label(), "Seed (5 tracks)")
 
 
 class SubmixFetcherTest(MusicIPServerTestCase):

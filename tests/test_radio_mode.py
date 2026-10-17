@@ -70,7 +70,7 @@ class RadioMenuTest(RadioTestCase):
         self.assertIn(("setPluginCategory", f"Radio: scanning - {snippet}"), kodi.directory_calls)
 
         self.run_plugin(action="radio_play")
-        self.assertEqual(self.menu(), ["Scan again", "Station information", "Stop radio"])
+        self.assertEqual(self.menu(), ["Scan again", "Station information", "Save as favourite station", "Stop radio"])
         self.assertIn(("setPluginCategory", f"Radio: {self.radio()['current_label']}"), kodi.directory_calls)
 
 

@@ -165,6 +165,36 @@ class ChecksTest(unittest.TestCase):
         self.assertIn("1. Cand – c", seen["message"])
 
 
+class NameTest(unittest.TestCase):
+    def unit(self, title):
+        return {"key": title, "kind": "track", "label": title, "item": {"artist": "A", "title": title, "album": "B"}}
+
+    def test_describe_asks_for_a_name_in_the_same_call(self):
+        calls = []
+
+        def ask(system, schema, message):
+            calls.append((system, schema))
+            return {"character": "cosmic", "name": '  "Cosmic   Analog Journeys" ', "tracks": []}
+
+        intent, verdicts, name = checks.describe([self.unit("s")], [None], ask)
+        self.assertEqual((intent, name, len(calls)), ("cosmic", "Cosmic Analog Journeys", 1))
+        self.assertIn(checks.NAME_NOTE, calls[0][0])
+        self.assertIn("name", calls[0][1]["required"])
+
+    def test_judge_named_uses_the_given_intent(self):
+        def ask(system, schema, message):
+            return {"character": "x", "name": "Night Drive", "tracks": [{"position": 1, "verdict": "fits", "reason": ""}]}
+
+        verdicts, name = checks.judge_named("my words", self.unit("s"), None, [self.unit("c")], [None], ask)
+        self.assertEqual((verdicts[1]["verdict"], name), ("fits", "Night Drive"))
+
+    def test_unusable_names_are_dropped(self):
+        self.assertEqual(checks.parse_name({"name": ""}), "")
+        self.assertEqual(checks.parse_name({}), "")
+        self.assertEqual(checks.parse_name({"name": "x" * 80}), "")
+        self.assertEqual(checks.schema()["required"], ["character", "tracks"])  # judging candidates needs no name
+
+
 class AssistTest(unittest.TestCase):
     """A seed with a clear profile, fitting tracks, and two tracks that clearly don't fit."""
 
