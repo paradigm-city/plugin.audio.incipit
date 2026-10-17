@@ -5268,11 +5268,13 @@ def browse_mix(
     xbmcplugin.setContent(HANDLE, "songs")
     xbmcplugin.addSortMethod(HANDLE, xbmcplugin.SORT_METHOD_UNSORTED)
 
+    created = False
     try:
         if force_refresh:
             tracks = fetch_mix_confirmed(seed, size)
             save_mix(seed, size, tracks)
             queue_mix_assist_for_new_mix(mix_cache_path(seed, size), tracks)
+            created = True
         else:
             try:
                 tracks = load_mix(seed, size)
@@ -5281,6 +5283,7 @@ def browse_mix(
                 tracks = fetch_mix_confirmed(seed, size)
                 save_mix(seed, size, tracks)
                 queue_mix_assist_for_new_mix(mix_cache_path(seed, size), tracks)
+                created = True
     except MusicIPError as exc:
         message = str(exc)
         notify(message, xbmcgui.NOTIFICATION_WARNING if "cancelled" in message.lower() else xbmcgui.NOTIFICATION_ERROR)
@@ -5322,6 +5325,8 @@ def browse_mix(
             )
 
     xbmcplugin.endOfDirectory(HANDLE, updateListing=update_listing, cacheToDisc=False)
+    if created and tracks:
+        play_new_mix_if_idle(tracks)
     apply_pending_focus(focus_index, focus_token)
 
 def browse_saved_mix(
@@ -5342,6 +5347,7 @@ def browse_saved_mix(
         xbmcplugin.endOfDirectory(HANDLE, succeeded=False, updateListing=update_listing, cacheToDisc=False)
         return
 
+    created = False
     xbmcplugin.setPluginCategory(HANDLE, f"Saved MusicIP mix: {path_to_label(seed)}")
     xbmcplugin.setContent(HANDLE, "songs")
     xbmcplugin.addSortMethod(HANDLE, xbmcplugin.SORT_METHOD_UNSORTED)
@@ -5357,6 +5363,7 @@ def browse_saved_mix(
             queue_mix_assist_for_new_mix(mix_cache_path(seed, size), tracks)
             cache_path = mix_cache_path(seed, size)
             meta = get_saved_mix_metadata(cache_path, tracks)
+            created = True
         except MusicIPError as exc:
             notify(str(exc), xbmcgui.NOTIFICATION_WARNING if "cancelled" in str(exc).lower() else xbmcgui.NOTIFICATION_ERROR)
             log(str(exc), xbmc.LOGERROR)
@@ -5394,6 +5401,8 @@ def browse_saved_mix(
             )
 
     xbmcplugin.endOfDirectory(HANDLE, updateListing=update_listing, cacheToDisc=False)
+    if created and tracks:
+        play_new_mix_if_idle(tracks)
     apply_pending_focus(focus_index, focus_token)
 
 # --- Mix history -------------------------------------------------------------------------------
@@ -5739,6 +5748,20 @@ def play_tracks_as_music_playlist(
 
     xbmc.Player().play(playlist)
     return items
+
+def play_new_mix_if_idle(tracks: list[str]) -> bool:
+    """Start a newly created mix, but never interrupt other media: not while anything plays or is paused."""
+    try:
+        if xbmc.Player().isPlaying():
+            log_info("New mix not started: other media is playing.")
+            return False
+        play_tracks_as_music_playlist(tracks, collect_mix_track_metadata(tracks, allow_live_lookup=True))
+    except Exception as exc:
+        log(f"New mix could not be started: {exc}", xbmc.LOGWARNING)
+        return False
+    notify("Playing the new mix.")
+    return True
+
 
 def play_track(path: str) -> None:
     metadata = get_track_metadata(path)
