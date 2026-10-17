@@ -27,7 +27,7 @@ The add-on can't check whether Kodi still waits for a listing. The 2026-10-17 cr
 
 ### F17 · A Radio test failed once
 
-`test_radio_mode.StartFromAnySongTest.test_new_station_is_not_mistaken_for_other_playback` failed once on 2026-10-15 during a full test run (`stop_reason` was `''` instead of `external_playback`) and passed in the next 10 runs, alone and in the full suite. It failed once more later the same day (1 of about 20 full runs). The test uses the fake clock, so the cause is probably state left behind by another test (a background thread or the fake MusicIP server) rather than real time. Not reproduced yet.
+`test_radio_mode.StartFromAnySongTest.test_new_station_is_not_mistaken_for_other_playback` failed once on 2026-10-15 during a full test run (`stop_reason` was `''` instead of `external_playback`) and passed in the next 10 runs, alone and in the full suite. It failed once more later the same day (1 of about 20 full runs). On 2026-10-17 another Radio test, `test_radio_mode.TuningTest.test_no_redraw_while_kodi_is_loading_a_list`, failed once in a full run (no redraw where one was expected) and passed alone, in its module and in the next two full runs; likely the same cause. The test uses the fake clock, so the cause is probably state left behind by another test (a background thread or the fake MusicIP server) rather than real time. Not reproduced yet.
 
 Mitigated in 6f6ba14 (2026-10-17), not fixed (the fault is in Kodi): listings are handed to Kodi in one call (`addDirectoryItems`), and screen redraws from the background (the service, AI Mix Assist's tidy-up) wait while Kodi is loading a list (`Container.IsUpdating`, busy dialog). If it happens again, the next step is the one above: generate mixes outside a listing.
 
