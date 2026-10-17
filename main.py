@@ -20,6 +20,7 @@ from functools import partial
 from urllib.parse import parse_qsl, quote_from_bytes, urlencode, unquote
 from urllib.request import urlopen
 from urllib.error import URLError, HTTPError
+from xml.etree import ElementTree
 
 import xbmc
 import xbmcaddon
@@ -5770,6 +5771,7 @@ class InfoWindow(xbmcgui.WindowXMLDialog):
 
 def show_info_window(heading: str, facts: str, tabs: list[dict], fallback) -> None:
     try:
+        set_highlight_properties()
         window = InfoWindow(INFO_WINDOW_XML, ADDON.getAddonInfo("path"), "Default", "1080i").setup(heading, facts, tabs)
     except Exception as exc:
         log(f"The information window is not available ({exc}); showing the text instead", xbmc.LOGWARNING)
@@ -5777,6 +5779,70 @@ def show_info_window(heading: str, facts: str, tabs: list[dict], fallback) -> No
         return
     window.doModal()
     del window
+
+
+# --- The skin's highlight colour, so the information window blends in -----------------------------------------
+# Skins keep it in different places: jurialmunkey's skins (Arctic Fuse, Arctic Horizon, Arctic Zephyr) in a skin
+# string the listener picks, Estuary and many others as a named colour in their colour file (the colour theme's
+# colors/<theme>.xml over colors/defaults.xml). The window reads it from the Home window's properties.
+
+SKIN_HIGHLIGHT_STRINGS = ("focuscolor.name",)
+SKIN_HIGHLIGHT_COLOR_NAMES = ("button_focus", "highlight", "focus", "accent")
+DEFAULT_HIGHLIGHT = "FF2E6FD8"
+HIGHLIGHT_TEXT_DARK, HIGHLIGHT_TEXT_LIGHT = "FF272727", "FFFFFFFF"
+HIGHLIGHT_PROPERTY = "MusicIP.Highlight"  # also .Dim (the shown tab when the focus is elsewhere) and .Text
+HOME_WINDOW = 10000
+
+
+def color_value(text: str, named: dict | None = None) -> str:
+    """AARRGGBB for a colour as skins write it (RRGGBB, AARRGGBB, #..., or a name in the colour file); "" if none."""
+    text = str(text or "").strip()
+    if named and text in named:
+        text = str(named[text]).strip()
+    text = text.lstrip("#")
+    if re.fullmatch(r"[0-9A-Fa-f]{6}", text):
+        return "FF" + text.upper()
+    return text.upper() if re.fullmatch(r"[0-9A-Fa-f]{8}", text) else ""
+
+
+def skin_colors() -> dict:
+    """The skin's named colours: its defaults, then the colour theme the listener picked."""
+    folder = xbmcvfs.translatePath("special://skin/colors")
+    theme = str(xbmc.getInfoLabel("Skin.CurrentColourTheme") or "").strip()
+    files = ["defaults"] + ([theme] if theme and theme.lower() not in ("skindefault", "default", "defaults") else [])
+    colors: dict = {}
+    for name in files:
+        try:
+            tree = ElementTree.parse(os.path.join(folder, f"{name}.xml"))
+        except (OSError, ElementTree.ParseError):
+            continue
+        colors.update({element.get("name"): (element.text or "").strip() for element in tree.iter("color")
+                       if element.get("name")})
+    return colors
+
+
+def skin_highlight() -> tuple[str, str]:
+    """The skin's highlight colour and the text colour on it (AARRGGBB); a blue with white text without one."""
+    colors = skin_colors()
+    for key in SKIN_HIGHLIGHT_STRINGS:
+        color = color_value(xbmc.getInfoLabel(f"Skin.String({key})"), colors)
+        if color:  # these skins write dark text on the highlight, unless the listener turned that round
+            reverted = xbmc.getCondVisibility("Skin.HasSetting(RevertSelectedText)")
+            return color, HIGHLIGHT_TEXT_LIGHT if reverted else HIGHLIGHT_TEXT_DARK
+    color = next((color_value(colors[name], colors) for name in SKIN_HIGHLIGHT_COLOR_NAMES
+                  if color_value(colors.get(name), colors)), "") or DEFAULT_HIGHLIGHT
+    red, green, blue = (int(color[index:index + 2], 16) / 255 for index in (2, 4, 6))
+    light = 0.2126 * red + 0.7152 * green + 0.0722 * blue > 0.6
+    return color, HIGHLIGHT_TEXT_DARK if light else HIGHLIGHT_TEXT_LIGHT
+
+
+def set_highlight_properties() -> None:
+    color, text = skin_highlight()
+    dim = f"{max(0x30, int(int(color[:2], 16) * 0.4)):02X}{color[2:]}"
+    home = xbmcgui.Window(HOME_WINDOW)
+    home.setProperty(HIGHLIGHT_PROPERTY, color)
+    home.setProperty(f"{HIGHLIGHT_PROPERTY}.Dim", dim)
+    home.setProperty(f"{HIGHLIGHT_PROPERTY}.Text", text)
 
 
 def chart_path(kind: str) -> str:

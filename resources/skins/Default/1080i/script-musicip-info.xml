@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!-- The information window of a mix or a radio station (main.py, InfoWindow). Everything shown comes from the
-     window's properties: heading, facts, tab1..tab6 (the tab titles), tab (the tab shown), text, image (a chart). -->
+     window's properties: heading, facts, tab1..tab6 (the tab titles), tab (the tab shown), text, image (a chart).
+     The highlight follows the skin's: the Home window's properties MusicIP.Highlight, .Dim and .Text. -->
 <window>
 	<defaultcontrol always="true">201</defaultcontrol>
 	<animation type="WindowOpen" reversible="false">
@@ -71,11 +72,11 @@
 					<textoffsetx>30</textoffsetx>
 					<aligny>center</aligny>
 					<textcolor>FF9AA0AA</textcolor>
-					<focusedcolor>FFFFFFFF</focusedcolor>
-					<texturefocus colordiffuse="FF2E6FD8">musicip-white.png</texturefocus>
+					<focusedcolor>$INFO[Window(Home).Property(MusicIP.Highlight.Text)]</focusedcolor>
+					<texturefocus colordiffuse="$INFO[Window(Home).Property(MusicIP.Highlight)]">musicip-white.png</texturefocus>
 					<texturenofocus />
-					<alttexturefocus colordiffuse="FF2E6FD8">musicip-white.png</alttexturefocus>
-					<alttexturenofocus colordiffuse="FF2A2F3A">musicip-white.png</alttexturenofocus>
+					<alttexturefocus colordiffuse="$INFO[Window(Home).Property(MusicIP.Highlight)]">musicip-white.png</alttexturefocus>
+					<alttexturenofocus colordiffuse="$INFO[Window(Home).Property(MusicIP.Highlight.Dim)]">musicip-white.png</alttexturenofocus>
 					<onright>300</onright>
 					<label>$INFO[Window.Property(tab1)]</label>
 					<altlabel>$INFO[Window.Property(tab1)]</altlabel>
@@ -89,11 +90,11 @@
 					<textoffsetx>30</textoffsetx>
 					<aligny>center</aligny>
 					<textcolor>FF9AA0AA</textcolor>
-					<focusedcolor>FFFFFFFF</focusedcolor>
-					<texturefocus colordiffuse="FF2E6FD8">musicip-white.png</texturefocus>
+					<focusedcolor>$INFO[Window(Home).Property(MusicIP.Highlight.Text)]</focusedcolor>
+					<texturefocus colordiffuse="$INFO[Window(Home).Property(MusicIP.Highlight)]">musicip-white.png</texturefocus>
 					<texturenofocus />
-					<alttexturefocus colordiffuse="FF2E6FD8">musicip-white.png</alttexturefocus>
-					<alttexturenofocus colordiffuse="FF2A2F3A">musicip-white.png</alttexturenofocus>
+					<alttexturefocus colordiffuse="$INFO[Window(Home).Property(MusicIP.Highlight)]">musicip-white.png</alttexturefocus>
+					<alttexturenofocus colordiffuse="$INFO[Window(Home).Property(MusicIP.Highlight.Dim)]">musicip-white.png</alttexturenofocus>
 					<onright>300</onright>
 					<label>$INFO[Window.Property(tab2)]</label>
 					<altlabel>$INFO[Window.Property(tab2)]</altlabel>
@@ -107,11 +108,11 @@
 					<textoffsetx>30</textoffsetx>
 					<aligny>center</aligny>
 					<textcolor>FF9AA0AA</textcolor>
-					<focusedcolor>FFFFFFFF</focusedcolor>
-					<texturefocus colordiffuse="FF2E6FD8">musicip-white.png</texturefocus>
+					<focusedcolor>$INFO[Window(Home).Property(MusicIP.Highlight.Text)]</focusedcolor>
+					<texturefocus colordiffuse="$INFO[Window(Home).Property(MusicIP.Highlight)]">musicip-white.png</texturefocus>
 					<texturenofocus />
-					<alttexturefocus colordiffuse="FF2E6FD8">musicip-white.png</alttexturefocus>
-					<alttexturenofocus colordiffuse="FF2A2F3A">musicip-white.png</alttexturenofocus>
+					<alttexturefocus colordiffuse="$INFO[Window(Home).Property(MusicIP.Highlight)]">musicip-white.png</alttexturefocus>
+					<alttexturenofocus colordiffuse="$INFO[Window(Home).Property(MusicIP.Highlight.Dim)]">musicip-white.png</alttexturenofocus>
 					<onright>300</onright>
 					<label>$INFO[Window.Property(tab3)]</label>
 					<altlabel>$INFO[Window.Property(tab3)]</altlabel>
@@ -125,11 +126,11 @@
 					<textoffsetx>30</textoffsetx>
 					<aligny>center</aligny>
 					<textcolor>FF9AA0AA</textcolor>
-					<focusedcolor>FFFFFFFF</focusedcolor>
-					<texturefocus colordiffuse="FF2E6FD8">musicip-white.png</texturefocus>
+					<focusedcolor>$INFO[Window(Home).Property(MusicIP.Highlight.Text)]</focusedcolor>
+					<texturefocus colordiffuse="$INFO[Window(Home).Property(MusicIP.Highlight)]">musicip-white.png</texturefocus>
 					<texturenofocus />
-					<alttexturefocus colordiffuse="FF2E6FD8">musicip-white.png</alttexturefocus>
-					<alttexturenofocus colordiffuse="FF2A2F3A">musicip-white.png</alttexturenofocus>
+					<alttexturefocus colordiffuse="$INFO[Window(Home).Property(MusicIP.Highlight)]">musicip-white.png</alttexturefocus>
+					<alttexturenofocus colordiffuse="$INFO[Window(Home).Property(MusicIP.Highlight.Dim)]">musicip-white.png</alttexturenofocus>
 					<onright>300</onright>
 					<label>$INFO[Window.Property(tab4)]</label>
 					<altlabel>$INFO[Window.Property(tab4)]</altlabel>
@@ -143,11 +144,11 @@
 					<textoffsetx>30</textoffsetx>
 					<aligny>center</aligny>
 					<textcolor>FF9AA0AA</textcolor>
-					<focusedcolor>FFFFFFFF</focusedcolor>
-					<texturefocus colordiffuse="FF2E6FD8">musicip-white.png</texturefocus>
+					<focusedcolor>$INFO[Window(Home).Property(MusicIP.Highlight.Text)]</focusedcolor>
+					<texturefocus colordiffuse="$INFO[Window(Home).Property(MusicIP.Highlight)]">musicip-white.png</texturefocus>
 					<texturenofocus />
-					<alttexturefocus colordiffuse="FF2E6FD8">musicip-white.png</alttexturefocus>
-					<alttexturenofocus colordiffuse="FF2A2F3A">musicip-white.png</alttexturenofocus>
+					<alttexturefocus colordiffuse="$INFO[Window(Home).Property(MusicIP.Highlight)]">musicip-white.png</alttexturefocus>
+					<alttexturenofocus colordiffuse="$INFO[Window(Home).Property(MusicIP.Highlight.Dim)]">musicip-white.png</alttexturenofocus>
 					<onright>300</onright>
 					<label>$INFO[Window.Property(tab5)]</label>
 					<altlabel>$INFO[Window.Property(tab5)]</altlabel>
@@ -161,11 +162,11 @@
 					<textoffsetx>30</textoffsetx>
 					<aligny>center</aligny>
 					<textcolor>FF9AA0AA</textcolor>
-					<focusedcolor>FFFFFFFF</focusedcolor>
-					<texturefocus colordiffuse="FF2E6FD8">musicip-white.png</texturefocus>
+					<focusedcolor>$INFO[Window(Home).Property(MusicIP.Highlight.Text)]</focusedcolor>
+					<texturefocus colordiffuse="$INFO[Window(Home).Property(MusicIP.Highlight)]">musicip-white.png</texturefocus>
 					<texturenofocus />
-					<alttexturefocus colordiffuse="FF2E6FD8">musicip-white.png</alttexturefocus>
-					<alttexturenofocus colordiffuse="FF2A2F3A">musicip-white.png</alttexturenofocus>
+					<alttexturefocus colordiffuse="$INFO[Window(Home).Property(MusicIP.Highlight)]">musicip-white.png</alttexturefocus>
+					<alttexturenofocus colordiffuse="$INFO[Window(Home).Property(MusicIP.Highlight.Dim)]">musicip-white.png</alttexturenofocus>
 					<onright>300</onright>
 					<label>$INFO[Window.Property(tab6)]</label>
 					<altlabel>$INFO[Window.Property(tab6)]</altlabel>
@@ -215,7 +216,7 @@
 					<showonepage>false</showonepage>
 					<texturesliderbackground colordiffuse="FF22262E">musicip-white.png</texturesliderbackground>
 					<texturesliderbar colordiffuse="FF4A505E">musicip-white.png</texturesliderbar>
-					<texturesliderbarfocus colordiffuse="FF2E6FD8">musicip-white.png</texturesliderbarfocus>
+					<texturesliderbarfocus colordiffuse="$INFO[Window(Home).Property(MusicIP.Highlight)]">musicip-white.png</texturesliderbarfocus>
 					<onleft>200</onleft>
 					<top>180</top>
 					<height>690</height>
@@ -228,7 +229,7 @@
 					<showonepage>false</showonepage>
 					<texturesliderbackground colordiffuse="FF22262E">musicip-white.png</texturesliderbackground>
 					<texturesliderbar colordiffuse="FF4A505E">musicip-white.png</texturesliderbar>
-					<texturesliderbarfocus colordiffuse="FF2E6FD8">musicip-white.png</texturesliderbarfocus>
+					<texturesliderbarfocus colordiffuse="$INFO[Window(Home).Property(MusicIP.Highlight)]">musicip-white.png</texturesliderbarfocus>
 					<onleft>200</onleft>
 					<top>670</top>
 					<height>200</height>
