@@ -169,6 +169,35 @@ class RadioMixAssistTest(RadioBase):
         kodi.settings.update({"mix_assist_station_strictness": "1", "mix_assist_mix_strictness": "4"})
         self.assertEqual(main.get_station_strictness(), (1.1, False))
 
+    def test_station_information_shows_what_happened_and_the_drift(self):
+        self.started_station()
+        self.finish_check()
+        radio = self.tick()
+        kinds = [event["kind"] for event in radio["events"]]
+        self.assertEqual(kinds, ["started", "start_check", "refill"])
+        refill = radio["events"][-1]
+        self.assertEqual((refill["checked"], refill["skipped_count"], len(refill["added"])), (True, len(refill["skipped"]), 2))
+        self.assertEqual(refill["seed"], radio["queue"][4]["label"])
+        pages = dict(main.radio_info_pages(radio))
+        self.assertEqual(list(pages)[:3], ["Overview", "What it is about", "Drift"])
+        self.assertIn("AI Mix Assist: on · Station openness: Balanced · Station drift: Drift slowly", pages["Overview"])
+        self.assertIn("Refills: 1 (1 checked, 0 unchecked)", pages["Overview"])
+        self.assertIn("The picked song:\ndark metal", pages["What it is about"])
+        self.assertIn("Energy: 5.0 steady → 6.0 steady (+1.0) · course: 5.0, 6.0", pages["Drift"])
+        self.assertIn("Sounding year: 1983 → 1984 (+1.0 years)", pages["Drift"])
+        self.assertIn("Moved most: Energy (+1.0)", pages["Drift"])
+        history = pages[f"History ({len(kinds)})"]
+        self.assertTrue(history.split("\n")[0].endswith("2 song(s), checked"))
+        self.assertIn("AI Mix Assist checked the first songs: all fit", history)
+
+    def test_station_information_from_the_radio_screen(self):
+        self.started_station()
+        kodi.respond("select", 2, -1)  # Drift, then close
+        self.run_plugin(action="radio_info")
+        self.assertEqual(kodi.dialogs("select")[0][1], ("Radio station", ["Overview", "What it is about", "Drift",
+                                                                          "History (2)"]))
+        self.assertEqual(kodi.dialogs("textviewer")[0][1][0], "Radio station: Drift")
+
     def test_without_the_claude_cli_radio_works_as_before(self):
         with mock.patch.object(main, "mix_assist_available", return_value=False):
             self.start()

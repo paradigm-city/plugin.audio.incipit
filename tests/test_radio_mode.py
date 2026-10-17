@@ -70,7 +70,7 @@ class RadioMenuTest(RadioTestCase):
         self.assertIn(("setPluginCategory", f"Radio: scanning - {snippet}"), kodi.directory_calls)
 
         self.run_plugin(action="radio_play")
-        self.assertEqual(self.menu(), ["Scan again", "Stop radio"])
+        self.assertEqual(self.menu(), ["Scan again", "Station information", "Stop radio"])
         self.assertIn(("setPluginCategory", f"Radio: {self.radio()['current_label']}"), kodi.directory_calls)
 
 
@@ -367,6 +367,24 @@ class StationTest(RadioTestCase):
         labels = [entry["label"] for entry in radio["queue"]]
         self.assertTrue(all(label.startswith("Artist ") for label in labels), labels)
         self.assertEqual([item.getLabel() for _url, item in kodi.playlist], labels)
+
+    def test_the_station_keeps_a_history_without_ai_mix_assist(self):
+        self.start()
+        kodi.go_to(1)
+        self.tick()
+        kodi.go_to(3)
+        radio = self.tick()
+        self.assertEqual([event["kind"] for event in radio["events"]], ["started", "refill"])
+        self.assertEqual(radio["played"], 3)
+        pages = dict(main.radio_info_pages(radio))
+        self.assertIn("AI Mix Assist: off for this station", pages["Overview"])
+        self.assertIn("Songs played: 3", pages["Overview"])
+        self.assertIn("Drift is measured when AI Mix Assist checks", pages["Drift"])
+        self.assertIn("unchecked (AI Mix Assist off)", pages["History (2)"])
+
+    def test_station_information_needs_a_playing_station(self):
+        self.run_plugin(action="radio_info")
+        self.assertNotified("No station is playing.")
 
     def test_current_song_is_tracked(self):
         self.start()
