@@ -166,6 +166,48 @@ class SavedMixListingTest(KodiTestCase):
                 self.assertEqual(kodi.notifications[0][2], "error")
 
 
+class SkinHighlightTest(KodiTestCase):
+    def colour_file(self, name, colours):
+        folder = os.path.join(kodi.root, "skin", "colors")
+        os.makedirs(folder, exist_ok=True)
+        with open(os.path.join(folder, f"{name}.xml"), "w", encoding="utf-8") as handle:
+            handle.write("<colors>" + "".join(f'<color name="{key}">{value}</color>' for key, value in colours.items())
+                         + "</colors>")
+
+    def test_without_a_skin_colour_a_blue_with_white_text(self):
+        self.assertEqual(main.skin_highlight(), (main.DEFAULT_HIGHLIGHT, "FFFFFFFF"))
+
+    def test_a_skin_string_and_its_text_setting(self):
+        kodi.info_labels["Skin.String(focuscolor.name)"] = "#0094a6"
+        self.assertEqual(main.skin_highlight(), ("FF0094A6", "FF272727"))
+        kodi.conditions["Skin.HasSetting(RevertSelectedText)"] = True
+        self.assertEqual(main.skin_highlight(), ("FF0094A6", "FFFFFFFF"))
+        self.colour_file("defaults", {"accent": "FFAA0000"})
+        kodi.info_labels["Skin.String(focuscolor.name)"] = "accent"  # a colour's name
+        self.assertEqual(main.skin_highlight()[0], "FFAA0000")
+
+    def test_the_colour_theme_over_the_skins_defaults(self):
+        self.colour_file("defaults", {"button_focus": "FF12A0C7", "selected": "FFFFB70F"})
+        self.assertEqual(main.skin_highlight(), ("FF12A0C7", "FFFFFFFF"))  # Estuary
+        self.colour_file("gold", {"button_focus": "FFF0E68C"})
+        kodi.info_labels["Skin.CurrentColourTheme"] = "gold"
+        self.assertEqual(main.skin_highlight(), ("FFF0E68C", "FF272727"))  # a light highlight gets dark text
+        kodi.info_labels["Skin.CurrentColourTheme"] = "SKINDEFAULT"
+        self.assertEqual(main.skin_highlight()[0], "FF12A0C7")
+
+    def test_a_broken_colour_file_is_ignored(self):
+        self.colour_file("defaults", {"button_focus": "FF12A0C7"})
+        self.colour_file("teal", {})
+        with open(os.path.join(kodi.root, "skin", "colors", "teal.xml"), "w", encoding="utf-8") as handle:
+            handle.write("<colors><color")
+        kodi.info_labels["Skin.CurrentColourTheme"] = "teal"
+        self.assertEqual(main.skin_highlight()[0], "FF12A0C7")
+
+    def test_colour_values(self):
+        self.assertEqual([main.color_value(text) for text in ("12a0c7", "#8012A0C7", "red", "", None, "12A0C")],
+                         ["FF12A0C7", "8012A0C7", "", "", "", ""])
+
+
 class MixInfoTest(KodiTestCase):
     def setUp(self):
         super().setUp()
@@ -197,6 +239,12 @@ class MixInfoTest(KodiTestCase):
         self.assertEqual(properties["tab"], "4")
         window.onClick(204)  # on to the text, to scroll it
         self.assertEqual(window.focus, main.INFO_TEXT_GROUP)
+
+    def test_the_window_takes_the_skins_highlight(self):
+        kodi.info_labels["Skin.String(focuscolor.name)"] = "AB0094A6"  # Arctic Fuse: the listener's colour
+        self.run_plugin(action="mix_info", cache_path=self.cache_path)
+        self.assertEqual(kodi.window_properties[main.HOME_WINDOW], {
+            "MusicIP.Highlight": "AB0094A6", "MusicIP.Highlight.Dim": "440094A6", "MusicIP.Highlight.Text": "FF272727"})
 
     def test_without_the_window_the_text_viewer_shows_it_all(self):
         kodi.window_error = "broken skin file"

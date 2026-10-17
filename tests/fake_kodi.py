@@ -249,6 +249,7 @@ class KodiState:
         self.playlist = []
         self.windows = []  # windows shown with doModal()
         self.window_error = ""  # set: a window can't be created (its XML is broken)
+        self.window_properties = {}  # window id -> {property: value}, set with xbmcgui.Window(id).setProperty()
         self.player = PlayerState()
         self.sleeps = 0
         self.abort_after_waits = 1
@@ -267,6 +268,9 @@ class KodiState:
     # --- paths -------------------------------------------------------------------------
     def translate_path(self, path):
         path = str(path or "")
+        if path.startswith("special://skin"):  # the skin's folder (tests put colour files there)
+            rest = path[len("special://skin"):].lstrip("/")
+            return os.path.join(self.root, "skin", *[part for part in rest.split("/") if part])
         if path.startswith("special://profile"):
             rest = path[len("special://profile"):].lstrip("/")
             translated = os.path.join(self.root, "profile", *[part for part in rest.split("/") if part])
@@ -601,6 +605,22 @@ class DialogProgressBG:
         kodi.dialog_calls.append(("progress.close", (), {}))
 
 
+class Window:
+    """One of Kodi's windows, by id; only its properties."""
+
+    def __init__(self, existingWindowId=-1):
+        self.properties = kodi.window_properties.setdefault(existingWindowId, {})
+
+    def setProperty(self, key, value):
+        self.properties[key] = value
+
+    def getProperty(self, key):
+        return self.properties.get(key, "")
+
+    def clearProperty(self, key):
+        self.properties.pop(key, None)
+
+
 class WindowXMLDialog:
     """A window from a skin XML file. doModal() runs onInit and returns at once (as if closed); the window is
     recorded in kodi.windows with its properties and focus, so a test can move between its controls."""
@@ -764,7 +784,7 @@ def install():
 
     xbmcgui = types.ModuleType("xbmcgui")
     xbmcgui.ListItem, xbmcgui.Dialog, xbmcgui.DialogProgressBG = ListItem, Dialog, DialogProgressBG
-    xbmcgui.WindowXMLDialog = WindowXMLDialog
+    xbmcgui.Window, xbmcgui.WindowXMLDialog = Window, WindowXMLDialog
     xbmcgui.NOTIFICATION_INFO = NOTIFICATION_INFO
     xbmcgui.NOTIFICATION_WARNING = NOTIFICATION_WARNING
     xbmcgui.NOTIFICATION_ERROR = NOTIFICATION_ERROR
