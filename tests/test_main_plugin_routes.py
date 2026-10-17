@@ -225,6 +225,12 @@ class BrowseMixTest(MusicIPServerTestCase):
         self.assertEqual(plugin_query(item.getProperty("MusicIP.MixAction.Remove"))["cache_path"], cache_path)
         self.assertIn(("setContent", "songs"), kodi.directory_calls)
 
+    def test_a_listing_is_handed_to_kodi_in_one_call(self):
+        self.save_mix([SEED, T1, T2], size=20)
+        self.run_plugin(action="browse_mix", seed=SEED, size="20")
+        self.assertEqual(kodi.directory_batches, [3])
+        self.assertEqual(len(kodi.directory_items), 3)
+
     def test_missing_mix_is_generated_after_confirmation(self):
         kodi.respond("select", 0)
         self.run_plugin(action="browse_mix", seed=SEED, size="20")

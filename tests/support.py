@@ -75,6 +75,7 @@ class KodiTestCase(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         main.MIX_ASSIST_AVAILABLE.update(checked=0.0, found=False)
+        main.PENDING_DIRECTORY_ITEMS.clear()
 
         main.LAST_MIX_GENERATION_PARAMS.clear()
         main.AUDIO_LIBRARY_FRESHNESS_CACHE = {"fetched_ts": 0, "payload": {}}
@@ -95,6 +96,10 @@ class KodiTestCase(unittest.TestCase):
             main.router()
         finally:
             sys.argv = saved_argv
+
+    def finish_listing(self):
+        """Hand the entries added so far to the fake Kodi (as the end of a listing does)."""
+        main.end_directory(HANDLE)
 
     def listed_labels(self):
         return [item.getLabel() for _url, item, _folder in kodi.directory_items]

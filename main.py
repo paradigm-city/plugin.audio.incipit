@@ -274,6 +274,24 @@ class BackgroundProgress:
                 pass
 
 
+# Listings are handed to Kodi in one call (addDirectoryItems) when they are complete, not one entry at a time: Kodi
+# has crashed while an add-on was still adding entries to a listing (findings F14), and one call keeps that window
+# as short as possible.
+PENDING_DIRECTORY_ITEMS: list[tuple] = []
+
+
+def add_directory_item(handle: int, url: str, listitem, isFolder: bool = False) -> None:
+    PENDING_DIRECTORY_ITEMS.append((url, listitem, isFolder))
+
+
+def end_directory(handle: int, succeeded: bool = True, updateListing: bool = False, cacheToDisc: bool = True) -> None:
+    items = list(PENDING_DIRECTORY_ITEMS)
+    PENDING_DIRECTORY_ITEMS.clear()
+    if succeeded and items:
+        xbmcplugin.addDirectoryItems(handle, items, len(items))
+    xbmcplugin.endOfDirectory(handle, succeeded=succeeded, updateListing=updateListing, cacheToDisc=cacheToDisc)
+
+
 def get_setting(name: str, default: str = "") -> str:
     try:
         value = ADDON.getSetting(name)
@@ -610,7 +628,7 @@ DISCOVERY_BUFFER_SIZE = 10
 def finish_plugin_action(success: bool = True) -> None:
     try:
         if HANDLE >= 0:
-            xbmcplugin.endOfDirectory(HANDLE, succeeded=success, cacheToDisc=False)
+            end_directory(HANDLE, succeeded=success, cacheToDisc=False)
     except Exception:
         pass
 
@@ -4321,7 +4339,7 @@ def add_error_item(label: str) -> None:
         apply_music_metadata(item, label)
     except Exception:
         pass
-    xbmcplugin.addDirectoryItem(HANDLE, "", item, isFolder=False)
+    add_directory_item(HANDLE, "", item, isFolder=False)
 
 
 def run_selected_mix_keyboard_action(property_name: str, action_label: str) -> None:
@@ -4425,7 +4443,7 @@ def add_track_item(
         action="play_track",
         path=path,
     )
-    xbmcplugin.addDirectoryItem(HANDLE, url, list_item, isFolder=False)
+    add_directory_item(HANDLE, url, list_item, isFolder=False)
 
 def add_saved_mix_date_item(date_key: str, cache_paths: list[str]) -> None:
     count = len(cache_paths)
@@ -4458,7 +4476,7 @@ def add_saved_mix_date_item(date_key: str, cache_paths: list[str]) -> None:
         ("Cleanup mixes from this date", build_cleanup_date_action(date_key, include_older=False)),
         ("Cleanup mixes from this date and older", build_cleanup_date_action(date_key, include_older=True)),
     ])
-    xbmcplugin.addDirectoryItem(
+    add_directory_item(
         HANDLE,
         build_saved_date_browse_url(date_key),
         list_item,
@@ -4510,7 +4528,7 @@ def add_saved_mix_item(cache_path: str) -> None:
     if detail_parts:
         list_item.setLabel2(" | ".join(detail_parts))
 
-    xbmcplugin.addDirectoryItem(
+    add_directory_item(
         HANDLE,
         build_saved_browse_url(cache_path),
         list_item,
@@ -4525,7 +4543,7 @@ def show_root() -> None:
     generate_label = "Generate mix from playing audio"
     generate_item = xbmcgui.ListItem(label=generate_label, offscreen=True)
     apply_music_metadata(generate_item, generate_label)
-    xbmcplugin.addDirectoryItem(
+    add_directory_item(
         HANDLE,
         addon_url(action="generate_current_mix"),
         generate_item,
@@ -4534,7 +4552,7 @@ def show_root() -> None:
 
     discovery_item = xbmcgui.ListItem(label="Discovery mode", offscreen=True)
     apply_music_metadata(discovery_item, "Discovery mode")
-    xbmcplugin.addDirectoryItem(
+    add_directory_item(
         HANDLE,
         addon_url(action="discovery_mode"),
         discovery_item,
@@ -4543,7 +4561,7 @@ def show_root() -> None:
 
     radio_item = xbmcgui.ListItem(label="Radio mode", offscreen=True)
     apply_music_metadata(radio_item, "Radio mode")
-    xbmcplugin.addDirectoryItem(
+    add_directory_item(
         HANDLE,
         addon_url(action="radio_mode"),
         radio_item,
@@ -4552,7 +4570,7 @@ def show_root() -> None:
 
     recent_item = xbmcgui.ListItem(label="Recent mixes", offscreen=True)
     apply_music_metadata(recent_item, "Recent mixes")
-    xbmcplugin.addDirectoryItem(
+    add_directory_item(
         HANDLE,
         build_saved_mixes_url(),
         recent_item,
@@ -4562,7 +4580,7 @@ def show_root() -> None:
     settings_item = xbmcgui.ListItem(label="Settings", offscreen=True)
     apply_music_metadata(settings_item, "Settings")
     settings_item.setProperty("IsPlayable", "false")
-    xbmcplugin.addDirectoryItem(
+    add_directory_item(
         HANDLE,
         addon_url(action="open_settings", nonce=new_nonce()),
         settings_item,
@@ -4570,14 +4588,14 @@ def show_root() -> None:
         isFolder=False,
     )
 
-    xbmcplugin.endOfDirectory(HANDLE, cacheToDisc=False)
+    end_directory(HANDLE, cacheToDisc=False)
 
 
 def add_discovery_run_action_item(label: str, action: str) -> None:
     item = xbmcgui.ListItem(label=label, offscreen=True)
     apply_music_metadata(item, label)
     item.setProperty("IsPlayable", "false")
-    xbmcplugin.addDirectoryItem(
+    add_directory_item(
         HANDLE,
         run_plugin_url(action=action, nonce=new_nonce()),
         item,
@@ -4590,7 +4608,7 @@ def add_discovery_action_item(label: str, action: str, is_folder: bool = True) -
     apply_music_metadata(item, label)
     if not is_folder:
         item.setProperty("IsPlayable", "false")
-    xbmcplugin.addDirectoryItem(
+    add_directory_item(
         HANDLE,
         addon_url(action=action, nonce=new_nonce()),
         item,
@@ -4622,7 +4640,7 @@ def show_discovery_mode_menu() -> None:
 
     add_discovery_action_item("Discovery mode settings", "open_settings", is_folder=False)
 
-    xbmcplugin.endOfDirectory(HANDLE, cacheToDisc=False)
+    end_directory(HANDLE, cacheToDisc=False)
 
 
 def start_discovery_mode() -> None:
@@ -4727,7 +4745,7 @@ def add_radio_action_item(label: str, action: str) -> None:
     item = xbmcgui.ListItem(label=label, offscreen=True)
     apply_music_metadata(item, label)
     item.setProperty("IsPlayable", "false")
-    xbmcplugin.addDirectoryItem(HANDLE, addon_url(action=action, nonce=new_nonce()), item, isFolder=False)
+    add_directory_item(HANDLE, addon_url(action=action, nonce=new_nonce()), item, isFolder=False)
 
 
 def show_radio_mode_menu() -> None:
@@ -4762,7 +4780,7 @@ def show_radio_mode_menu() -> None:
         add_radio_action_item("Scan stations", "radio_on")
         add_radio_favourites_folder()
 
-    xbmcplugin.endOfDirectory(HANDLE, cacheToDisc=False)
+    end_directory(HANDLE, cacheToDisc=False)
 
 
 def begin_radio_tuning() -> bool:
@@ -5229,15 +5247,15 @@ def show_saved_mixes() -> None:
         info_label = "No recent mixes found yet."
         info_item = xbmcgui.ListItem(label=info_label, offscreen=True)
         apply_music_metadata(info_item, info_label)
-        xbmcplugin.addDirectoryItem(HANDLE, "", info_item, isFolder=False)
-        xbmcplugin.endOfDirectory(HANDLE, cacheToDisc=False)
+        add_directory_item(HANDLE, "", info_item, isFolder=False)
+        end_directory(HANDLE, cacheToDisc=False)
         return
 
     grouped = group_saved_mixes_by_date(cache_paths)
     for date_key, group_paths in grouped:
         add_saved_mix_date_item(date_key, group_paths)
 
-    xbmcplugin.endOfDirectory(HANDLE, cacheToDisc=False)
+    end_directory(HANDLE, cacheToDisc=False)
 
 
 def show_saved_mixes_by_date(date_key: str) -> None:
@@ -5252,8 +5270,8 @@ def show_saved_mixes_by_date(date_key: str) -> None:
         info_label = "No recent mixes found for this date."
         info_item = xbmcgui.ListItem(label=info_label, offscreen=True)
         apply_music_metadata(info_item, info_label)
-        xbmcplugin.addDirectoryItem(HANDLE, "", info_item, isFolder=False)
-        xbmcplugin.endOfDirectory(HANDLE, cacheToDisc=False)
+        add_directory_item(HANDLE, "", info_item, isFolder=False)
+        end_directory(HANDLE, cacheToDisc=False)
         return
 
     for cache_path in selected:
@@ -5262,13 +5280,13 @@ def show_saved_mixes_by_date(date_key: str) -> None:
         except Exception as exc:
             log(f"Skipping invalid stored mix {cache_path}: {exc}", xbmc.LOGDEBUG)
 
-    xbmcplugin.endOfDirectory(HANDLE, cacheToDisc=False)
+    end_directory(HANDLE, cacheToDisc=False)
 
 def generate_current_mix() -> None:
     seed = get_current_seed_song()
     if not seed:
         notify("No playing song found.", xbmcgui.NOTIFICATION_WARNING)
-        xbmcplugin.endOfDirectory(HANDLE, succeeded=True, cacheToDisc=False)
+        end_directory(HANDLE, succeeded=True, cacheToDisc=False)
         return
 
     size = get_playlist_size()
@@ -5280,14 +5298,14 @@ def generate_current_mix() -> None:
         notify(message, xbmcgui.NOTIFICATION_WARNING if "cancelled" in message.lower() else xbmcgui.NOTIFICATION_ERROR)
         log(message, xbmc.LOGERROR)
         add_error_item(f"MusicIP mix failed: {message}")
-        xbmcplugin.endOfDirectory(HANDLE, succeeded=True, cacheToDisc=False)
+        end_directory(HANDLE, succeeded=True, cacheToDisc=False)
         return
     except Exception as exc:
         message = str(exc)
         notify(message, xbmcgui.NOTIFICATION_ERROR)
         log(f"Generate mix from playing audio failed: {message}", xbmc.LOGERROR)
         add_error_item(f"MusicIP mix failed: {message}")
-        xbmcplugin.endOfDirectory(HANDLE, succeeded=True, cacheToDisc=False)
+        end_directory(HANDLE, succeeded=True, cacheToDisc=False)
         return
 
     track_metadata_list = collect_mix_track_metadata(tracks, allow_live_lookup=False)
@@ -5307,7 +5325,7 @@ def generate_current_mix() -> None:
         notify(message, xbmcgui.NOTIFICATION_ERROR)
         log(f"Generate mix playback failed: {message}", xbmc.LOGERROR)
         add_error_item(f"MusicIP mix playback failed: {message}")
-        xbmcplugin.endOfDirectory(HANDLE, succeeded=True, cacheToDisc=False)
+        end_directory(HANDLE, succeeded=True, cacheToDisc=False)
         return
 
     notify("Playing generated mix.")
@@ -5350,14 +5368,14 @@ def browse_mix(
         notify(message, xbmcgui.NOTIFICATION_WARNING if "cancelled" in message.lower() else xbmcgui.NOTIFICATION_ERROR)
         log(message, xbmc.LOGERROR)
         add_error_item(f"MusicIP mix failed: {message}")
-        xbmcplugin.endOfDirectory(HANDLE, succeeded=True, updateListing=update_listing, cacheToDisc=False)
+        end_directory(HANDLE, succeeded=True, updateListing=update_listing, cacheToDisc=False)
         return
 
     if not tracks:
         info_label = "Mix is empty. Use Refresh mix to generate a new one."
         info_item = xbmcgui.ListItem(label=info_label, offscreen=True)
         apply_music_metadata(info_item, info_label)
-        xbmcplugin.addDirectoryItem(HANDLE, "", info_item, isFolder=False)
+        add_directory_item(HANDLE, "", info_item, isFolder=False)
     else:
         cache_path = mix_cache_path(seed, size)
         meta = get_saved_mix_metadata(cache_path, tracks)
@@ -5385,7 +5403,7 @@ def browse_mix(
                 metadata=track_metadata_list[index] if index < len(track_metadata_list) else None,
             )
 
-    xbmcplugin.endOfDirectory(HANDLE, updateListing=update_listing, cacheToDisc=False)
+    end_directory(HANDLE, updateListing=update_listing, cacheToDisc=False)
     if created and tracks:
         play_new_mix_if_idle(tracks)
     apply_pending_focus(focus_index, focus_token)
@@ -5405,7 +5423,7 @@ def browse_saved_mix(
     except MusicIPError as exc:
         notify(str(exc), xbmcgui.NOTIFICATION_WARNING if "cancelled" in str(exc).lower() else xbmcgui.NOTIFICATION_ERROR)
         log(str(exc), xbmc.LOGERROR)
-        xbmcplugin.endOfDirectory(HANDLE, succeeded=False, updateListing=update_listing, cacheToDisc=False)
+        end_directory(HANDLE, succeeded=False, updateListing=update_listing, cacheToDisc=False)
         return
 
     created = False
@@ -5416,7 +5434,7 @@ def browse_saved_mix(
     if force_refresh:
         if not seed:
             notify("Stored mix does not contain a valid seed song.", xbmcgui.NOTIFICATION_ERROR)
-            xbmcplugin.endOfDirectory(HANDLE, succeeded=False, updateListing=update_listing, cacheToDisc=False)
+            end_directory(HANDLE, succeeded=False, updateListing=update_listing, cacheToDisc=False)
             return
         try:
             tracks = fetch_mix_confirmed(seed, size)
@@ -5428,14 +5446,14 @@ def browse_saved_mix(
         except MusicIPError as exc:
             notify(str(exc), xbmcgui.NOTIFICATION_WARNING if "cancelled" in str(exc).lower() else xbmcgui.NOTIFICATION_ERROR)
             log(str(exc), xbmc.LOGERROR)
-            xbmcplugin.endOfDirectory(HANDLE, succeeded=False, updateListing=update_listing, cacheToDisc=False)
+            end_directory(HANDLE, succeeded=False, updateListing=update_listing, cacheToDisc=False)
             return
 
     if not tracks:
         info_label = "Mix is empty. Use Refresh mix to generate a new one."
         info_item = xbmcgui.ListItem(label=info_label, offscreen=True)
         apply_music_metadata(info_item, info_label)
-        xbmcplugin.addDirectoryItem(HANDLE, "", info_item, isFolder=False)
+        add_directory_item(HANDLE, "", info_item, isFolder=False)
     else:
         sidecar_map = build_sidecar_track_metadata_map(meta)
         track_metadata_list = collect_mix_track_metadata(
@@ -5461,7 +5479,7 @@ def browse_saved_mix(
                 metadata=track_metadata_list[index] if index < len(track_metadata_list) else None,
             )
 
-    xbmcplugin.endOfDirectory(HANDLE, updateListing=update_listing, cacheToDisc=False)
+    end_directory(HANDLE, updateListing=update_listing, cacheToDisc=False)
     if created and tracks:
         play_new_mix_if_idle(tracks)
     apply_pending_focus(focus_index, focus_token)
@@ -6958,6 +6976,7 @@ def build_radio_history(events: list[dict]) -> str:
 
 
 def router() -> None:
+    PENDING_DIRECTORY_ITEMS.clear()  # each call builds its own listing
     ensure_musicip_keymap_installed()
     params = parse_args()
     action = params.get("action", "")
@@ -7071,7 +7090,7 @@ def router() -> None:
         date_key = params.get("date", "").strip()
         if not date_key:
             notify("No date was supplied.", xbmcgui.NOTIFICATION_ERROR)
-            xbmcplugin.endOfDirectory(HANDLE, succeeded=False, cacheToDisc=False)
+            end_directory(HANDLE, succeeded=False, cacheToDisc=False)
             return
         show_saved_mixes_by_date(date_key)
         return
@@ -7196,7 +7215,7 @@ def router() -> None:
         seed = params.get("seed", "").strip()
         if not seed:
             notify("No seed song was supplied.", xbmcgui.NOTIFICATION_ERROR)
-            xbmcplugin.endOfDirectory(HANDLE, succeeded=False, cacheToDisc=False)
+            end_directory(HANDLE, succeeded=False, cacheToDisc=False)
             return
         size = int(params.get("size") or get_playlist_size())
         refresh = params.get("refresh") == "1"
@@ -7219,7 +7238,7 @@ def router() -> None:
         cache_path = params.get("cache_path", "").strip()
         if not cache_path:
             notify("No stored mix path was supplied.", xbmcgui.NOTIFICATION_ERROR)
-            xbmcplugin.endOfDirectory(HANDLE, succeeded=False, cacheToDisc=False)
+            end_directory(HANDLE, succeeded=False, cacheToDisc=False)
             return
         refresh = params.get("refresh") == "1"
         try:
@@ -7330,7 +7349,7 @@ def router() -> None:
         return
 
     notify(f"Unknown action: {action}", xbmcgui.NOTIFICATION_ERROR)
-    xbmcplugin.endOfDirectory(HANDLE, succeeded=False, cacheToDisc=False)
+    end_directory(HANDLE, succeeded=False, cacheToDisc=False)
 
 
 if __name__ == "__main__":
@@ -7340,6 +7359,6 @@ if __name__ == "__main__":
         log(f"Unhandled error: {exc}", xbmc.LOGERROR)
         notify(str(exc), xbmcgui.NOTIFICATION_WARNING if "cancelled" in str(exc).lower() else xbmcgui.NOTIFICATION_ERROR)
         try:
-            xbmcplugin.endOfDirectory(HANDLE, succeeded=False, cacheToDisc=False)
+            end_directory(HANDLE, succeeded=False, cacheToDisc=False)
         except Exception:
             pass

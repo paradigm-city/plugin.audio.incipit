@@ -99,6 +99,25 @@ class TuningTest(RadioTestCase):
         service.refresh_radio_menu_if_visible()
         self.assertEqual(kodi.builtins, ["Container.Update(plugin://plugin.audio.musicip/?action=radio_mode&nonce=1,replace)"])
 
+    def test_no_redraw_while_kodi_is_loading_a_list(self):
+        self.turn_on()
+        kodi.info_labels["Container.FolderPath"] = "plugin://plugin.audio.musicip/?action=radio_mode&nonce=1"
+        self.tick(service.RADIO_STOP_GRACE_SECONDS)
+        service.refresh_radio_menu_if_visible()
+        main.skip_discovery_song()
+        self.tick()
+        kodi.builtins.clear()
+        kodi.conditions["Container.IsUpdating"] = True
+        service.refresh_radio_menu_if_visible()
+        self.assertEqual(kodi.builtins, [])  # postponed, not dropped
+        kodi.conditions["Container.IsUpdating"] = False
+        kodi.conditions["Window.IsActive(busydialog)"] = True
+        service.refresh_radio_menu_if_visible()
+        self.assertEqual(kodi.builtins, [])
+        kodi.conditions.clear()
+        service.refresh_radio_menu_if_visible()
+        self.assertEqual(len(kodi.builtins), 1)
+
     def test_the_radio_screen_is_not_redrawn_elsewhere(self):
         self.turn_on()
         kodi.info_labels["Container.FolderPath"] = "plugin://plugin.audio.musicip/?action=saved_mixes"

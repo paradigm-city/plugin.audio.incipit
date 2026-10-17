@@ -234,6 +234,8 @@ class KodiState:
         self.dialog_calls = []
         self.dialog_responses = {}
         self.directory_items = []
+        self.directory_batches = []  # sizes of addDirectoryItems calls
+        self.conditions = {}  # xbmc.getCondVisibility answers, e.g. {"Container.IsUpdating": True}
         self.directory_calls = []
         self.ended = []
         self.resolved = []
@@ -665,6 +667,13 @@ def _addDirectoryItem(handle, url, listitem, isFolder=False, totalItems=0):
     return True
 
 
+def _addDirectoryItems(handle, items, totalItems=0):
+    kodi.directory_batches.append(len(items))
+    for url, listitem, is_folder in items:
+        kodi.directory_items.append((url, listitem, is_folder))
+    return True
+
+
 def _endOfDirectory(handle, succeeded=True, updateListing=False, cacheToDisc=True):
     kodi.ended.append({"succeeded": succeeded, "updateListing": updateListing, "cacheToDisc": cacheToDisc})
 
@@ -749,7 +758,7 @@ def install():
     xbmc.executebuiltin = _executebuiltin
     xbmc.executeJSONRPC = kodi_execute_jsonrpc
     xbmc.getInfoLabel = _getInfoLabel
-    xbmc.getCondVisibility = lambda condition: False
+    xbmc.getCondVisibility = lambda condition: bool(kodi.conditions.get(condition))
     xbmc.sleep = _sleep
 
     xbmcaddon = types.ModuleType("xbmcaddon")
@@ -766,6 +775,7 @@ def install():
     xbmcplugin = types.ModuleType("xbmcplugin")
     xbmcplugin.SORT_METHOD_UNSORTED = 0
     xbmcplugin.addDirectoryItem = _addDirectoryItem
+    xbmcplugin.addDirectoryItems = _addDirectoryItems
     xbmcplugin.endOfDirectory = _endOfDirectory
     xbmcplugin.setResolvedUrl = _setResolvedUrl
     xbmcplugin.setPluginCategory = _record("setPluginCategory")

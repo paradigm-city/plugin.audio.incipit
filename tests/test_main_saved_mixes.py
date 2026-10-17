@@ -460,6 +460,7 @@ class RepairReadinessSourcesTest(KodiTestCase):
     def test_saved_mix_entry_names_the_sources(self):
         kodi.add_music_source(self.SOURCE, present=False)
         main.add_saved_mix_item(self.cache_path)
+        self.finish_listing()
         _url, item, _folder = kodi.directory_items[-1]
         self.assertIn("Check music sources before repair", [label for label, _action in item.context_menu])
         self.assertTrue(item.getLabel2().endswith("| Check music sources before repair"))
