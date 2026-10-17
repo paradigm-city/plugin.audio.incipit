@@ -29,7 +29,7 @@ class RadioMixAssistTest(RadioBase):
             self.addCleanup(patcher.stop)
 
     @staticmethod
-    def choose_every_other(reference_song, candidates, count, reference, neighbours, check=None):
+    def choose_every_other(reference_song, candidates, count, reference, neighbours, check=None, settings=None):
         return {"chosen": candidates[::2][:count], "reference": {"energy": 6, "sounding_year": 1984},
                 "not_fitting": [{"path": path, "label": path, "reason": "no"} for path in candidates[1::2]]}
 
@@ -243,6 +243,31 @@ class RadioMixAssistTest(RadioBase):
     def menu_calls(self):
         self.menu()
         return kodi.directory_calls
+
+    def test_a_favourite_station_uses_its_own_settings(self):
+        self.start()
+        seed = self.radio()["seed"]
+        main.save_radio_favourites([{"id": "f1", "name": "Night Drive", "seed": seed, "openness": 4, "drift": 0}])
+        self.run_plugin(action="radio_stop")
+        kodi.settings.update({"mix_assist_station_strictness": "0", "mix_assist_radio_drift": "2"})  # global: other values
+        self.run_plugin(action="radio_play_favourite", id="f1")
+        self.assertEqual(self.radio()["settings"], {"openness": 4, "drift": 0})
+        self.assertEqual((self.radio()["events"][0]["openness"], self.radio()["events"][0]["drift"]),
+                         ("Adventurous", "Stay close to the picked song"))
+        self.tick()  # the start check gets the favourite's settings
+        self.finish_check()
+        self.assertEqual(self.start_check.call_args[1]["settings"], {"openness": 4, "drift": 0})
+        self.tick()
+        kodi.go_to(2)
+        self.tick()  # a refill: judged against the picked song ("stay close"), with the favourite's settings
+        self.finish_check()
+        self.assertEqual(self.refill_check.call_args[0][0], seed)
+        self.assertEqual(self.refill_check.call_args[1]["settings"], {"openness": 4, "drift": 0})
+
+    def test_the_settings_reach_the_checks(self):
+        self.assertEqual(main.get_station_strictness({"openness": 4}), (1.5, True))
+        self.assertEqual(main.get_radio_drift_half_life({"drift": 0}), 0)
+        self.assertEqual(main.get_station_strictness({}), main.get_station_strictness())  # none of its own: global
 
     def test_without_the_claude_cli_radio_works_as_before(self):
         with mock.patch.object(main, "mix_assist_available", return_value=False):

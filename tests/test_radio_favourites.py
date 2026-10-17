@@ -5,7 +5,9 @@ import unittest
 
 from fake_kodi import kodi
 from support import main
-from test_radio_mode import RadioTestCase as RadioBase
+from test_radio_mode import SONGS, RadioTestCase as RadioBase
+
+SONGS_FIRST = SONGS[0]
 
 
 class FavouriteStationsTest(RadioBase):
@@ -85,7 +87,34 @@ class FavouriteStationsTest(RadioBase):
         (url, item, is_folder), = kodi.directory_items
         self.assertEqual(item.getLabel(), self.favourites()[0]["name"])
         self.assertFalse(is_folder)
-        self.assertEqual([label for label, _action in item.context_menu], ["Rename", "Remove from favourites"])
+        self.assertEqual([label for label, _action in item.context_menu],
+                         ["Openness: Balanced", "Drift: Drift slowly", "Rename", "Remove from favourites"])
+        self.assertTrue(item.getLabel2().endswith("| Balanced | Drift slowly"))
+
+    def test_a_favourite_keeps_the_settings_it_was_saved_with(self):
+        kodi.settings.update({"mix_assist_station_strictness": "3", "mix_assist_radio_drift": "2"})
+        self.save_playing_station()
+        favourite = self.favourites()[0]
+        self.assertEqual((favourite["openness"], favourite["drift"]), (3, 2))
+        self.assertEqual(self.radio()["settings"], {"openness": 3, "drift": 2})
+
+    def test_changing_a_favourites_settings(self):
+        self.save_playing_station()
+        favourite_id = self.favourites()[0]["id"]
+        kodi.respond("select", 0)  # Focused
+        self.run_plugin(action="radio_favourite_setting", id=favourite_id, setting="openness")
+        self.assertEqual(self.favourites()[0]["openness"], 0)
+        self.assertEqual(self.radio()["settings"]["openness"], 0)  # the playing favourite follows
+        kodi.respond("select", 2)  # Wander freely
+        self.run_plugin(action="radio_favourite_setting", id=favourite_id, setting="drift")
+        self.assertEqual(self.favourites()[0]["drift"], 2)
+        self.assertEqual(kodi.dialogs("select")[-1][1][0], f"Drift of {self.favourites()[0]['name']}")
+
+    def test_older_favourites_follow_the_global_settings(self):
+        main.save_radio_favourites([{"id": "old", "name": "Old", "seed": SONGS_FIRST}])
+        kodi.settings["mix_assist_station_strictness"] = "4"
+        self.assertEqual(main.favourite_setting_labels(self.favourites()[0]), ("Adventurous", "Drift slowly"))
+        self.assertEqual(main.favourite_settings(self.favourites()[0]), {})
 
     def test_rename_and_remove(self):
         self.save_playing_station()
