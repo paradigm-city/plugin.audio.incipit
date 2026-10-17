@@ -60,6 +60,12 @@ Found on 2026-10-11 while removing the Discovery command channel (F6). They are 
 
 ## Resolved
 
+### F21 · Estuary's Noto Sans draws broken glyphs in Pillow
+
+Found on 2026-10-17 while building the information window: text drawn into the charts with Estuary's `NotoSans-Regular.ttf` came out with parts of the glyphs missing ("Polished" looked like "Folished", 9 like a reversed c), in Pillow 12 (FreeType 2.14) as well, with both layout engines. Kodi itself draws the font correctly. Kodi's own `media/Fonts/arial.ttf` (DejaVu Sans), which every Kodi installation has, draws correctly.
+
+Avoided in e566303 (2026-10-17), before it reached a user: the charts use `special://xbmc/media/Fonts/arial.ttf`.
+
 ### F20 · The Radio screen kept the first snippet's title while scanning
 
 Found by the user on 2026-10-17: while scanning, the Radio screen's title ("Radio: scanning - <song>") showed the first snippet correctly but was not updated when the next snippet started. The screen was only rebuilt after an action on it.
