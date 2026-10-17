@@ -214,25 +214,40 @@ class SavedMixMenuTest(MixAssistTestCase):
         self.assertEqual(self.section()["openness"], 3)
         self.assertEqual(self.history()[-1]["openness"], "Open")
         self.assertNotified("Saved. AI Mix Assist uses it for this mix from now on.")
-        self.assertIn("Openness: Open (chosen for this mix)", dict(main.mix_info_pages(self.cache_path))["AI Mix Assist"])
+        self.assertIn("AI Mix Assist: openness Open (chosen for this mix)", main.build_mix_info_page(self.cache_path))
 
     def test_cancelling_the_menu_does_nothing(self):
         self.run_plugin(action="mix_assist_menu", cache_path=self.cache_path)
         self.assertNotIn("Container.Refresh", kodi.builtins)
         self.assertEqual(kodi.notifications, [])
 
-    def test_mix_information_has_an_ai_mix_assist_page(self):
-        self.assertEqual([title for title, _text in main.mix_info_pages(self.cache_path)], ["Overview", "History (1)"])
+    def test_mix_information_shows_what_it_is_about_and_the_changes(self):
+        self.assertNotIn("[B]What it is about[/B]", main.build_mix_info_page(self.cache_path))
         self.tidy_up(plan(changes=[REPLACE_DISCO]))
-        pages = dict(main.mix_info_pages(self.cache_path))
-        self.assertEqual(list(pages), ["Overview", "History (2)", "AI Mix Assist"])
-        self.assertIn("What this mix is about (as the AI put it):\ndark, abstract, instrumental", pages["AI Mix Assist"])
-        self.assertIn("wilfried - fire walk -> Medeski Martin & Wood - Think (Danceable disco, bright)",
-                      pages["AI Mix Assist"])
-        self.assertNotIn("dark, abstract", pages["Overview"])
+        page = main.build_mix_info_page(self.cache_path)
+        self.assertIn("[B]What it is about[/B]\ndark, abstract, instrumental\n(as the AI put it)\n"
+                      "AI Mix Assist: openness Balanced, last checked", page)
+        self.assertIn("[B]Last tidy-up[/B]\nwilfried - fire walk -> Medeski Martin & Wood - Think (Danceable disco, bright)",
+                      page)
+        self.assertIn("can undo it", page)
+        history = page.split("[B]History[/B]")[1]
         self.assertIn("AI Mix Assist tidied up the mix: 1 replaced, 0 removed\n"
-                      "    wilfried - fire walk -> Medeski Martin & Wood - Think (Danceable disco, bright)",
-                      pages["History (2)"])
+                      "    wilfried - fire walk -> Medeski Martin & Wood - Think (Danceable disco, bright)", history)
+
+    def test_a_check_stores_how_the_mix_sounds(self):
+        result = plan(changes=[REPLACE_DISCO])
+        for row, energy in zip(result["rows"], (2, 4, 9, 6, 8)):  # position 3 is replaced: its rating doesn't count
+            row["entry"] = {"energy": energy, "exploration": 5, "sounding_year": 1980 + energy}
+        self.tidy_up(result)
+        profile = self.section()["profile"]
+        self.assertEqual((profile["rated"], profile["values"]["energy"]), (4, [5.0, 2.0, 8.0]))
+        page = main.build_mix_info_page(self.cache_path)
+        self.assertIn("[B]How it sounds[/B]\nEnergy: 5.0 steady (range 2-8)", page)
+        self.assertIn("Sounding year: 1985 (range 1982-1988)", page)
+        self.assertIn("(ratings of 4 tracks, at the check on", page)
+
+    def test_without_a_check_the_page_has_no_ratings(self):
+        self.assertNotIn("range", main.build_mix_info_page(self.cache_path))
 
 
 class PerMixLevelTest(MixAssistTestCase):
@@ -255,7 +270,7 @@ class PerMixLevelTest(MixAssistTestCase):
         self.set_openness(main.MIX_OPENNESS_OFF)
         tidy_up = self.tidy_up(plan())
         self.assertEqual(tidy_up.call_args[1]["strictness"], 1.2)
-        self.assertIn("AI Mix Assist is off for this mix", dict(main.mix_info_pages(self.cache_path))["AI Mix Assist"])
+        self.assertIn("AI Mix Assist: off for this mix", main.build_mix_info_page(self.cache_path))
 
 
 class GenerateDialogTest(MusicIPServerTestCase):
@@ -316,8 +331,7 @@ class MixNameTest(MixAssistTestCase):
         self.assertEqual(self.section()["ai_name"], "Cosmic Analog Journeys")
         self.assertEqual(self.label(), "Cosmic Analog Journeys (5 tracks)")
         self.assertEqual(self.history()[-2], dict(self.history()[-2], kind="named", name="Cosmic Analog Journeys"))
-        overview = dict(main.mix_info_pages(self.cache_path))["Overview"]
-        self.assertTrue(overview.startswith("Name: Cosmic Analog Journeys (20"))
+        self.assertTrue(main.build_mix_info_page(self.cache_path).startswith("[B]Cosmic Analog Journeys[/B]\nCreated 20"))
 
     def test_your_name_wins_and_can_be_removed(self):
         self.tidy_up(self.named_plan())

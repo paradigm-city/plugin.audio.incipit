@@ -78,23 +78,34 @@ class PlainTextTest(HistoryTestCase):
         cache_path = self.save_mix([A, B], size=2)
         main.record_mix_history(cache_path, "more_like_this", song="Sigur R\u00f3s \u2013 Hopp\u00edpolla",
                                 added=["Mot\u00f6rhead \u2013 Overkill"])
-        history = dict(main.mix_info_pages(cache_path))["History (2)"]
+        history = main.build_mix_info_page(cache_path).split("[B]History[/B]")[1]
         self.assertIn('"More like this" for Sigur R\u00f3s - Hopp\u00edpolla added 1 track(s):', history)
         self.assertTrue(all(ord(ch) < 128 or ch.isalpha() for ch in history))
 
 
-class MixInformationPagesTest(HistoryTestCase):
-    def test_pages_work_like_tabs(self):
-        cache_path = self.save_mix([A, B], size=2)
-        kodi.respond("select", 1, 0, -1)  # History, then Overview, then close
-        self.run_plugin(action="mix_info", cache_path=cache_path)
-        _method, (heading, choices), _kwargs = kodi.dialogs("select")[0]
-        self.assertEqual((heading, choices), ("MusicIP mix information", ["Overview", "History (1)"]))
-        pages = [call[1] for call in kodi.dialogs("textviewer")]
-        self.assertEqual([heading for heading, _text in pages],
-                         ["MusicIP mix information: History (1)", "MusicIP mix information: Overview"])
-        self.assertIn("Created from", pages[0][1])
-        self.assertIn("Seed:", pages[1][1])
+class MixInformationPageTest(HistoryTestCase):
+    def test_one_page_top_to_bottom(self):
+        cache_path = self.save_mix([A, B, C], size=3)
+        sidecar = self.read_json(main.mix_meta_path_from_cache_path(cache_path))
+        sidecar["track_metadata_by_path"] = {
+            main.canonical_audio_path(A): {"artist": "Rush", "title": "Tom Sawyer", "album": "Moving Pictures",
+                                           "year": 1981, "duration": 276, "genre": ["Progressive Rock"]},
+            main.canonical_audio_path(B): {"artist": "Rush", "title": "Limelight", "year": 1981, "duration": 259,
+                                           "genre": ["Progressive Rock"]},
+            main.canonical_audio_path(C): {"artist": "Yes", "title": "Roundabout", "year": 1971, "duration": 510},
+        }
+        sidecar["consistency"] = {"status": "ok", "missing_files": 0, "checked_ts": 1_800_000_000}
+        self.write_json(main.mix_meta_path_from_cache_path(cache_path), sidecar)
+        page = main.build_mix_info_page(cache_path)
+        headings = [line for line in page.split("\n") if line.startswith("[B]")]
+        self.assertEqual(headings[1:], ["[B]How it sounds[/B]", "[B]How it was made[/B]", "[B]Files[/B]", "[B]History[/B]"])
+        self.assertIn("| 3 tracks | 17 min", page)
+        self.assertIn("From: Rush - Tom Sawyer (Moving Pictures, 1981)", page)
+        self.assertIn("Released 1971-1981", page)
+        self.assertIn("2 artists; more than once: Rush (2)", page)
+        self.assertIn("Genres: Progressive Rock (2)", page)
+        self.assertIn("All present (checked", page)
+        self.assertIn("Created from", page.split("[B]History[/B]")[1])
 
 
 class EditingHistoryAndProgressTest(MusicIPServerTestCase, HistoryTestCase):
