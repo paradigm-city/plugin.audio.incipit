@@ -1,0 +1,240 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The information window of a mix or a radio station (main.py, InfoWindow). Everything shown comes from the
+     window's properties: heading, facts, tab1..tab6 (the tab titles), tab (the tab shown), text, image (a chart). -->
+<window>
+	<defaultcontrol always="true">201</defaultcontrol>
+	<animation type="WindowOpen" reversible="false">
+		<effect type="fade" start="0" end="100" time="200" />
+	</animation>
+	<animation type="WindowClose" reversible="false">
+		<effect type="fade" start="100" end="0" time="150" />
+	</animation>
+	<controls>
+		<control type="image">
+			<left>0</left>
+			<top>0</top>
+			<width>1920</width>
+			<height>1080</height>
+			<texture colordiffuse="C0000000">musicip-white.png</texture>
+		</control>
+		<control type="group">
+			<left>160</left>
+			<top>90</top>
+			<control type="image">
+				<left>0</left>
+				<top>0</top>
+				<width>1600</width>
+				<height>900</height>
+				<texture colordiffuse="FF181B22">musicip-white.png</texture>
+			</control>
+			<control type="label">
+				<left>60</left>
+				<top>34</top>
+				<width>1480</width>
+				<height>56</height>
+				<font>font14</font>
+				<textcolor>FFF0F0F0</textcolor>
+				<aligny>center</aligny>
+				<label>$INFO[Window.Property(heading)]</label>
+			</control>
+			<control type="label">
+				<left>60</left>
+				<top>94</top>
+				<width>1480</width>
+				<height>40</height>
+				<font>font12</font>
+				<textcolor>FF9AA0AA</textcolor>
+				<aligny>center</aligny>
+				<label>$INFO[Window.Property(facts)]</label>
+			</control>
+			<control type="image">
+				<left>40</left>
+				<top>152</top>
+				<width>1520</width>
+				<height>2</height>
+				<texture colordiffuse="FF343945">musicip-white.png</texture>
+			</control>
+
+			<!-- the tabs: moving onto one shows it; the shown one keeps its background -->
+			<control type="grouplist" id="200">
+				<left>30</left>
+				<top>180</top>
+				<width>340</width>
+				<height>690</height>
+				<orientation>vertical</orientation>
+				<itemgap>8</itemgap>
+				<onright>300</onright>
+				<control type="togglebutton" id="201">
+					<width>340</width>
+					<height>76</height>
+					<font>font13</font>
+					<textoffsetx>30</textoffsetx>
+					<aligny>center</aligny>
+					<textcolor>FF9AA0AA</textcolor>
+					<focusedcolor>FFFFFFFF</focusedcolor>
+					<texturefocus colordiffuse="FF2E6FD8">musicip-white.png</texturefocus>
+					<texturenofocus />
+					<alttexturefocus colordiffuse="FF2E6FD8">musicip-white.png</alttexturefocus>
+					<alttexturenofocus colordiffuse="FF2A2F3A">musicip-white.png</alttexturenofocus>
+					<onright>300</onright>
+					<label>$INFO[Window.Property(tab1)]</label>
+					<altlabel>$INFO[Window.Property(tab1)]</altlabel>
+					<usealttexture>String.IsEqual(Window.Property(tab),1)</usealttexture>
+					<visible>!String.IsEmpty(Window.Property(tab1))</visible>
+				</control>
+				<control type="togglebutton" id="202">
+					<width>340</width>
+					<height>76</height>
+					<font>font13</font>
+					<textoffsetx>30</textoffsetx>
+					<aligny>center</aligny>
+					<textcolor>FF9AA0AA</textcolor>
+					<focusedcolor>FFFFFFFF</focusedcolor>
+					<texturefocus colordiffuse="FF2E6FD8">musicip-white.png</texturefocus>
+					<texturenofocus />
+					<alttexturefocus colordiffuse="FF2E6FD8">musicip-white.png</alttexturefocus>
+					<alttexturenofocus colordiffuse="FF2A2F3A">musicip-white.png</alttexturenofocus>
+					<onright>300</onright>
+					<label>$INFO[Window.Property(tab2)]</label>
+					<altlabel>$INFO[Window.Property(tab2)]</altlabel>
+					<usealttexture>String.IsEqual(Window.Property(tab),2)</usealttexture>
+					<visible>!String.IsEmpty(Window.Property(tab2))</visible>
+				</control>
+				<control type="togglebutton" id="203">
+					<width>340</width>
+					<height>76</height>
+					<font>font13</font>
+					<textoffsetx>30</textoffsetx>
+					<aligny>center</aligny>
+					<textcolor>FF9AA0AA</textcolor>
+					<focusedcolor>FFFFFFFF</focusedcolor>
+					<texturefocus colordiffuse="FF2E6FD8">musicip-white.png</texturefocus>
+					<texturenofocus />
+					<alttexturefocus colordiffuse="FF2E6FD8">musicip-white.png</alttexturefocus>
+					<alttexturenofocus colordiffuse="FF2A2F3A">musicip-white.png</alttexturenofocus>
+					<onright>300</onright>
+					<label>$INFO[Window.Property(tab3)]</label>
+					<altlabel>$INFO[Window.Property(tab3)]</altlabel>
+					<usealttexture>String.IsEqual(Window.Property(tab),3)</usealttexture>
+					<visible>!String.IsEmpty(Window.Property(tab3))</visible>
+				</control>
+				<control type="togglebutton" id="204">
+					<width>340</width>
+					<height>76</height>
+					<font>font13</font>
+					<textoffsetx>30</textoffsetx>
+					<aligny>center</aligny>
+					<textcolor>FF9AA0AA</textcolor>
+					<focusedcolor>FFFFFFFF</focusedcolor>
+					<texturefocus colordiffuse="FF2E6FD8">musicip-white.png</texturefocus>
+					<texturenofocus />
+					<alttexturefocus colordiffuse="FF2E6FD8">musicip-white.png</alttexturefocus>
+					<alttexturenofocus colordiffuse="FF2A2F3A">musicip-white.png</alttexturenofocus>
+					<onright>300</onright>
+					<label>$INFO[Window.Property(tab4)]</label>
+					<altlabel>$INFO[Window.Property(tab4)]</altlabel>
+					<usealttexture>String.IsEqual(Window.Property(tab),4)</usealttexture>
+					<visible>!String.IsEmpty(Window.Property(tab4))</visible>
+				</control>
+				<control type="togglebutton" id="205">
+					<width>340</width>
+					<height>76</height>
+					<font>font13</font>
+					<textoffsetx>30</textoffsetx>
+					<aligny>center</aligny>
+					<textcolor>FF9AA0AA</textcolor>
+					<focusedcolor>FFFFFFFF</focusedcolor>
+					<texturefocus colordiffuse="FF2E6FD8">musicip-white.png</texturefocus>
+					<texturenofocus />
+					<alttexturefocus colordiffuse="FF2E6FD8">musicip-white.png</alttexturefocus>
+					<alttexturenofocus colordiffuse="FF2A2F3A">musicip-white.png</alttexturenofocus>
+					<onright>300</onright>
+					<label>$INFO[Window.Property(tab5)]</label>
+					<altlabel>$INFO[Window.Property(tab5)]</altlabel>
+					<usealttexture>String.IsEqual(Window.Property(tab),5)</usealttexture>
+					<visible>!String.IsEmpty(Window.Property(tab5))</visible>
+				</control>
+				<control type="togglebutton" id="206">
+					<width>340</width>
+					<height>76</height>
+					<font>font13</font>
+					<textoffsetx>30</textoffsetx>
+					<aligny>center</aligny>
+					<textcolor>FF9AA0AA</textcolor>
+					<focusedcolor>FFFFFFFF</focusedcolor>
+					<texturefocus colordiffuse="FF2E6FD8">musicip-white.png</texturefocus>
+					<texturenofocus />
+					<alttexturefocus colordiffuse="FF2E6FD8">musicip-white.png</alttexturefocus>
+					<alttexturenofocus colordiffuse="FF2A2F3A">musicip-white.png</alttexturenofocus>
+					<onright>300</onright>
+					<label>$INFO[Window.Property(tab6)]</label>
+					<altlabel>$INFO[Window.Property(tab6)]</altlabel>
+					<usealttexture>String.IsEqual(Window.Property(tab),6)</usealttexture>
+					<visible>!String.IsEmpty(Window.Property(tab6))</visible>
+				</control>
+			</control>
+
+			<!-- a tab without a chart: the text fills the page -->
+			<control type="textbox" id="301">
+				<left>410</left>
+				<top>180</top>
+				<width>1110</width>
+				<height>690</height>
+				<font>font12</font>
+				<textcolor>FFDADDE3</textcolor>
+				<pagecontrol>302</pagecontrol>
+				<label>$INFO[Window.Property(text)]</label>
+				<visible>String.IsEmpty(Window.Property(image))</visible>
+			</control>
+			<!-- a tab with a chart: the chart on top, the text below -->
+			<control type="image" id="401">
+				<left>410</left>
+				<top>180</top>
+				<width>1150</width>
+				<height>470</height>
+				<aspectratio>keep</aspectratio>
+				<texture background="true">$INFO[Window.Property(image)]</texture>
+				<visible>!String.IsEmpty(Window.Property(image))</visible>
+			</control>
+			<control type="textbox" id="303">
+				<left>410</left>
+				<top>670</top>
+				<width>1110</width>
+				<height>200</height>
+				<font>font12</font>
+				<textcolor>FFDADDE3</textcolor>
+				<pagecontrol>304</pagecontrol>
+				<label>$INFO[Window.Property(text)]</label>
+				<visible>!String.IsEmpty(Window.Property(image))</visible>
+			</control>
+			<control type="group" id="300">
+				<control type="scrollbar" id="302">
+					<left>1556</left>
+					<width>10</width>
+					<orientation>vertical</orientation>
+					<showonepage>false</showonepage>
+					<texturesliderbackground colordiffuse="FF22262E">musicip-white.png</texturesliderbackground>
+					<texturesliderbar colordiffuse="FF4A505E">musicip-white.png</texturesliderbar>
+					<texturesliderbarfocus colordiffuse="FF2E6FD8">musicip-white.png</texturesliderbarfocus>
+					<onleft>200</onleft>
+					<top>180</top>
+					<height>690</height>
+					<visible>String.IsEmpty(Window.Property(image))</visible>
+				</control>
+				<control type="scrollbar" id="304">
+					<left>1556</left>
+					<width>10</width>
+					<orientation>vertical</orientation>
+					<showonepage>false</showonepage>
+					<texturesliderbackground colordiffuse="FF22262E">musicip-white.png</texturesliderbackground>
+					<texturesliderbar colordiffuse="FF4A505E">musicip-white.png</texturesliderbar>
+					<texturesliderbarfocus colordiffuse="FF2E6FD8">musicip-white.png</texturesliderbarfocus>
+					<onleft>200</onleft>
+					<top>670</top>
+					<height>200</height>
+					<visible>!String.IsEmpty(Window.Property(image))</visible>
+				</control>
+			</control>
+		</control>
+	</controls>
+</window>

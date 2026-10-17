@@ -158,6 +158,7 @@ def score_candidates(candidate_paths: Sequence[str], units: Sequence[dict], entr
             misfit, _ = fit.misfit(entry, entries[0], analysis["spreads"], analysis["inverse"])
             candidate["relative"] = misfit / analysis["typical"]
             candidate["single"] = single_dimension_miss(entry, entries[0])
+            candidate["entry"] = entry
         scored[unit["path"]] = candidate
     return scored
 
@@ -269,7 +270,8 @@ def tidy_up(paths: Sequence[str], cache: RatingCache, ask: Ask, resolve: Resolve
             new_paths[position - 1] = choice["path"]
             plan["changes"].append({"position": position, "old": paths[position - 1],
                                     "old_label": row["unit"]["label"], "reason": row.get("reason") or row.get("why", ""),
-                                    "new": choice["path"], "new_label": choice["label"], "source": origin})
+                                    "new": choice["path"], "new_label": choice["label"], "source": origin,
+                                    "entry": choice.get("entry")})
         return unfilled
 
     # Round 1: a submix from the nearest earlier track that clearly fits. Gaps that share a submix seed share one

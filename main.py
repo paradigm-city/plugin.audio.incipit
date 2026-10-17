@@ -5710,21 +5710,100 @@ def build_mix_info_message(cache_path: str) -> str:
 
 
 def show_mix_info(cache_path: str) -> None:
-    """The mix information: one scrollable page, the most important first."""
+    """The mix information in the information window (tabs, charts); the text viewer when Kodi can't show it."""
     try:
-        page = build_mix_info_page(cache_path)
+        info = mix_info_parts(cache_path)
     except Exception as exc:
         xbmcgui.Dialog().ok("MusicIP mix information", f"Could not read mix information.\n\n{exc}")
         return
+    show_info_window(info["title"], info["facts"], mix_info_tabs(info),
+                     lambda: show_text_page("MusicIP mix information", mix_info_page_text(info)))
+
+
+def show_text_page(heading: str, text: str) -> None:
     try:
-        xbmcgui.Dialog().textviewer("MusicIP mix information", page)
+        xbmcgui.Dialog().textviewer(plain(heading), plain(text))
     except Exception:
-        xbmcgui.Dialog().ok("MusicIP mix information", page)
+        xbmcgui.Dialog().ok(plain(heading), plain(text))
 
 
-# --- The mix information page ---------------------------------------------------------------------------------
-# Top to bottom: what the mix is, what it is about, how it sounds, what AI Mix Assist changed, how it was made,
-# its files, its history. Kodi's text viewer shows [B]...[/B] as bold headings.
+# --- The information window: a heading, a line of facts, tabs down the left, some with a chart ----------------
+# resources/skins/Default/1080i/script-musicip-info.xml; the window shows what its properties say. Kodi shows
+# [B]...[/B] as bold headings.
+
+INFO_WINDOW_XML = "script-musicip-info.xml"
+INFO_TAB_IDS = tuple(range(201, 207))  # up to six tabs
+INFO_TEXT_GROUP = 300  # the scrollbars of the text
+INFO_CHART_SIZE = (1150, 470)  # a tab's chart in pixels (the window is laid out for 1920 x 1080)
+CHART_FONT = "special://xbmc/media/Fonts/arial.ttf"  # DejaVu Sans; Estuary's Noto Sans draws badly in Pillow
+
+
+class InfoWindow(xbmcgui.WindowXMLDialog):
+    """Moving onto a tab shows it. A tab is a dict: title, text and, optionally, image (a chart)."""
+
+    def setup(self, heading: str, facts: str, tabs: list[dict]) -> "InfoWindow":
+        self.heading, self.facts, self.tabs = heading, facts, tabs[:len(INFO_TAB_IDS)]
+        return self
+
+    def onInit(self) -> None:
+        self.setProperty("heading", plain(self.heading))
+        self.setProperty("facts", plain(self.facts))
+        for number, tab in enumerate(self.tabs, start=1):
+            self.setProperty(f"tab{number}", plain(tab["title"]))
+        self.show_tab(0)
+        self.setFocusId(INFO_TAB_IDS[0])
+
+    def show_tab(self, index: int) -> None:
+        tab = self.tabs[index]
+        self.setProperty("tab", str(index + 1))
+        self.setProperty("image", tab.get("image") or "")
+        self.setProperty("text", plain(tab.get("text") or ""))
+
+    def onFocus(self, control_id: int) -> None:
+        if control_id in INFO_TAB_IDS[:len(self.tabs)]:
+            self.show_tab(INFO_TAB_IDS.index(control_id))
+
+    def onClick(self, control_id: int) -> None:
+        if control_id in INFO_TAB_IDS:
+            self.setFocusId(INFO_TEXT_GROUP)
+
+
+def show_info_window(heading: str, facts: str, tabs: list[dict], fallback) -> None:
+    try:
+        window = InfoWindow(INFO_WINDOW_XML, ADDON.getAddonInfo("path"), "Default", "1080i").setup(heading, facts, tabs)
+    except Exception as exc:
+        log(f"The information window is not available ({exc}); showing the text instead", xbmc.LOGWARNING)
+        fallback()
+        return
+    window.doModal()
+    del window
+
+
+def chart_path(kind: str) -> str:
+    """A new file each time (Kodi caches images by path); older charts of this kind are removed."""
+    folder = os.path.join(get_profile_dir(), "charts")
+    os.makedirs(folder, exist_ok=True)
+    for name in os.listdir(folder):
+        if name.startswith(f"{kind}_") and name.endswith(".png"):
+            try:
+                os.remove(os.path.join(folder, name))
+            except OSError:
+                pass
+    return os.path.join(folder, f"{kind}_{int(time.time() * 1000)}.png")
+
+
+def chart_font_path() -> str:
+    """The font for the text in charts, which ships with Kodi; "" without it (no text in charts)."""
+    try:
+        path = xbmcvfs.translatePath(CHART_FONT)
+    except Exception:
+        return ""
+    return path if os.path.isfile(path) else ""
+
+
+# --- The mix information ------------------------------------------------------------------------------------
+# What the mix is, what it is about, how it sounds (a chart of its ratings), its course track by track, what AI
+# Mix Assist changed, how it was made, its files, its history. The text page has it all, top to bottom.
 
 def info_heading(text: str) -> str:
     return f"[B]{text}[/B]"
@@ -5755,50 +5834,83 @@ def mix_sound_profile(rows: list[dict], kept: set) -> dict | None:
     return {"rated": len(rated), "tracks": len(kept), "ts": int(time.time()), "values": values}
 
 
-def build_mix_info_page(cache_path: str) -> str:
+def mix_course(plan: dict) -> list[list]:
+    """Each track's ratings in the mix's order after the check (ALL_KEYS order; None where not rated)."""
+    rows = {row["position"]: row for row in plan["rows"]}
+    changes = {change["position"]: change for change in plan["changes"]}
+    course = []
+    for position in sorted(rows):
+        if position in plan["removed"]:
+            continue
+        entry = (changes[position].get("entry") if position in changes else rows[position].get("entry")) or {}
+        course.append([round(float(entry[key]), 1) if isinstance(entry.get(key), (int, float)) else None
+                       for key in mix_assist_dimensions.ALL_KEYS])
+    return course
+
+
+def mix_tracks_key(tracks: list[str]) -> str:
+    """Tells whether the mix's tracks changed since its ratings were stored."""
+    return hashlib.sha1("\n".join(canonical_audio_path(track) for track in tracks).encode("utf-8")).hexdigest()[:16]
+
+
+def dimension_name(key: str) -> str:
+    if key == mix_assist_dimensions.ERA_KEY:
+        return "Sounding year"
+    return next(d.name for d in mix_assist_dimensions.DIMENSIONS if d.key == key)
+
+
+def dimension_range_text(key: str, low: float, high: float) -> str:
+    return f"{int(round(low))}-{int(round(high))}" if key == mix_assist_dimensions.ERA_KEY else f"{low:.0f}-{high:.0f}"
+
+
+def mix_info_parts(cache_path: str) -> dict:
+    """The parts of the mix information, for the window's tabs and for the text page."""
     tracks = load_mix_by_cache_path(cache_path)
     meta = get_saved_mix_metadata(cache_path, tracks)
     section = get_mix_assist_section(meta)
     snapshots = mix_track_snapshots(meta, tracks)
-    lines: list[str] = []
+    info: dict = {"title": mix_name(meta) or meta.get("label") or path_to_label(meta.get("seed") or cache_path),
+                  "checked": bool(section.get("checked_ts"))}
 
     # What the mix is
-    title = mix_name(meta) or meta.get("label") or path_to_label(meta.get("seed") or cache_path)
-    lines.append(info_heading(title))
     durations = [int(snapshot.get("duration") or 0) for snapshot in snapshots]
     length = format_play_length(sum(durations))
     if durations and not all(durations):
         length = "about " + length
-    lines.append(f"Created {format_sidecar_ts(meta.get('updated_ts'))} | {len(tracks)} tracks | {length}")
+    info["facts"] = f"Created {format_sidecar_ts(meta.get('updated_ts'))} | {len(tracks)} tracks | {length}"
     seed = str(meta.get("seed") or (tracks[0] if tracks else ""))
+    info["from"] = ""
     if seed:
         seed_snapshot = mix_track_snapshots(meta, [seed])[0]
         details = ", ".join(str(part) for part in (seed_snapshot.get("album"), seed_snapshot.get("year")) if part)
-        lines.append(f"From: {mix_track_labels(cache_path, [seed])[0]}" + (f" ({details})" if details else ""))
+        info["from"] = f"From: {mix_track_labels(cache_path, [seed])[0]}" + (f" ({details})" if details else "")
 
     # What it is about
+    about: list[str] = []
     intent = section.get("listener_intent") or section.get("intent")
     if intent or section.get("checked_ts") or "openness" in section:
-        lines += ["", info_heading("What it is about")]
         if intent:
-            lines.append(str(intent))
-            lines.append("(in your words)" if section.get("listener_intent") else "(as the AI put it)")
+            about.append(str(intent))
+            about.append("(in your words)" if section.get("listener_intent") else "(as the AI put it)")
         index = mix_openness_index(meta)
         state = (f"off for this mix" if index == MIX_OPENNESS_OFF else
                  f"openness {mix_openness_label(index)}" + (" (chosen for this mix)" if "openness" in section else ""))
         checked = f", last checked {format_sidecar_ts(section.get('checked_ts'))}" if section.get("checked_ts") else ""
-        lines.append(f"AI Mix Assist: {state}{checked}")
+        about.append(f"AI Mix Assist: {state}{checked}")
+    info["about"] = about
 
-    # How it sounds
-    sound: list[str] = []
+    # How it sounds: the ratings at the last check, then what the library says
     profile = section.get("profile") if isinstance(section.get("profile"), dict) else None
-    if profile and profile.get("values"):
+    info["profile"] = profile if profile and profile.get("values") else None
+    info["values"], info["rated"] = [], ""
+    if info["profile"]:
         for key, (average, low, high) in profile["values"].items():
-            name = "Sounding year" if key == mix_assist_dimensions.ERA_KEY else \
-                next(d.name for d in mix_assist_dimensions.DIMENSIONS if d.key == key)
-            spread = f"{int(round(low))}-{int(round(high))}" if key == mix_assist_dimensions.ERA_KEY else f"{low:.0f}-{high:.0f}"
-            sound.append(f"{name}: {dimension_value_text(key, average)} (range {spread})")
-        sound.append(f"(ratings of {profile['rated']} tracks, at the check on {format_sidecar_ts(profile.get('ts'))})")
+            info["values"].append(f"{dimension_name(key)}: {dimension_value_text(key, average)} "
+                                  f"(range {dimension_range_text(key, low, high)})")
+        changed = profile.get("tracks_key") and profile["tracks_key"] != mix_tracks_key(tracks)
+        info["rated"] = (f"(ratings of {profile['rated']} tracks, at the check on {format_sidecar_ts(profile.get('ts'))}"
+                         + ("; the mix has changed since" if changed else "") + ")")
+    sound: list[str] = []
     years = sorted(int(snapshot["year"]) for snapshot in snapshots if int(snapshot.get("year") or 0) > 0)
     if years:
         sound.append(f"Released {years[0]}-{years[-1]}, the middle half {years[len(years) // 4]}-{years[(3 * len(years)) // 4]}")
@@ -5816,44 +5928,130 @@ def build_mix_info_page(cache_path: str) -> str:
     if genres:
         sound.append("Genres: " + ", ".join(f"{genre} ({count})" for genre, count in
                                              sorted(genres.items(), key=lambda item: -item[1])[:5]))
-    if sound:
-        lines += ["", info_heading("How it sounds")] + sound
+    info["sound"] = sound
 
     # What AI Mix Assist changed last
+    changes: list[str] = []
     replaced, removed = section.get("replaced") or [], section.get("removed") or []
-    if replaced or removed:
-        lines += ["", info_heading("Last tidy-up")]
-        lines += [f"{change.get('old_label', '')} -> {change.get('new_label', '')} ({change.get('reason', '')})"
-                  for change in replaced]
-        lines += [f"Removed: {label}" for label in removed]
-        if section.get("previous_tracks"):
-            lines.append("(\"AI Mix Assist...\" in the context menu can undo it)")
+    changes += [f"{change.get('old_label', '')} -> {change.get('new_label', '')} ({change.get('reason', '')})"
+                for change in replaced]
+    changes += [f"Removed: {label}" for label in removed]
+    if changes and section.get("previous_tracks"):
+        changes.append("(\"AI Mix Assist...\" in the context menu can undo it)")
+    info["changes"] = changes
 
-    # How it was made
+    # How it was made, its files, what happened
     params = meta.get("mix_generation_parameters") if isinstance(meta.get("mix_generation_parameters"), dict) else {}
-    lines += ["", info_heading("How it was made")]
-    if params:
-        lines.append(f"MusicIP: {params.get('size', '?')} tracks, {describe_mix_parameters(params)}")
-    else:
-        lines.append("MusicIP: no parameters recorded")
-
-    # Its files
+    info["made"] = [f"MusicIP: {params.get('size', '?')} tracks, {describe_mix_parameters(params)}" if params
+                    else "MusicIP: no parameters recorded"]
     consistency = meta.get("consistency") if isinstance(meta.get("consistency"), dict) else {}
     readiness = meta.get("repair_readiness") if isinstance(meta.get("repair_readiness"), dict) else {}
-    lines += ["", info_heading("Files")]
     missing = int(consistency.get("missing_files") or 0)
     if not consistency:
-        lines.append("Not checked yet")
+        info["files"] = ["Not checked yet"]
     elif missing:
-        lines.append(f"{missing} missing (checked {format_sidecar_ts(consistency.get('checked_ts'))})")
+        info["files"] = [f"{missing} missing (checked {format_sidecar_ts(consistency.get('checked_ts'))})"]
         if readiness:
-            lines.append(f"Repair: {readiness.get('reason') or readiness.get('status') or ''}")
+            info["files"].append(f"Repair: {readiness.get('reason') or readiness.get('status') or ''}")
     else:
-        lines.append(f"All present (checked {format_sidecar_ts(consistency.get('checked_ts'))})")
+        info["files"] = [f"All present (checked {format_sidecar_ts(consistency.get('checked_ts'))})"]
+    info["history"] = build_mix_history_text(meta)
+    return info
 
-    # What happened
-    lines += ["", info_heading("History"), build_mix_history_text(meta)]
+
+def build_mix_info_page(cache_path: str) -> str:
+    return mix_info_page_text(mix_info_parts(cache_path))
+
+
+def mix_info_page_text(info: dict) -> str:
+    """All of the mix information on one page, top to bottom."""
+    lines = [info_heading(info["title"]), info["facts"]] + ([info["from"]] if info["from"] else [])
+    if info["about"]:
+        lines += ["", info_heading("What it is about")] + info["about"]
+    sound = info["values"] + ([info["rated"]] if info["rated"] else []) + info["sound"]
+    if sound:
+        lines += ["", info_heading("How it sounds")] + sound
+    if info["changes"]:
+        lines += ["", info_heading("Last tidy-up")] + info["changes"]
+    lines += ["", info_heading("How it was made")] + info["made"]
+    lines += ["", info_heading("Files")] + info["files"]
+    lines += ["", info_heading("History"), info["history"]]
     return plain("\n".join(lines))
+
+
+def mix_info_tabs(info: dict) -> list[dict]:
+    """Overview | Sound (a chart of the ratings) | Course (each track's ratings) | Changes | History."""
+    font = chart_font_path()
+    text_in_charts = mix_assist_chart.can_draw_text(font)
+    overview = [info["from"], ""] if info["from"] else []
+    if info["about"]:
+        overview += [info_heading("What it is about")] + info["about"] + [""]
+    overview += [info_heading("How it was made")] + info["made"] + ["", info_heading("Files")] + info["files"]
+    tabs = [{"title": "Overview", "text": "\n".join(overview)}]
+
+    profile = info["profile"]
+    sound = {"title": "Sound"}
+    if profile:
+        sound["image"] = chart_path("sound")
+        render_sound_chart(profile, sound["image"], font)
+        lines = ([] if text_in_charts else info["values"]) + [info["rated"]]
+        if text_in_charts:
+            lines.insert(0, "Each scale from 0 (left) to 10 (right): the bar is the mix's range, the dot its average.")
+    else:
+        lines = ["Not rated yet: AI Mix Assist rates the tracks when it checks the mix."]
+    sound["text"] = "\n".join(lines + ([""] + info["sound"] if info["sound"] else []))
+    tabs.append(sound)
+
+    course = (profile or {}).get("course") or []
+    if len(course) >= 3:
+        path = chart_path("course")
+        render_course_chart(course, path, font)
+        tabs.append({"title": "Course", "image": path,
+                     "text": "Each track's ratings in the mix's order, from the first track (left) to the last; the "
+                             f"faint line is the mix's average.\n{info['rated']}"})
+
+    if info["changes"]:
+        changes = [info_heading("Last tidy-up")] + info["changes"]
+    elif info["checked"]:
+        changes = ["AI Mix Assist found nothing to change at its last check."]
+    else:
+        changes = ["AI Mix Assist hasn't checked this mix yet."]
+    tabs.append({"title": "Changes", "text": "\n".join(changes)})
+    tabs.append({"title": "History", "text": info["history"]})
+    return tabs
+
+
+def render_sound_chart(profile: dict, path: str, font: str) -> str:
+    bars = []
+    for key, color in zip(mix_assist_dimensions.ALL_KEYS, DIMENSION_COLORS):
+        if key not in profile["values"]:
+            continue
+        average, low, high = profile["values"][key]
+        scale = year_range([low, high]) if key == mix_assist_dimensions.ERA_KEY else (0, 10)
+        bars.append(mix_assist_chart.Bar(dimension_name(key), low, average, high, mix_assist_chart.hex_color(color),
+                                         f"{dimension_value_text(key, average)} ({dimension_range_text(key, low, high)})",
+                                         scale))
+    return mix_assist_chart.render_bars(path, bars, INFO_CHART_SIZE, font)
+
+
+def render_course_chart(course: list[list], path: str, font: str) -> str:
+    strips = []
+    for index, (key, color) in enumerate(zip(mix_assist_dimensions.ALL_KEYS, DIMENSION_COLORS)):
+        values = [row[index] if index < len(row) else None for row in course]
+        known = [value for value in values if value is not None]
+        if not known:
+            continue
+        scale = year_range(known) if key == mix_assist_dimensions.ERA_KEY else (0, 10)
+        strips.append(mix_assist_chart.Strip(dimension_name(key), values, mix_assist_chart.hex_color(color), scale,
+                                             dimension_range_text(key, min(known), max(known))))
+    return mix_assist_chart.render_strips(path, strips, INFO_CHART_SIZE, font)
+
+
+def year_range(years: list[float]) -> tuple[int, int]:
+    """A sounding-year scale around the years: on fives, with a little room, at least ten years."""
+    low = (int(min(years) - 3) // 5) * 5 if years else 1960
+    high = -(-int(max(years) + 3) // 5) * 5 if years else 2020
+    return (low, max(high, low + 10))
 
 
 def show_info_pages(heading: str, pages: list[tuple[str, str]]) -> None:
@@ -5864,13 +6062,7 @@ def show_info_pages(heading: str, pages: list[tuple[str, str]]) -> None:
         if choice is None or choice < 0 or choice >= len(pages):
             return
         title, page = pages[choice]
-        if callable(page):  # a page of its own, e.g. a chart window
-            page()
-            continue
-        try:
-            xbmcgui.Dialog().textviewer(plain(f"{heading}: {title}"), plain(page))
-        except Exception:
-            xbmcgui.Dialog().ok(plain(f"{heading}: {title}"), plain(page))
+        show_text_page(f"{heading}: {title}", page)
 
 
 def selected_mix_cache_path() -> str:
@@ -6184,6 +6376,8 @@ def record_mix_assist_result(cache_path: str, original: list[str], plan: dict, a
                                                if row["position"] not in replaced_positions
                                                and row["position"] not in plan["removed"]})
     if profile:
+        profile["course"] = mix_course(plan)
+        profile["tracks_key"] = mix_tracks_key(plan["paths"] if changed else original)
         section["profile"] = profile
     if changed:
         section["previous_tracks"] = list(original)
@@ -6879,19 +7073,35 @@ def show_radio_info() -> None:
     if radio_phase() != "playing":
         notify("No station is playing.", xbmcgui.NOTIFICATION_WARNING)
         return
-    show_info_pages("Radio station", radio_info_pages(state))
+    show_info_window(station_name(state) or "Radio station", radio_facts(state), radio_info_tabs(state),
+                     lambda: show_info_pages("Radio station", radio_info_pages(state)))
 
 
 def radio_info_pages(state: dict) -> list[tuple[str, str]]:
+    """The station information as text pages (the drift without its chart)."""
+    return [(tab["title"], plain(tab["text"])) for tab in radio_info_tabs(state, charts=False)]
+
+
+def radio_info_tabs(state: dict, charts: bool = True) -> list[dict]:
+    """Overview | What it is about | Drift (with its chart) | History."""
     events = [event for event in state.get("events") or [] if isinstance(event, dict)]
-    pages = [
-        ("Overview", build_radio_overview(state, events)),
-        ("What it is about", build_radio_about(events)),
-        ("Drift", build_radio_drift(events)),
-        ("Drift chart", show_radio_drift_chart),
-        (f"History ({len(events)})", build_radio_history(events)),
+    drift = {"title": "Drift", "text": build_radio_drift(events)}
+    data = drift_chart_series(events) if charts else None
+    if data:
+        drift["image"] = chart_path("drift")
+        render_drift_chart(data, drift["image"], chart_font_path())
+    return [
+        {"title": "Overview", "text": build_radio_overview(state, events)},
+        {"title": "What it is about", "text": build_radio_about(events)},
+        drift,
+        {"title": f"History ({len(events)})", "text": build_radio_history(events)},
     ]
-    return [(title, page if callable(page) else plain(page)) for title, page in pages]
+
+
+def radio_facts(state: dict) -> str:
+    started = next((event for event in state.get("events") or [] if event.get("kind") == "started"), {})
+    playing = format_play_time(int(time.time()) - int(state.get("playing_started_ts") or time.time()))
+    return f"Picked song: {started.get('seed') or path_to_label(str(state.get('seed') or ''))} | playing for {playing}"
 
 
 def format_play_time(seconds: int) -> str:
@@ -6985,10 +7195,10 @@ def build_radio_drift(events: list[dict]) -> str:
 
 
 # The drift chart: one line per dimension; the seven scales share the left axis (0-10), the sounding year has
-# its own on the right. Kodi draws the text, mixassist.chart the panel and lines (window coordinates: 1280 x 720).
-DRIFT_COLORS = ("#E45756", "#4C9BE8", "#F2C14E", "#59C27A", "#B07AE8", "#F28E2B", "#4FD1C5", "#DADADA")
-CHART_PANEL = (90, 40, 1100, 640)  # x, y, width, height of the chart window
-CHART_PLOT = (70, 90, 730, 570)  # left, top, right, bottom of the plot inside the panel
+# its own on the right; the legend on the right says where each started and where it is now.
+DIMENSION_COLORS = ("#E45756", "#4C9BE8", "#F2C14E", "#59C27A", "#B07AE8", "#F28E2B", "#4FD1C5", "#DADADA")
+DRIFT_PLOT = (64, 24, 740, 410)  # left, top, right, bottom of the plot in the chart (INFO_CHART_SIZE)
+DRIFT_LEGEND_X = 840
 
 
 def drift_chart_series(events: list[dict]) -> dict | None:
@@ -6999,23 +7209,43 @@ def drift_chart_series(events: list[dict]) -> dict | None:
     keys = [(d.key, d.name, "left") for d in mix_assist_dimensions.DIMENSIONS] + \
         [(mix_assist_dimensions.ERA_KEY, "Sounding year", "right")]
     series = []
-    for (key, name, axis), color in zip(keys, DRIFT_COLORS):
+    for (key, name, axis), color in zip(keys, DIMENSION_COLORS):
         values = [float(profile[key]) for _ts, profile in profiles if isinstance(profile.get(key), (int, float))]
         if len(values) == len(profiles):
             series.append({"key": key, "name": name, "axis": axis, "color": color, "values": values})
     years = [value for item in series if item["axis"] == "right" for value in item["values"]]
-    low = (int(min(years) - 3) // 5) * 5 if years else 1960
-    high = -(-int(max(years) + 3) // 5) * 5 if years else 2020
-    if high - low < 10:
-        high = low + 10
-    return {"times": [ts for ts, _profile in profiles], "series": series, "years": (low, high)}
+    return {"times": [ts for ts, _profile in profiles], "series": series, "years": year_range(years)}
 
 
-def render_drift_chart(data: dict, path: str) -> str:
-    _x, _y, width, height = CHART_PANEL
+def render_drift_chart(data: dict, path: str, font: str = "") -> str:
     series = [mix_assist_chart.Series(item["name"], mix_assist_chart.hex_color(item["color"]), item["values"], item["axis"])
               for item in data["series"]]
-    return mix_assist_chart.render_chart(path, data["times"], series, (width, height), CHART_PLOT, (0, 10), data["years"])
+    texts = drift_chart_texts(data)
+    return mix_assist_chart.render_chart(path, data["times"], series, INFO_CHART_SIZE, DRIFT_PLOT, (0, 10), data["years"],
+                                         texts=texts, font_path=font)
+
+
+def drift_chart_texts(data: dict) -> list:
+    """The axes (0-10 left, years right), the times below, the legend right."""
+    left, top, right, bottom = DRIFT_PLOT
+    Text = mix_assist_chart.Text
+    texts = [Text(left - 14, bottom - (bottom - top) * value / 10 - 13, str(value), align="right", size=20)
+             for value in (0, 5, 10)]
+    low, high = data["years"]
+    texts += [Text(right + 12, bottom - (bottom - top) * (year - low) / (high - low) - 13, str(year), size=20)
+              for year in (low, (low + high) // 2, high)]
+    times = data["times"]
+    same_day = time.strftime("%Y%m%d", time.localtime(times[0])) == time.strftime("%Y%m%d", time.localtime(times[-1]))
+    clock = "%H:%M" if same_day else "%Y-%m-%d %H:%M"
+    texts.append(Text(left, bottom + 14, time.strftime(clock, time.localtime(times[0])), size=20))
+    texts.append(Text(right, bottom + 14, f"{time.strftime(clock, time.localtime(times[-1]))} | {len(times)} measurements",
+                      align="right", size=20))
+    for index, item in enumerate(data["series"]):
+        y = 12 + index * 56
+        texts.append(Text(DRIFT_LEGEND_X, y, item["name"], mix_assist_chart.hex_color(item["color"]), size=21))
+        texts.append(Text(DRIFT_LEGEND_X, y + 24, drift_legend_text(item["key"], item["values"][0], item["values"][-1]),
+                          size=19))
+    return texts
 
 
 def drift_legend_text(key: str, start: float, now: float) -> str:
@@ -7023,86 +7253,6 @@ def drift_legend_text(key: str, start: float, now: float) -> str:
     if key == mix_assist_dimensions.ERA_KEY:
         return f"{int(round(start))} -> {int(round(now))}"
     return f"{start:.1f} -> {dimension_value_text(key, now)}"
-
-
-def drift_chart_path() -> str:
-    """A new file each time (Kodi caches images by path); older charts are removed."""
-    folder = os.path.join(get_profile_dir(), "charts")
-    os.makedirs(folder, exist_ok=True)
-    for name in os.listdir(folder):
-        if name.startswith("drift_") and name.endswith(".png"):
-            try:
-                os.remove(os.path.join(folder, name))
-            except OSError:
-                pass
-    return os.path.join(folder, f"drift_{int(time.time() * 1000)}.png")
-
-
-class ChartWindow(xbmcgui.WindowDialog):
-    """A chart over the current screen; any key or click closes it."""
-
-    def onAction(self, action) -> None:
-        if action.getId() != 107:  # mouse movement
-            self.close()
-
-    def onControl(self, control) -> None:
-        self.close()
-
-
-def show_radio_drift_chart() -> None:
-    state = get_radio_state()
-    events = [event for event in state.get("events") or [] if isinstance(event, dict)]
-    data = drift_chart_series(events)
-    if not data:
-        xbmcgui.Dialog().ok("Radio station: Drift chart", "Drift is measured when AI Mix Assist checks the station's songs.")
-        return
-    path = drift_chart_path()
-    render_drift_chart(data, path)
-    window = ChartWindow()
-    for control in drift_chart_controls(data, path, state):
-        window.addControl(control)
-    window.doModal()
-    del window
-
-
-def drift_chart_controls(data: dict, path: str, state: dict) -> list:
-    x, y, width, height = CHART_PANEL
-    left, top, right, bottom = CHART_PLOT
-    white, grey = "0xFFF0F0F0", "0xFF9AA0AA"
-    started = next((event for event in state.get("events") or [] if event.get("kind") == "started"), {})
-    controls = [
-        xbmcgui.ControlImage(x, y, width, height, path),
-        xbmcgui.ControlLabel(x + 30, y + 20, width - 60, 40,
-                             plain(f"Station drift: {station_name(state) or started.get('seed', '')}"),
-                             textColor=white),
-        xbmcgui.ControlLabel(x + 30, y + 52, width - 60, 30, "Seven scales from 0 to 10 (left), sounding year (right). "
-                             "Any key closes.", textColor=grey),
-    ]
-    for value in (0, 5, 10):
-        ty = y + bottom - (bottom - top) * value / 10
-        controls.append(xbmcgui.ControlLabel(x + 10, int(ty) - 14, left - 18, 28, str(value), textColor=grey,
-                                             alignment=1))
-    low, high = data["years"]
-    for year in (low, (low + high) // 2, high):
-        ty = y + bottom - (bottom - top) * (year - low) / (high - low)
-        controls.append(xbmcgui.ControlLabel(x + right + 8, int(ty) - 14, 70, 28, str(year), textColor=grey))
-    times = data["times"]
-    same_day = time.strftime("%Y%m%d", time.localtime(times[0])) == time.strftime("%Y%m%d", time.localtime(times[-1]))
-    clock = "%H:%M" if same_day else "%Y-%m-%d %H:%M"
-    controls.append(xbmcgui.ControlLabel(x + left, y + bottom + 12, 300, 28,
-                                         time.strftime(clock, time.localtime(times[0])), textColor=grey))
-    controls.append(xbmcgui.ControlLabel(x + right - 300, y + bottom + 12, 300, 28,
-                                         f"{time.strftime(clock, time.localtime(times[-1]))} | {len(times)} measurements",
-                                         textColor=grey, alignment=1))
-    legend_x, legend_y = x + right + 90, y + top
-    for index, item in enumerate(data["series"]):
-        ly = legend_y + index * 60
-        color = "0xFF" + item["color"].lstrip("#")
-        start, now = item["values"][0], item["values"][-1]
-        controls.append(xbmcgui.ControlLabel(legend_x, ly, width - right - 110, 28, item["name"], textColor=color))
-        controls.append(xbmcgui.ControlLabel(legend_x, ly + 26, width - right - 110, 28,
-                                             drift_legend_text(item["key"], start, now), textColor=grey))
-    return controls
 
 
 def format_radio_event(event: dict) -> list[str]:
