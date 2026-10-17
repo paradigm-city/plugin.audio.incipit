@@ -4918,8 +4918,8 @@ def open_radio_station(seed: str, favourite: dict | None, progress) -> bool:
         "kind": "started", "ts": now, "seed": queue[0]["label"],
         "parameters": describe_mix_parameters(compact_mix_generation_parameters(get_effective_mix_parameters())),
         "assisted": assisted,
-        "openness": MIX_OPENNESS_LABELS[max(0, min(4, get_setting_int("mix_assist_station_strictness", 2)))],
-        "drift": RADIO_DRIFT_LABELS[max(0, min(2, get_setting_int("mix_assist_radio_drift", 1)))],
+        "openness": MIX_OPENNESS_LABELS[max(0, min(4, station_setting_index(favourite_settings(favourite), "openness")))],
+        "drift": RADIO_DRIFT_LABELS[max(0, min(2, station_setting_index(favourite_settings(favourite), "drift")))],
     }
     save_radio_state({
         "events": [started_event],
@@ -4931,6 +4931,7 @@ def open_radio_station(seed: str, favourite: dict | None, progress) -> bool:
         "seeds": [seed],
         "favourite_id": (favourite or {}).get("id", ""),
         "name": (favourite or {}).get("name", ""),
+        "settings": favourite_settings(favourite),
         "queue": queue,
         "seen": [normalize_track_identity(track) for track in tracks],
         "current_position": 0,
@@ -5936,9 +5937,19 @@ def get_mix_assist_strictness() -> tuple[float, bool]:
     return strictness_level(get_setting_int("mix_assist_mix_strictness", 2))
 
 
-def get_station_strictness() -> tuple[float, bool]:
-    """Setting "Station openness": Radio (its first songs and every refill)."""
-    return strictness_level(get_setting_int("mix_assist_station_strictness", 2))
+def get_station_strictness(settings: dict | None = None) -> tuple[float, bool]:
+    """Setting "Station openness": Radio (its first songs and every refill). A favourite station's own settings
+    (state["settings"]) take its place."""
+    return strictness_level(station_setting_index(settings, "openness"))
+
+
+def station_setting_index(settings: dict | None, key: str) -> int:
+    """A station's own "openness" or "drift" (a favourite's), else the global setting."""
+    if isinstance(settings, dict) and isinstance(settings.get(key), int):
+        return settings[key]
+    if key == "openness":
+        return get_setting_int("mix_assist_station_strictness", 2)
+    return get_setting_int("mix_assist_radio_drift", 1)
 
 
 def mix_assist_cache_path() -> str:
@@ -6520,8 +6531,8 @@ def mix_assist_available(max_age: float = 600) -> bool:
     return MIX_ASSIST_AVAILABLE["found"]
 
 
-def get_radio_drift_half_life() -> int:
-    index = max(0, min(len(RADIO_DRIFT_HALF_LIFE) - 1, get_setting_int("mix_assist_radio_drift", 1)))
+def get_radio_drift_half_life(settings: dict | None = None) -> int:
+    index = max(0, min(len(RADIO_DRIFT_HALF_LIFE) - 1, station_setting_index(settings, "drift")))
     return RADIO_DRIFT_HALF_LIFE[index]
 
 
@@ -6533,7 +6544,7 @@ def radio_check_progress(check=None):
     return report
 
 
-def check_radio_start(tracks: list[str], check=None) -> dict:
+def check_radio_start(tracks: list[str], check=None, settings: dict | None = None) -> dict:
     """Which of a new station's songs (tracks[0] = the picked song) clearly don't fit it: both signals agree, as in
     a tidy-up. Returns remove (paths), intent and reference (the picked song's rating, the station's first profile)."""
     store = mix_assist_cache.RatingCache(mix_assist_cache_path())
@@ -6542,7 +6553,7 @@ def check_radio_start(tracks: list[str], check=None) -> dict:
             tracks, store, mix_assist_ask(),
             resolve=lambda paths: mix_assist_library.resolve(paths, execute_jsonrpc, {}),
             fetch_mix=lambda *_args: [],
-            strictness=get_station_strictness()[0],
+            strictness=get_station_strictness(settings)[0],
             artist_window=get_mix_reject_size() or mix_assist.ARTIST_WINDOW,
             model=mix_assist_claude.DEFAULT_MODEL,
             progress=radio_check_progress(check),
@@ -6559,13 +6570,13 @@ def check_radio_start(tracks: list[str], check=None) -> dict:
 
 
 def check_radio_refill(reference_song: str, candidates: list[str], count: int, reference: dict | None,
-                       neighbours: list[str], check=None) -> dict:
+                       neighbours: list[str], check=None, settings: dict | None = None) -> dict:
     """Choose a refill's songs from MusicIP's candidates (closest first): both signals must say they fit. Adds
     "reference": the station's profile after this refill (drifted towards the chosen songs)."""
     store = mix_assist_cache.RatingCache(mix_assist_cache_path())
     try:
         window = get_mix_reject_size() or mix_assist.ARTIST_WINDOW
-        strictness, borderline = get_station_strictness()
+        strictness, borderline = get_station_strictness(settings)
         result = mix_assist.choose_additions(
             reference_song, candidates, count, store, mix_assist_ask(),
             resolve=lambda paths: mix_assist_library.resolve(paths, execute_jsonrpc, {}),
@@ -6581,7 +6592,7 @@ def check_radio_refill(reference_song: str, candidates: list[str], count: int, r
         store.close()
     base = reference or result.get("seed_entry")
     result["reference"] = mix_assist.drift_reference(
-        base, [result["entries"].get(path) for path in result["chosen"]], get_radio_drift_half_life()) if base else None
+        base, [result["entries"].get(path) for path in result["chosen"]], get_radio_drift_half_life(settings)) if base else None
     return result
 
 
@@ -6642,8 +6653,11 @@ def save_station_as_favourite() -> None:
         notify(f"Already a favourite: {existing['name']}")
         return
     picked = next((event.get("seed") for event in state.get("events") or [] if event.get("kind") == "started"), "")
+    settings = state.get("settings") if isinstance(state.get("settings"), dict) else {}
     favourite = {
         "id": new_nonce(),
+        "openness": station_setting_index(settings, "openness"),
+        "drift": station_setting_index(settings, "drift"),
         "name": station_name(state) or picked or path_to_label(seed),
         "seed": seed,
         "seed_label": picked or path_to_label(seed),
@@ -6651,7 +6665,8 @@ def save_station_as_favourite() -> None:
         "saved_ts": int(time.time()),
     }
     save_radio_favourites(load_radio_favourites() + [favourite])
-    state.update(favourite_id=favourite["id"], name=favourite["name"], ui_refresh_requested=True)
+    state.update(favourite_id=favourite["id"], name=favourite["name"], settings=favourite_settings(favourite),
+                 ui_refresh_requested=True)
     save_radio_state(state)
     notify(f"Saved as favourite station: {favourite['name']}")
     replace_with_radio_mode_menu()
@@ -6664,9 +6679,14 @@ def show_radio_favourites() -> None:
         label = plain(station.get("name") or station.get("seed_label") or path_to_label(station["seed"]))
         item = xbmcgui.ListItem(label=label, offscreen=True)
         apply_music_metadata(item, label)
-        item.setLabel2(plain(station.get("seed_label") or ""))
+        openness, drift = favourite_setting_labels(station)
+        item.setLabel2(plain(f"{station.get('seed_label') or ''} | {openness} | {drift}"))
         item.setProperty("IsPlayable", "false")
         item.addContextMenuItems([
+            (f"Openness: {openness}",
+             f"RunPlugin({addon_url(action='radio_favourite_setting', id=station['id'], setting='openness', nonce=new_nonce())})"),
+            (f"Drift: {drift}",
+             f"RunPlugin({addon_url(action='radio_favourite_setting', id=station['id'], setting='drift', nonce=new_nonce())})"),
             ("Rename", f"RunPlugin({addon_url(action='radio_rename_favourite', id=station['id'], nonce=new_nonce())})"),
             ("Remove from favourites",
              f"RunPlugin({addon_url(action='radio_remove_favourite', id=station['id'], nonce=new_nonce())})"),
@@ -6674,6 +6694,41 @@ def show_radio_favourites() -> None:
         url = addon_url(action="radio_play_favourite", id=station["id"], nonce=new_nonce())
         add_directory_item(HANDLE, url, item, isFolder=False)
     end_directory(HANDLE, cacheToDisc=False)
+
+
+def favourite_settings(favourite: dict | None) -> dict:
+    """A favourite's own station settings ({} for favourites saved before they had any: the global ones apply)."""
+    return {key: favourite[key] for key in ("openness", "drift") if isinstance((favourite or {}).get(key), int)}
+
+
+def favourite_setting_labels(favourite: dict) -> tuple[str, str]:
+    settings = favourite_settings(favourite)
+    openness = MIX_OPENNESS_LABELS[max(0, min(4, station_setting_index(settings, "openness")))]
+    drift = RADIO_DRIFT_LABELS[max(0, min(2, station_setting_index(settings, "drift")))]
+    return openness, drift
+
+
+def change_favourite_setting(favourite_id: str, key: str) -> None:
+    """Openness or drift of a favourite; a playing favourite uses it from its next check on."""
+    if key not in ("openness", "drift"):
+        return
+    stations = load_radio_favourites()
+    station = next((entry for entry in stations if entry.get("id") == favourite_id), None)
+    if not station:
+        return
+    labels = MIX_OPENNESS_LABELS if key == "openness" else RADIO_DRIFT_LABELS
+    current = station_setting_index(favourite_settings(station), key)
+    heading = f"{'Openness' if key == 'openness' else 'Drift'} of {plain(station.get('name') or '')}"
+    choice = xbmcgui.Dialog().select(heading, list(labels), preselect=current)
+    if choice is None or choice < 0 or choice == current:
+        return
+    station[key] = choice
+    save_radio_favourites(stations)
+    state = get_radio_state()
+    if state.get("favourite_id") == favourite_id:
+        state["settings"] = favourite_settings(station)
+        save_radio_state(state)
+    xbmc.executebuiltin("Container.Refresh")
 
 
 def play_radio_favourite(favourite_id: str) -> None:
@@ -7077,6 +7132,10 @@ def router() -> None:
 
     if action == "radio_play_favourite":
         play_radio_favourite(params.get("id", ""))
+        return
+
+    if action == "radio_favourite_setting":
+        change_favourite_setting(params.get("id", ""), params.get("setting", ""))
         return
 
     if action == "radio_rename_favourite":

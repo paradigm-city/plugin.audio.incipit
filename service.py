@@ -1358,7 +1358,8 @@ def start_radio_start_check(state: dict, plugin) -> None:
     tracks = [seed] + [track for track in files if plugin.normalize_track_identity(track) != plugin.normalize_track_identity(seed)]
     if seed and len(tracks) > 2:
         log_info(f"Radio mode: AI Mix Assist checks the station's first {len(tracks) - 1} song(s).")
-        start_radio_check(state, "start", lambda check: plugin.check_radio_start(tracks, check=check))
+        settings = state.get("settings") if isinstance(state.get("settings"), dict) else None
+        start_radio_check(state, "start", lambda check: plugin.check_radio_start(tracks, check=check, settings=settings))
 
 
 def keep_radio_from_running_dry(state: dict, plugin, position: int) -> None:
@@ -1514,7 +1515,8 @@ def refill_radio_queue(state: dict, checked: bool = False) -> int:
         return 0
 
     if checked:
-        drifting = plugin.get_radio_drift_half_life() > 0
+        settings = state.get("settings") if isinstance(state.get("settings"), dict) else None  # a favourite's own
+        drifting = plugin.get_radio_drift_half_life(settings) > 0
         reference_song = used_seed if drifting else str(state.get("seed") or used_seed)
         reference = state.get("reference") if isinstance(state.get("reference"), dict) else None
         neighbours = [str(entry["file"]) for entry in queue]
@@ -1524,7 +1526,7 @@ def refill_radio_queue(state: dict, checked: bool = False) -> int:
         start_radio_check(
             state, "refill",
             lambda check: plugin.check_radio_refill(reference_song, candidates, RADIO_CHECKED_BATCH, reference, neighbours,
-                                                    check=check),
+                                                    check=check, settings=settings),
             fallback=fallback, seed=used_seed)
         return 0
 
