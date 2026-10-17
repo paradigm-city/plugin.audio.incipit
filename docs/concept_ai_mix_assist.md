@@ -230,6 +230,10 @@ Mixes and Radio use one scale with the same words, set independently ("Mix openn
 
 New songs (replacements, "More like this", Radio refills) must pass both signals at that level; a tidy-up removes a song only when both signals agree it doesn't fit, measured with the same limit. An earlier draft tied Radio's steps to the mix setting; dropped because mixes and Radio want different things and the coupling was hard to predict.
 
+### Per mix (2026-10-17)
+
+The global settings are defaults; each mix can have its own. The "Generate MusicIP mix" dialog has two more lines: **AI Mix Assist** (Off or an openness level) and **What this mix is about** (the listener's words, used instead of the AI's statement). The mix keeps them in its sidecar (`mix_assist.openness`, `mix_assist.listener_intent`); its tidy-ups and "More like this" use its openness; Off means no automatic checks (a tidy-up started from the menu then uses the default level). The saved mix's context menu has one entry, **AI Mix Assist…**: what the mix is about, openness, tidy up now, undo. Choices and changes are in the mix history. Radio keeps its global "Station openness": picking a station has no dialog.
+
 ## Drift
 
 Drift answers a different question than the style check: not *does this track belong to the mix?* but *which track should come next?* It applies when tracks are chosen one after another (Radio refills, journeys), not when a finished mix is judged.
