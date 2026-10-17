@@ -4841,11 +4841,29 @@ RADIO_ASSISTED_START_SIZE = 8  # with AI Mix Assist: one refill's worth, so the 
 def start_radio_station(seed: str, favourite: dict | None = None) -> bool:
     """Play an endless MusicIP mix seeded with seed, using the configured mix parameters. False on failure.
     With AI Mix Assist the station starts small; otherwise with the mix size. A station picked from a song that is a
-    favourite (or started from one) is that favourite: it keeps the favourite's name."""
+    favourite (or started from one) is that favourite: it keeps the favourite's name.
+    A progress bar ("Opening <station>...") shows the steps until the music plays."""
     favourite = favourite or find_radio_favourite(seed=seed)
+    name = str((favourite or {}).get("name") or "") or radio_seed_label(seed)
+    with BackgroundProgress(plain(f"Opening {name}...")) as progress:
+        return open_radio_station(seed, favourite, progress)
+
+
+def radio_seed_label(seed: str) -> str:
+    """"Artist - Title" of a station's picked song (from the library), else its file name."""
+    try:
+        metadata = get_track_metadata(seed, allow_live_lookup=True, include_player_metadata=False)
+    except Exception:
+        metadata = {}
+    artist, title = metadata.get("artist"), str(metadata.get("title") or "").strip()
+    artist = ", ".join(artist) if isinstance(artist, list) else str(artist or "").strip()
+    return f"{artist} - {title}" if artist and title else title or path_to_label(seed)
+
+
+def open_radio_station(seed: str, favourite: dict | None, progress) -> bool:
     size = RADIO_ASSISTED_START_SIZE if mix_assist_for_radio() else get_playlist_size()
     try:
-        tracks = fetch_mix(seed, size, get_effective_mix_parameters(size_override=size))
+        tracks = fetch_mix(seed, size, get_effective_mix_parameters(size_override=size), progress=progress)
     except Exception as exc:
         notify(f"Radio could not start: {exc}", xbmcgui.NOTIFICATION_ERROR)
         log(f"Radio mode: start failed for seed {seed!r}: {exc}", xbmc.LOGERROR)
@@ -4868,6 +4886,7 @@ def start_radio_station(seed: str, favourite: dict | None = None) -> bool:
         save_discovery_state(discovery)
 
     # Look songs up in the library: a station's songs are mostly new to the metadata cache (labels need artists).
+    progress(75, "Looking up the songs")
     metadata_list = collect_mix_track_metadata(tracks, allow_live_lookup=True, include_player_metadata=False)
     now = int(time.time())
     previous = get_radio_state()
@@ -4903,6 +4922,7 @@ def start_radio_station(seed: str, favourite: dict | None = None) -> bool:
         "ui_refresh_requested": True,
     })
 
+    progress(90, "Starting playback")
     try:
         play_tracks_as_music_playlist(tracks, metadata_list, numbered=False)
         enqueue_metadata_refresh_for_tracks(tracks, metadata_list=metadata_list, reason_context="radio")
@@ -4913,7 +4933,7 @@ def start_radio_station(seed: str, favourite: dict | None = None) -> bool:
         return False
 
     log(f"Radio mode: started from {seed!r} with {len(tracks)} song(s).", xbmc.LOGINFO)
-    notify("Station picked.")
+    notify(f"Playing {favourite['name']}." if favourite else "Station picked.")
     return True
 
 
