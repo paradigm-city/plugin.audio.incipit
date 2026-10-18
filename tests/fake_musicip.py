@@ -19,6 +19,7 @@ class FakeMusicIP:
         self.mixes = {}
         self.reload_status = 200
         self.mix_status = 200
+        self.failing_seeds = set()  # seeds MusicIP answers with HTTP 500
         self.mix_body = None
         self.encoding = "utf-8"
 
@@ -57,7 +58,8 @@ class FakeMusicIP:
                     else:
                         tracks = fake.mixes.get(query.get("song", ""), [])
                         body = "\n".join(tracks).encode(fake.encoding)
-                    self.reply(fake.mix_status, body if fake.mix_status == 200 else b"server error")
+                    status = 500 if query.get("song", "") in fake.failing_seeds else fake.mix_status
+                    self.reply(status, body if status == 200 else b"server error")
                 else:
                     self.reply(404, b"not found")
 

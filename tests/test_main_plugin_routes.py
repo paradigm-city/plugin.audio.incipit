@@ -246,6 +246,17 @@ class MixInfoTest(KodiTestCase):
         self.assertEqual(kodi.window_properties[main.HOME_WINDOW], {
             "MusicIP.Highlight": "AB0094A6", "MusicIP.Highlight.Dim": "440094A6", "MusicIP.Highlight.Text": "FF272727"})
 
+    def test_a_focus_change_while_the_window_closes_is_ignored(self):
+        self.run_plugin(action="mix_info", cache_path=self.cache_path)
+        window = kodi.windows[0]
+
+        def gone(*args):
+            raise RuntimeError("Window id does not exist")
+
+        window.setProperty = window.setFocusId = gone
+        window.onFocus(202)
+        window.onClick(201)
+
     def test_without_the_window_the_text_viewer_shows_it_all(self):
         kodi.window_error = "broken skin file"
         self.run_plugin(action="mix_info", cache_path=self.cache_path)
@@ -265,6 +276,8 @@ class MixInfoTest(KodiTestCase):
         self.assertEqual(textures, {"musicip-white.png"})
         self.assertTrue(os.path.isfile(os.path.join(skin, "media", "musicip-white.png")))
         self.assertEqual(list(tree.iter("include")), [])  # a script window can't use the skin's includes
+        first_tab = next(control for control in tree.iter("control") if control.get("id") == "201")
+        self.assertIsNone(first_tab.find("visible"))  # focusable as the window opens
 
     def test_info_for_selected_item(self):
         kodi.info_labels["ListItem.Property(MusicIP.CachePath)"] = self.cache_path

@@ -470,12 +470,47 @@ class StationTest(RadioTestCase):
 
     def test_server_error_waits_before_retrying(self):
         self.start()
+        reloads = self.musicip.reload_count()
         self.musicip.mix_status = 500
         kodi.go_to(3)
         radio = self.tick()
-        self.assertEqual(len(self.musicip.mix_requests()), 2)  # no further seeds tried
-        self.assertGreater(radio["next_refill_ts"], int(self.clock.now))
-        self.assertEqual(radio["phase"], "playing")
+        self.assertEqual(len(self.musicip.mix_requests()), 3)  # the last song, then the one before it; no more
+        self.assertEqual(self.musicip.reload_count(), reloads + 1)  # MusicIP is reloaded for the first only
+        self.assertEqual(radio["next_refill_ts"], int(self.clock.now) + service.RADIO_REFILL_RETRY_SECONDS)
+        self.assertEqual((radio["phase"], radio["musicip_failures"]), ("playing", 1))
+        self.assertEqual(radio["events"][-1]["kind"], "musicip_failed")
+        self.assertIn("HTTP 500", radio["events"][-1]["error"])
+        self.assertEqual(len([m for m in kodi.notification_messages() if "MusicIP can't make mixes" in m]), 1)
+
+    def test_musicip_failing_again_and_again_is_asked_less_often(self):
+        self.start()
+        self.musicip.mix_status = 500
+        kodi.go_to(3)
+        waits = []
+        for _ in range(6):
+            radio = self.tick(max(0, int(self.radio().get("next_refill_ts") or 0) - int(self.clock.now)))
+            waits.append(radio["next_refill_ts"] - int(self.clock.now))
+        self.assertEqual(waits, [60, 120, 240, 480, 600, 600])
+        self.assertEqual(len([m for m in kodi.notification_messages() if "MusicIP can't make mixes" in m]), 1)
+        self.assertEqual([event["kind"] for event in radio["events"]].count("musicip_failed"), 1)
+
+        self.musicip.mix_status = 200
+        radio = self.tick(radio["next_refill_ts"] - int(self.clock.now))
+        self.assertEqual(radio["musicip_failures"], 0)
+        self.assertIn("musicip_back", [event["kind"] for event in radio["events"]])
+        self.assertGreater(len(radio["queue"]), 5)
+        self.assertIn("MusicIP makes mixes again", main.build_radio_history(radio["events"]))
+
+    def test_a_song_musicip_fails_on_is_passed_over(self):
+        self.start()
+        last, before = self.radio()["queue"][-1]["file"], self.radio()["queue"][-2]["file"]
+        self.musicip.failing_seeds = {last}
+        kodi.go_to(3)
+        radio = self.tick()
+        self.assertEqual([query["song"] for query in self.musicip.mix_requests()[1:]], [last, before])
+        self.assertEqual(radio["seeds"][-1], before)
+        self.assertNotIn("musicip_failed", [event["kind"] for event in radio["events"]])
+        self.assertEqual(int(radio.get("musicip_failures") or 0), 0)
 
     def test_old_songs_are_removed_from_the_playlist(self):
         self.start()
