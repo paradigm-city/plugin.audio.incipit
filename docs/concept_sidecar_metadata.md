@@ -11,6 +11,8 @@ Sidecar metadata keeps saved mixes inspectable and repairable.
   "track_count": 25,
   "label": "...",
   "updated_ts": 1770000000,
+  "unsaved": true,
+  "saved_ts": 1770000000,
   "modified_ts": 1770000000,
   "cache_path": "...",
   "mix_parameters": {},
@@ -19,6 +21,10 @@ Sidecar metadata keeps saved mixes inspectable and repairable.
   "discovery": {}
 }
 ```
+
+## Saving
+
+`updated_ts` is when the mix was made; Saved mixes are ordered and grouped by it. `"unsaved": true` marks the current mix until the listener saves it; saving removes the key and records `saved_ts`. See "The current mix and saved mixes" in `concept_overview.md`.
 
 ## Mix parameters
 

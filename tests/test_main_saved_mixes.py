@@ -18,10 +18,9 @@ def local_ts(text):
 
 class StorageTest(KodiTestCase):
     def test_save_and_load_round_trip(self):
-        main.save_mix(A, 20, [A, B, C])
-        self.assertEqual(main.load_mix(A, 20), [A, B, C])
-        cache_path = main.mix_cache_path(A, 20)
-        self.assertTrue(os.path.basename(cache_path).startswith("mix_"))
+        cache_path = main.create_current_mix(A, 20, [A, B, C])
+        self.assertEqual(main.load_mix_by_cache_path(cache_path), [A, B, C])
+        self.assertTrue(os.path.basename(cache_path).startswith(f"mix_{main.mix_cache_key(A, 20)}_"))
         self.assertEqual(os.path.dirname(cache_path), kodi.profile_dir().rstrip(os.sep))
 
     def test_cache_key_depends_on_seed_and_size(self):
@@ -31,11 +30,11 @@ class StorageTest(KodiTestCase):
 
     def test_sidecar_metadata(self):
         main.remember_mix_generation_parameters(A, 20, {"size": 20, "style_ui": 3})
-        main.save_mix(A, 20, [A, B], track_metadata_list=[
+        cache_path = main.create_current_mix(A, 20, [A, B], track_metadata_list=[
             {"title": "Song 1", "artist": "Artist", "library_freshest_ts": 100},
             {"title": "Song 2", "library_freshest_ts": 200},
         ])
-        sidecar = self.read_json(main.mix_meta_path_from_cache_path(main.mix_cache_path(A, 20)))
+        sidecar = self.read_json(main.mix_meta_path_from_cache_path(cache_path))
         self.assertEqual((sidecar["seed"], sidecar["size"], sidecar["track_count"]), (A, 20, 2))
         self.assertEqual(sidecar["label"], "01 Song 1")
         self.assertEqual(sidecar["mix_generation_parameters"]["style_ui"], 3)
@@ -44,7 +43,7 @@ class StorageTest(KodiTestCase):
 
     def test_missing_mix(self):
         with self.assertRaisesRegex(main.MusicIPError, "No stored mix"):
-            main.load_mix(A, 20)
+            main.load_mix_by_cache_path(main.mix_cache_path(A, 20))
 
     def test_metadata_is_inferred_without_sidecar(self):
         cache_path = os.path.join(main.get_profile_dir(), "mix_manual.m3u")
@@ -73,7 +72,7 @@ class OrderingAndCleanupTest(KodiTestCase):
         self.middle = self.save_mix([B, C], updated_ts=local_ts("2026-10-05 09:00"))
         self.newest = self.save_mix([C, D], updated_ts=local_ts("2026-10-05 18:00"))
 
-    def test_recent_mixes_are_ordered_by_saved_timestamp_not_file_time(self):
+    def test_saved_mixes_are_ordered_by_saved_timestamp_not_file_time(self):
         os.utime(self.old, (time.time() + 1000, time.time() + 1000))  # e.g. after a repair
         self.assertEqual(main.list_saved_mix_cache_paths(), [self.newest, self.middle, self.old])
 

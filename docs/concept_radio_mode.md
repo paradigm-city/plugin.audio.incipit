@@ -44,7 +44,7 @@ The Radio screen then offers:
 
 ## Not included
 
-- Radio sessions are not saved under **Recent mixes**.
+- Radio sessions are not mixes: they are neither the current mix nor listed under **Saved mixes**.
 - There are no radio-specific settings.
 
 ## State

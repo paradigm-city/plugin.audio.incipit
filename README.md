@@ -11,6 +11,7 @@ Kodi music add-on that can create a mix from the currently playing audio track o
 - Shows a folder view with one entry per returned track so the user can play a single song
 - Includes **Refresh mix** in the context menu to request a new mix for the same seed
 - Includes **Remove from mix** in the context menu to remove a track from the stored current mix
+- A new mix is shown as **Current mix** in the first screen; **Save mix** (context menu) keeps it under **Saved mixes**. A new mix replaces a current mix that was not saved.
 
 ## Settings
 

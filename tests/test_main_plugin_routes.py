@@ -31,7 +31,7 @@ class RootIconTest(KodiTestCase):
     def test_each_entry_has_its_icon(self):
         self.assertEqual(self.icons(), {
             "Generate mix from playing audio": "icon-generate.png", "Discovery mode": "icon-discovery.png",
-            "Radio mode": "icon-radio.png", "Recent mixes": "DefaultFolder.png", "Settings": "icon-settings.png"})
+            "Radio mode": "icon-radio.png", "Saved mixes": "DefaultFolder.png", "Settings": "icon-settings.png"})
         for _url, item, _folder in kodi.directory_items:
             self.assertEqual(item.getArt("thumb"), item.getArt("icon"))
 
@@ -60,8 +60,8 @@ class RootIconTest(KodiTestCase):
 class RootAndSettingsTest(KodiTestCase):
     def test_root_menu(self):
         self.run_plugin()
-        self.assertEqual(self.listed_labels(), ["Generate mix from playing audio", "Discovery mode", "Radio mode", "Recent mixes", "Settings"])
-        self.assertEqual(plugin_query(item_by_label("Recent mixes")[0])["action"], "saved_mixes")
+        self.assertEqual(self.listed_labels(), ["Generate mix from playing audio", "Discovery mode", "Radio mode", "Saved mixes", "Settings"])
+        self.assertEqual(plugin_query(item_by_label("Saved mixes")[0])["action"], "saved_mixes")
         self.assertEqual(kodi.ended, [{"succeeded": True, "updateListing": False, "cacheToDisc": False}])
 
     def test_every_run_installs_the_keymap(self):
@@ -111,7 +111,7 @@ class SavedMixListingTest(KodiTestCase):
         main.delete_saved_mix_files(self.ok_mix)
         main.delete_saved_mix_files(self.broken_mix)
         self.run_plugin(action="saved_mixes")
-        self.assertEqual(self.listed_labels(), ["No recent mixes found yet."])
+        self.assertEqual(self.listed_labels(), ["No saved mixes yet."])
 
     def test_date_groups_show_warning_count(self):
         self.run_plugin(action="saved_mixes")
@@ -151,7 +151,7 @@ class SavedMixListingTest(KodiTestCase):
         self.run_plugin(action="saved_mixes_by_date")
         self.assertNotified("No date was supplied.")
         self.run_plugin(action="saved_mixes_by_date", date="1999-01-01")
-        self.assertEqual(self.listed_labels(), ["No recent mixes found for this date."])
+        self.assertEqual(self.listed_labels(), ["No saved mixes for this date."])
 
     def test_cleanup_actions(self):
         self.run_plugin(action="cleanup_saved_mix", cache_path=self.ok_mix)
@@ -366,13 +366,13 @@ class BrowseMixTest(MusicIPServerTestCase):
         kodi.respond("select", 0)
         self.run_plugin(action="browse_mix", seed=SEED, size="20")
         self.assertEqual(len(self.listed_labels()), 3)
-        self.assertEqual(main.load_mix(SEED, 20), [SEED, T1, T2])
+        self.assertEqual(self.current_mix_tracks(), [SEED, T1, T2])
 
     def test_refresh_regenerates_and_replaces_listing(self):
         self.save_mix([SEED, T1], size=20)
         kodi.respond("select", 0)
         self.run_plugin(action="browse_mix", seed=SEED, size="20", refresh="1")
-        self.assertEqual(main.load_mix(SEED, 20), [SEED, T1, T2])
+        self.assertEqual(self.current_mix_tracks(), [SEED, T1, T2])
         self.assertTrue(kodi.ended[-1]["updateListing"])
 
     def test_a_new_mix_plays_when_nothing_else_does(self):
@@ -389,7 +389,7 @@ class BrowseMixTest(MusicIPServerTestCase):
         self.run_plugin(action="browse_mix", seed=SEED, size="20")
         self.assertEqual(kodi.player.file, T2)
         self.assertEqual(kodi.playlist_files(), [])
-        self.assertEqual(main.load_mix(SEED, 20), [SEED, T1, T2])  # created and listed all the same
+        self.assertEqual(self.current_mix_tracks(), [SEED, T1, T2])  # created and listed all the same
 
     def test_opening_a_stored_mix_does_not_play_it(self):
         self.save_mix([SEED, T1, T2], size=20)
@@ -440,11 +440,14 @@ class BrowseSavedMixTest(MusicIPServerTestCase):
         self.assertEqual(len(self.listed_labels()), 2)
         self.assertIn(("setPluginCategory", "Saved MusicIP mix: 01 Ace of Spades"), kodi.directory_calls)
 
-    def test_refresh(self):
+    def test_refresh_makes_a_new_current_mix(self):
         self.musicip.set_mix(SEED, [T2])
         kodi.respond("select", 0)
         self.run_plugin(action="browse_saved_mix", cache_path=self.cache_path, refresh="1")
-        self.assertEqual(self.read_mix(self.cache_path), [SEED, T2])
+        self.assertEqual(self.current_mix_tracks(), [SEED, T2])
+        self.assertNotEqual(main.get_current_mix_cache_path(), self.cache_path)
+        self.assertEqual(self.read_mix(self.cache_path), [SEED, T1])  # the saved mix stays
+        self.assertIn(("setPluginCategory", "Current MusicIP mix: 01 Ace of Spades"), kodi.directory_calls)
 
     def test_empty_mix(self):
         with open(self.cache_path, "w", encoding="utf-8") as handle:
@@ -476,15 +479,15 @@ class GenerateFromPlayingAudioTest(MusicIPServerTestCase):
 
         self.run_plugin(action="generate_current_mix")
 
-        self.assertEqual(main.load_mix(SEED, 20), [SEED, T1, T2])
+        self.assertEqual(self.current_mix_tracks(), [SEED, T1, T2])
         self.assertEqual(kodi.playlist_files(), [SEED, T1, T2])
         self.assertEqual(kodi.playlist[1][1].getLabel(), "2. (Unknown Artist) - 01 Overkill")
         self.assertEqual((kodi.player.position, kodi.player.file), (0, SEED))
         self.assertNotified("Playing generated mix.")
         update = kodi.builtins[-1]
         self.assertTrue(update.startswith("Container.Update(") and update.endswith(",replace)"))
-        self.assertEqual(plugin_query(update)["seed"], SEED)
-        sidecar = self.read_json(main.mix_meta_path_from_cache_path(main.mix_cache_path(SEED, 20)))
+        self.assertEqual(plugin_query(update)["cache_path"], main.get_current_mix_cache_path())
+        sidecar = self.read_json(main.mix_meta_path_from_cache_path(main.get_current_mix_cache_path()))
         self.assertEqual(sidecar["mix_generation_parameters"]["size"], 20)
 
     def test_server_error_is_listed(self):
@@ -502,7 +505,7 @@ class GenerateFromPlayingAudioTest(MusicIPServerTestCase):
         with mock.patch("fake_kodi.Player.play", side_effect=RuntimeError("player busy")):
             self.run_plugin(action="generate_current_mix")
         self.assertEqual(self.listed_labels(), ["MusicIP mix playback failed: player busy"])
-        self.assertEqual(main.load_mix(SEED, 20), [SEED, T1])
+        self.assertEqual(self.current_mix_tracks(), [SEED, T1])
 
     def test_nothing_playing(self):
         with self.assertRaisesRegex(main.MusicIPError, "No audio is currently playing."):

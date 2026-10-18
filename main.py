@@ -1379,8 +1379,42 @@ def load_json_file(path: str) -> dict:
         return {}
 
 
-def save_mix(seed: str, size: int, tracks: list[str], track_metadata_list: list[dict] | None = None) -> None:
-    path = mix_cache_path(seed, size)
+# --- The current mix ------------------------------------------------------------------------------------------
+# A new mix is the current mix: the first screen shows it as "Current mix". It is listed under "Saved mixes" only
+# once the listener saves it (its sidecar has no "unsaved" any more). A new mix replaces the current one, and the
+# replaced mix is deleted unless it was saved. A saved mix stays the current mix until the next new mix.
+
+def current_mix_state_path() -> str:
+    return os.path.join(get_profile_dir(), "current_mix.json")
+
+
+def get_current_mix_cache_path() -> str:
+    """The current mix's file; "" without one (or when its file was deleted)."""
+    cache_path = str(load_json_file(current_mix_state_path()).get("cache_path") or "")
+    return cache_path if cache_path and xbmcvfs.exists(cache_path) else ""
+
+
+def is_mix_saved(meta: dict) -> bool:
+    """Whether the listener kept the mix. Mixes from before the current mix have no "unsaved": they were saved."""
+    return not meta.get("unsaved")
+
+
+def new_mix_cache_path(seed: str, size: int) -> str:
+    """A file of its own for each new mix, so a new mix from the same song never replaces a saved one."""
+    stamp = int(time.time() * 1000)
+    while True:
+        path = os.path.join(get_profile_dir(), f"mix_{mix_cache_key(seed, size)}_{stamp}.m3u")
+        if not xbmcvfs.exists(path):
+            return path
+        stamp += 1
+
+
+def create_current_mix(seed: str, size: int, tracks: list[str], track_metadata_list: list[dict] | None = None,
+                       refresh_token: str = "") -> str:
+    """Store a new mix as the current mix, not saved yet. Returns its file. refresh_token: the nonce of the
+    "Refresh mix" URL that made it (see refreshed_mix_cache_path)."""
+    previous = get_current_mix_cache_path()
+    path = new_mix_cache_path(seed, size)
     payload = "\n".join(tracks)
     handle = xbmcvfs.File(path, "w")
     try:
@@ -1388,18 +1422,14 @@ def save_mix(seed: str, size: int, tracks: list[str], track_metadata_list: list[
     finally:
         handle.close()
 
-    meta = load_json_file(mix_meta_path_from_cache_path(path))
-    if not isinstance(meta, dict):
-        meta = {}
-    created_before = bool(meta.get("track_count"))
-
-    meta.update({
+    meta = {
         "seed": seed,
         "size": size,
         "track_count": len(tracks),
         "label": path_to_label(seed),
         "updated_ts": int(time.time()),
-    })
+        "unsaved": True,
+    }
 
     generation_params = pop_mix_generation_parameters(seed, size)
     if generation_params:
@@ -1420,8 +1450,39 @@ def save_mix(seed: str, size: int, tracks: list[str], track_metadata_list: list[
             meta["track_metadata_library_freshest_ts"] = freshest_ts
 
     save_json_file(mix_meta_path_from_cache_path(path), meta)
-    record_mix_history(path, "created", again=created_before, seed=mix_track_labels(path, [seed])[0],
+    save_json_file(current_mix_state_path(), {"cache_path": path, "refresh_token": refresh_token})
+    if previous and previous != path and not is_mix_saved(load_json_file(mix_meta_path_from_cache_path(previous))):
+        delete_saved_mix_files(previous)
+    record_mix_history(path, "created", seed=mix_track_labels(path, [seed])[0],
                        tracks=len(tracks), parameters=describe_mix_parameters(meta.get("mix_generation_parameters")))
+    return path
+
+
+def refreshed_mix_cache_path(refresh_token: str) -> str:
+    """The current mix if the "Refresh mix" URL with this nonce made it, else "". Kodi runs a folder's URL again
+    when it redraws the folder (Container.Refresh, the service's metadata redraw): that must not mix again."""
+    state = load_json_file(current_mix_state_path())
+    if refresh_token and state.get("refresh_token") == refresh_token:
+        return get_current_mix_cache_path()
+    return ""
+
+
+def save_current_mix(cache_path: str) -> str:
+    """Keep a mix: from now on it is listed under Saved mixes. Returns the name it is listed under."""
+    meta = get_saved_mix_metadata(cache_path, load_mix_by_cache_path(cache_path))
+    if not is_mix_saved(meta):
+        stored = load_json_file(mix_meta_path_from_cache_path(cache_path))
+        stored.pop("unsaved", None)
+        stored["saved_ts"] = int(time.time())
+        save_json_file(mix_meta_path_from_cache_path(cache_path), stored)
+        meta = get_saved_mix_metadata(cache_path)
+        record_mix_history(cache_path, "saved", name=saved_mix_name(meta))
+    return saved_mix_name(meta)
+
+
+def build_save_mix_action(cache_path: str) -> str:
+    return run_plugin_url(action="save_mix", cache_path=cache_path, nonce=new_nonce())
+
 
 def save_mix_by_cache_path(cache_path: str, tracks: list[str]) -> None:
     payload = "\n".join(tracks)
@@ -1442,10 +1503,6 @@ def save_mix_by_cache_path(cache_path: str, tracks: list[str]) -> None:
         meta["updated_ts"] = int(time.time())
     meta["modified_ts"] = int(time.time())
     save_json_file(mix_meta_path_from_cache_path(cache_path), meta)
-
-
-def load_mix(seed: str, size: int) -> list[str]:
-    return load_mix_by_cache_path(mix_cache_path(seed, size))
 
 
 def load_mix_by_cache_path(cache_path: str) -> list[str]:
@@ -1479,12 +1536,13 @@ def saved_mix_order_timestamp(cache_path: str) -> int:
 
 def list_saved_mix_cache_paths() -> list[str]:
     pattern = os.path.join(get_profile_dir(), "mix_*.m3u")
-    paths = [path for path in glob.glob(pattern) if os.path.isfile(path)]
+    paths = [path for path in glob.glob(pattern)
+             if os.path.isfile(path) and is_mix_saved(load_json_file(mix_meta_path_from_cache_path(path)))]
 
     # Do not sort by the M3U file modification time here.
     # Auto-repair and More/Less like this rewrite the M3U and therefore change
-    # its filesystem mtime. The visible recent-mix order should remain based on
-    # the original saved timestamp in the sidecar metadata.
+    # its filesystem mtime. The visible saved-mix order should remain based on
+    # the original saved timestamp in the sidecar metadata. The current mix is listed once it is saved.
     paths.sort(key=lambda p: (saved_mix_order_timestamp(p), os.path.basename(p)), reverse=True)
     return paths
 
@@ -2271,8 +2329,12 @@ def ensure_repair_ready(cache_path: str) -> None:
         raise MusicIPError(f"{repair_readiness_action_label(readiness)}.")
 
 
+def saved_mix_name(meta: dict) -> str:
+    return mix_name(meta) or meta.get("label") or path_to_label(meta.get("seed", ""))
+
+
 def format_saved_mix_label(meta: dict) -> str:
-    label = mix_name(meta) or meta.get("label") or path_to_label(meta.get("seed", ""))
+    label = saved_mix_name(meta)
     track_count = int(meta.get("track_count") or 0)
     if track_count > 0:
         return f"{label} ({track_count} tracks)"
@@ -4374,6 +4436,7 @@ def add_track_item(
     path: str,
     cache_path: str = '',
     metadata: dict | None = None,
+    unsaved: bool = False,
 ) -> None:
     metadata = metadata if isinstance(metadata, dict) else get_track_metadata(path)
     mix_position = int(index) + 1
@@ -4441,6 +4504,8 @@ def add_track_item(
         list_item.setProperty("MusicIP.MixAction.LessLikeThis", "")
 
     context_items.append(("Remove from mix", remove_action))
+    if unsaved and cache_path:
+        context_items.append(("Save mix", build_save_mix_action(cache_path)))
     list_item.addContextMenuItems(context_items)
 
     url = addon_url(
@@ -4544,6 +4609,7 @@ def add_saved_mix_item(cache_path: str) -> None:
 # Fuse's), or the skin's default icons by name. Radio and Discovery show what they are doing.
 
 SKIN_FOLDER_ICON = "DefaultFolder.png"
+CURRENT_MIX_ICON = "DefaultMusicPlaylists.png"
 
 
 def media_icon(name: str) -> str:
@@ -4565,6 +4631,28 @@ def radio_icon() -> str:
     return media_icon({"playing": "playing", "seeking": "searching"}.get(radio_phase(), "radio"))
 
 
+def add_current_mix_item(cache_path: str) -> None:
+    """The first screen's "Current mix": the newest mix, named by its seed until it is saved."""
+    tracks = load_mix_by_cache_path(cache_path)
+    meta = get_saved_mix_metadata(cache_path, tracks)
+    saved = is_mix_saved(meta)
+    label = "Current mix"
+    item = xbmcgui.ListItem(label=label, offscreen=True)
+    apply_music_metadata(item, label)
+    apply_saved_mix_info_metadata(item, cache_path)
+    set_item_icon(item, CURRENT_MIX_ICON)
+    item.setProperty("IsPlayable", "false")
+    details = [path_to_label(meta.get("seed", "")), f"{len(tracks)} tracks", "saved" if saved else "not saved"]
+    item.setLabel2(" · ".join(detail for detail in details if detail))
+    context_items = [] if saved else [("Save mix", build_save_mix_action(cache_path))]
+    context_items += [
+        ("Information", run_plugin_url(action="mix_info", cache_path=cache_path, nonce=new_nonce())),
+        ("Check consistency", build_check_mix_action(cache_path)),
+    ]
+    item.addContextMenuItems(context_items)
+    add_directory_item(HANDLE, build_saved_browse_url(cache_path), item, isFolder=True)
+
+
 def show_root() -> None:
     xbmcplugin.setPluginCategory(HANDLE, "MusicIP")
     xbmcplugin.setContent(HANDLE, "files")
@@ -4579,6 +4667,13 @@ def show_root() -> None:
         generate_item,
         isFolder=True,
     )
+
+    current_mix = get_current_mix_cache_path()
+    if current_mix:
+        try:
+            add_current_mix_item(current_mix)
+        except Exception as exc:
+            log(f"Current mix {current_mix!r} could not be listed: {exc}", xbmc.LOGWARNING)
 
     discovery_item = xbmcgui.ListItem(label="Discovery mode", offscreen=True)
     apply_music_metadata(discovery_item, "Discovery mode")
@@ -4600,13 +4695,13 @@ def show_root() -> None:
         isFolder=True,
     )
 
-    recent_item = xbmcgui.ListItem(label="Recent mixes", offscreen=True)
-    apply_music_metadata(recent_item, "Recent mixes")
-    set_item_icon(recent_item, SKIN_FOLDER_ICON)  # a folder of mixes: the skin's own folder icon
+    saved_item = xbmcgui.ListItem(label="Saved mixes", offscreen=True)
+    apply_music_metadata(saved_item, "Saved mixes")
+    set_item_icon(saved_item, SKIN_FOLDER_ICON)  # a folder of mixes: the skin's own folder icon
     add_directory_item(
         HANDLE,
         build_saved_mixes_url(),
-        recent_item,
+        saved_item,
         isFolder=True,
     )
 
@@ -5264,11 +5359,11 @@ def discovery_mix_from_current() -> None:
     track_metadata_list = collect_mix_track_metadata(tracks, allow_live_lookup=False)
 
     try:
-        save_mix(seed, size, tracks, track_metadata_list=track_metadata_list)
-        queue_mix_assist_for_new_mix(mix_cache_path(seed, size), tracks)
+        cache_path = create_current_mix(seed, size, tracks, track_metadata_list=track_metadata_list)
+        queue_mix_assist_for_new_mix(cache_path, tracks)
         enqueue_metadata_refresh_for_tracks(
             tracks,
-            cache_path=mix_cache_path(seed, size),
+            cache_path=cache_path,
             metadata_list=track_metadata_list,
             reason_context="discovery_mix_from_current",
         )
@@ -5281,18 +5376,18 @@ def discovery_mix_from_current() -> None:
 
     notify("Discovery mode stopped. Playing generated mix.")
     try:
-        xbmc.executebuiltin(f"Container.Update({build_browse_url(seed, size)},replace)")
+        xbmc.executebuiltin(f"Container.Update({build_saved_browse_url(cache_path)},replace)")
     except Exception as exc:
         log(f"Discovery mode: could not replace container with generated mix: {exc}", xbmc.LOGWARNING)
         replace_with_discovery_mode_menu()
 
 def show_saved_mixes() -> None:
-    xbmcplugin.setPluginCategory(HANDLE, "MusicIP recent mixes")
+    xbmcplugin.setPluginCategory(HANDLE, "MusicIP saved mixes")
     xbmcplugin.setContent(HANDLE, "files")
 
     cache_paths = list_saved_mix_cache_paths()
     if not cache_paths:
-        info_label = "No recent mixes found yet."
+        info_label = "No saved mixes yet."
         info_item = xbmcgui.ListItem(label=info_label, offscreen=True)
         apply_music_metadata(info_item, info_label)
         add_directory_item(HANDLE, "", info_item, isFolder=False)
@@ -5307,7 +5402,7 @@ def show_saved_mixes() -> None:
 
 
 def show_saved_mixes_by_date(date_key: str) -> None:
-    xbmcplugin.setPluginCategory(HANDLE, f"MusicIP recent mixes: {date_key}")
+    xbmcplugin.setPluginCategory(HANDLE, f"MusicIP saved mixes: {date_key}")
     xbmcplugin.setContent(HANDLE, "files")
 
     cache_paths = list_saved_mix_cache_paths()
@@ -5315,7 +5410,7 @@ def show_saved_mixes_by_date(date_key: str) -> None:
     selected = grouped.get(date_key, [])
 
     if not selected:
-        info_label = "No recent mixes found for this date."
+        info_label = "No saved mixes for this date."
         info_item = xbmcgui.ListItem(label=info_label, offscreen=True)
         apply_music_metadata(info_item, info_label)
         add_directory_item(HANDLE, "", info_item, isFolder=False)
@@ -5359,11 +5454,11 @@ def generate_current_mix() -> None:
     track_metadata_list = collect_mix_track_metadata(tracks, allow_live_lookup=False)
 
     try:
-        save_mix(seed, size, tracks, track_metadata_list=track_metadata_list)
-        queue_mix_assist_for_new_mix(mix_cache_path(seed, size), tracks)
+        cache_path = create_current_mix(seed, size, tracks, track_metadata_list=track_metadata_list)
+        queue_mix_assist_for_new_mix(cache_path, tracks)
         enqueue_metadata_refresh_for_tracks(
             tracks,
-            cache_path=mix_cache_path(seed, size),
+            cache_path=cache_path,
             metadata_list=track_metadata_list,
             reason_context="generate_current_mix",
         )
@@ -5378,10 +5473,10 @@ def generate_current_mix() -> None:
 
     notify("Playing generated mix.")
     try:
-        xbmc.executebuiltin(f"Container.Update({build_browse_url(seed, size)},replace)")
+        xbmc.executebuiltin(f"Container.Update({build_saved_browse_url(cache_path)},replace)")
     except Exception as exc:
         log(f"Generate mix: could not replace container with generated mix: {exc}", xbmc.LOGWARNING)
-        browse_mix(seed, size, force_refresh=False, update_listing=False)
+        browse_saved_mix(cache_path)
 
 def browse_mix(
     seed: str,
@@ -5390,27 +5485,28 @@ def browse_mix(
     update_listing: bool = False,
     focus_index: int = -1,
     focus_token: str = "",
+    refresh_token: str = "",
 ) -> None:
+    """The mix of a seed song (from the library's context menu): the current mix if it is this song's, else a new
+    current mix."""
     xbmcplugin.setPluginCategory(HANDLE, f"MusicIP mix: {path_to_label(seed)}")
     xbmcplugin.setContent(HANDLE, "songs")
     xbmcplugin.addSortMethod(HANDLE, xbmcplugin.SORT_METHOD_UNSORTED)
 
+    if force_refresh and refreshed_mix_cache_path(refresh_token):
+        force_refresh = False  # a redraw after the refresh
+    cache_path = get_current_mix_cache_path()
     created = False
     try:
-        if force_refresh:
-            tracks = fetch_mix_confirmed(seed, size)
-            save_mix(seed, size, tracks)
-            queue_mix_assist_for_new_mix(mix_cache_path(seed, size), tracks)
+        current = get_saved_mix_metadata(cache_path) if cache_path else {}
+        if force_refresh or current.get("seed") != seed or int(current.get("size") or 0) != size:
+            cache_path = create_current_mix(seed, size, fetch_mix_confirmed(seed, size),
+                                            refresh_token=refresh_token if force_refresh else "")
+            queue_mix_assist_for_new_mix(cache_path, load_mix_by_cache_path(cache_path))
             created = True
         else:
-            try:
-                tracks = load_mix(seed, size)
-                log("Loaded stored mix from cache.")
-            except MusicIPError:
-                tracks = fetch_mix_confirmed(seed, size)
-                save_mix(seed, size, tracks)
-                queue_mix_assist_for_new_mix(mix_cache_path(seed, size), tracks)
-                created = True
+            log("Loaded the current mix.")
+        tracks = load_mix_by_cache_path(cache_path)
     except MusicIPError as exc:
         message = str(exc)
         notify(message, xbmcgui.NOTIFICATION_WARNING if "cancelled" in message.lower() else xbmcgui.NOTIFICATION_ERROR)
@@ -5419,13 +5515,21 @@ def browse_mix(
         end_directory(HANDLE, succeeded=True, updateListing=update_listing, cacheToDisc=False)
         return
 
+    list_mix_tracks(cache_path, tracks, seed, size, update_listing, "browse_mix")
+    if created and tracks:
+        play_new_mix_if_idle(tracks)
+    apply_pending_focus(focus_index, focus_token)
+
+
+def list_mix_tracks(cache_path: str, tracks: list[str], seed: str, size: int, update_listing: bool,
+                    reason_context: str) -> None:
+    """The mix's tracks as the listing. A mix that isn't saved yet offers "Save mix" on each track."""
     if not tracks:
         info_label = "Mix is empty. Use Refresh mix to generate a new one."
         info_item = xbmcgui.ListItem(label=info_label, offscreen=True)
         apply_music_metadata(info_item, info_label)
         add_directory_item(HANDLE, "", info_item, isFolder=False)
     else:
-        cache_path = mix_cache_path(seed, size)
         meta = get_saved_mix_metadata(cache_path, tracks)
         sidecar_map = build_sidecar_track_metadata_map(meta)
         track_metadata_list = collect_mix_track_metadata(
@@ -5438,7 +5542,7 @@ def browse_mix(
             tracks,
             cache_path=cache_path,
             metadata_list=track_metadata_list,
-            reason_context="browse_mix",
+            reason_context=reason_context,
         )
 
         for index, path in enumerate(tracks):
@@ -5449,12 +5553,11 @@ def browse_mix(
                 path,
                 cache_path=cache_path,
                 metadata=track_metadata_list[index] if index < len(track_metadata_list) else None,
+                unsaved=not is_mix_saved(meta),
             )
 
     end_directory(HANDLE, updateListing=update_listing, cacheToDisc=False)
-    if created and tracks:
-        play_new_mix_if_idle(tracks)
-    apply_pending_focus(focus_index, focus_token)
+
 
 def browse_saved_mix(
     cache_path: str,
@@ -5462,7 +5565,13 @@ def browse_saved_mix(
     update_listing: bool = False,
     focus_index: int = -1,
     focus_token: str = "",
+    refresh_token: str = "",
 ) -> None:
+    """A stored mix: a saved one, or the current mix. Refresh mix makes a new current mix from its seed (a saved mix
+    stays as it is)."""
+    refreshed = refreshed_mix_cache_path(refresh_token) if force_refresh else ""
+    if refreshed:  # a redraw after the refresh: its mix, not the one refreshed (which may be gone)
+        cache_path, force_refresh = refreshed, False
     try:
         tracks = load_mix_by_cache_path(cache_path)
         meta = get_saved_mix_metadata(cache_path, tracks)
@@ -5475,10 +5584,6 @@ def browse_saved_mix(
         return
 
     created = False
-    xbmcplugin.setPluginCategory(HANDLE, f"Saved MusicIP mix: {path_to_label(seed)}")
-    xbmcplugin.setContent(HANDLE, "songs")
-    xbmcplugin.addSortMethod(HANDLE, xbmcplugin.SORT_METHOD_UNSORTED)
-
     if force_refresh:
         if not seed:
             notify("Stored mix does not contain a valid seed song.", xbmcgui.NOTIFICATION_ERROR)
@@ -5486,9 +5591,8 @@ def browse_saved_mix(
             return
         try:
             tracks = fetch_mix_confirmed(seed, size)
-            save_mix(seed, size, tracks)
-            queue_mix_assist_for_new_mix(mix_cache_path(seed, size), tracks)
-            cache_path = mix_cache_path(seed, size)
+            cache_path = create_current_mix(seed, size, tracks, refresh_token=refresh_token)
+            queue_mix_assist_for_new_mix(cache_path, tracks)
             meta = get_saved_mix_metadata(cache_path, tracks)
             created = True
         except MusicIPError as exc:
@@ -5497,37 +5601,11 @@ def browse_saved_mix(
             end_directory(HANDLE, succeeded=False, updateListing=update_listing, cacheToDisc=False)
             return
 
-    if not tracks:
-        info_label = "Mix is empty. Use Refresh mix to generate a new one."
-        info_item = xbmcgui.ListItem(label=info_label, offscreen=True)
-        apply_music_metadata(info_item, info_label)
-        add_directory_item(HANDLE, "", info_item, isFolder=False)
-    else:
-        sidecar_map = build_sidecar_track_metadata_map(meta)
-        track_metadata_list = collect_mix_track_metadata(
-            tracks,
-            sidecar_map=sidecar_map,
-            allow_live_lookup=False,
-        )
-        set_mix_track_metadata_snapshot(cache_path, tracks, track_metadata_list)
-        enqueue_metadata_refresh_for_tracks(
-            tracks,
-            cache_path=cache_path,
-            metadata_list=track_metadata_list,
-            reason_context="browse_saved_mix",
-        )
-
-        for index, path in enumerate(tracks):
-            add_track_item(
-                seed,
-                size,
-                index,
-                path,
-                cache_path=cache_path,
-                metadata=track_metadata_list[index] if index < len(track_metadata_list) else None,
-            )
-
-    end_directory(HANDLE, updateListing=update_listing, cacheToDisc=False)
+    kind = "Saved" if is_mix_saved(meta) else "Current"
+    xbmcplugin.setPluginCategory(HANDLE, f"{kind} MusicIP mix: {path_to_label(seed)}")
+    xbmcplugin.setContent(HANDLE, "songs")
+    xbmcplugin.addSortMethod(HANDLE, xbmcplugin.SORT_METHOD_UNSORTED)
+    list_mix_tracks(cache_path, tracks, seed, size, update_listing, "browse_saved_mix")
     if created and tracks:
         play_new_mix_if_idle(tracks)
     apply_pending_focus(focus_index, focus_token)
@@ -5589,6 +5667,10 @@ def format_history_created(event: dict) -> list[str]:
     verb = "Created again" if event.get("again") else "Created"
     line = f"{verb} from {event.get('seed', '?')}: {event.get('tracks', '?')} tracks"
     return [line + (f" ({event['parameters']})" if event.get("parameters") else "")]
+
+
+def format_history_saved(event: dict) -> list[str]:
+    return [f"Saved as \"{event.get('name', '')}\""]
 
 
 def format_history_removed(event: dict) -> list[str]:
@@ -5655,6 +5737,7 @@ MIX_HISTORY_FORMATTERS = {
     "renamed": lambda event: [f"You named the mix \"{event['name']}\"" if event.get("name")
                               else "You removed your name; the AI's is used again"],
     "created": format_history_created,
+    "saved": format_history_saved,
     "removed": format_history_removed,
     "more_like_this": format_history_more_like_this,
     "less_like_this": format_history_less_like_this,
@@ -5711,7 +5794,8 @@ def build_mix_info_message(cache_path: str) -> str:
         f"Label: {meta.get('label') or path_to_label(meta.get('seed') or cache_path)}",
         f"Seed: {meta.get('seed') or 'unknown'}",
         f"Tracks: {meta.get('track_count') or len(tracks)}",
-        f"Saved: {format_sidecar_ts(meta.get('updated_ts'))}",
+        f"Created: {format_sidecar_ts(meta.get('updated_ts'))}",
+        f"Saved: {format_sidecar_ts(meta.get('saved_ts') or meta.get('updated_ts')) if is_mix_saved(meta) else 'not yet'}",
         f"Modified: {format_sidecar_ts(meta.get('modified_ts'))}",
         "",
         "Mix generation parameters:",
@@ -7591,6 +7675,17 @@ def router() -> None:
         xbmc.executebuiltin(f"Container.Update({build_saved_mixes_url()},replace)")
         return
 
+    if action == "save_mix":
+        cache_path = params.get("cache_path", "").strip()
+        try:
+            name = save_current_mix(cache_path)
+        except MusicIPError as exc:
+            notify(str(exc), xbmcgui.NOTIFICATION_ERROR)
+            return
+        notify(f'Saved as "{name}".')
+        xbmc.executebuiltin("Container.Refresh")
+        return
+
     if action == "cleanup_saved_mix":
         cache_path = params.get("cache_path", "").strip()
         if not cache_path:
@@ -7708,6 +7803,7 @@ def router() -> None:
             update_listing=refresh,
             focus_index=focus_index,
             focus_token=focus_token,
+            refresh_token=params.get("nonce", "") if refresh else "",
         )
         return
 
@@ -7729,6 +7825,7 @@ def router() -> None:
             update_listing=refresh,
             focus_index=focus_index,
             focus_token=focus_token,
+            refresh_token=params.get("nonce", "") if refresh else "",
         )
         return
 

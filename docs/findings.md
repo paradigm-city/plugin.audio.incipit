@@ -8,7 +8,7 @@ How this file is kept up to date:
 - A fixed finding moves to **Resolved**, keeping its number, with the commit that fixed it.
 - A finding reproduced by a test lists that test under **Test**. Such tests are marked `@unittest.expectedFailure`. `tests/test_findings.py` checks that every one of these tests is listed under **Open**, and that every test listed under **Open** still fails. When a fix makes such a test pass, CI fails until the decorator is removed and the finding is moved to **Resolved**.
 
-Last reviewed: 2026-10-15
+Last reviewed: 2026-10-18
 
 ## Open
 
@@ -31,7 +31,7 @@ The add-on can't check whether Kodi still waits for a listing. The 2026-10-17 cr
 
 Mitigated in 6f6ba14 (2026-10-17), not fixed (the fault is in Kodi): listings are handed to Kodi in one call (`addDirectoryItems`), and screen redraws from the background (the service, AI Mix Assist's tidy-up) wait while Kodi is loading a list (`Container.IsUpdating`, busy dialog). If it happens again, the next step is the one above: generate mixes outside a listing.
 
-### F3 · "Unknown date" is listed first among recent mix dates
+### F3 · "Unknown date" is listed first among saved mix dates
 
 `group_saved_mixes_by_date()` in `main.py` gives "Unknown date" a sort key meant to put it last, but then sorts with `reverse=True`, so it comes first. This only affects mixes whose save time can't be read.
 
@@ -59,6 +59,12 @@ These plugin functions are never called:
 Found on 2026-10-11 while removing the Discovery command channel (F6). They are unrelated to that change.
 
 ## Resolved
+
+### F25 · A redraw after "Refresh mix" asked for a new mix again
+
+Found on 2026-10-18 while changing new mixes to the current mix. "Refresh mix" opens the mix with a URL that has `refresh=1`, and that URL stays the folder's URL. Kodi runs it again whenever the folder is redrawn: `Container.Refresh` after "Check consistency", or the service's redraw once background metadata has been looked up (`Container.Update(<folder>,replace)`), which often follows right after a new mix. Each redraw showed the generate dialog again and, when confirmed, made yet another mix. With the current mix the redraw could also fail: refreshing a current mix that wasn't saved deletes it, and the redraw then opened the deleted mix ("No stored mix found").
+
+Fixed in 789eced (2026-10-18): the current mix remembers the nonce of the "Refresh mix" URL that made it, and a redraw with that nonce shows that mix. **Test:** `test_main_current_mix.RefreshRedrawTest`
 
 ### F24 · Redrawing the Radio and Discovery screens moved the focus to the first entry
 
