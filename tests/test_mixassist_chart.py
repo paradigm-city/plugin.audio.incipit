@@ -80,9 +80,9 @@ def without_pillow():
 
 class SmoothLinesTest(unittest.TestCase):
     def test_the_curve_goes_through_the_points_and_not_beyond_them(self):
-        points = [(0, 10), (10, 30), (20, 30), (30, 0), (40, 20)]
+        points = [(0, 10), (10, 30), (20, 30), (30, 0), (40, 20), (50, 21), (60, 60)]  # the last: a steep rise
         curve = chart.smooth_curve(points, steps=10)
-        self.assertEqual(len(curve), 41)
+        self.assertEqual(len(curve), 61)
         for point in points:
             self.assertIn(point, [(round(x, 6), round(y, 6)) for x, y in curve])
         for (x0, y0), (x1, y1) in zip(points, points[1:]):  # monotone: each piece stays between its two values
@@ -96,13 +96,21 @@ class SmoothLinesTest(unittest.TestCase):
         self.assertEqual([len(run) for run in runs], [2, 1])
         self.assertEqual(runs[1][0][0], 40 + 260 * 3 / 4)  # the x scale is the whole series'
 
-    def test_dashes(self):
-        pieces = chart.dashes([(0, 0), (100, 0)], 10, 5)
-        self.assertEqual(len(pieces), 7)
-        self.assertEqual((pieces[0][0], pieces[0][-1], pieces[1][0]), ((0, 0), (10.0, 0.0), (15.0, 0.0)))
-        self.assertEqual(pieces[-1][-1], (100, 0))
+    def test_see_through_lines(self):
+        folder = tempfile.mkdtemp()
+        series = [chart.Series("Energy", (255, 0, 0), [4, 4])]  # away from the grid
+        for opacity in (1.0, 0.7):
+            chart.render_chart(os.path.join(folder, f"{opacity}.png"), [0, 1], series, SIZE, PLOT, (0, 10),
+                               points=False, line_width=12, opacity=opacity)  # wide: no edge in the middle
+        from PIL import Image
+        middle = (170, 114)  # on the line
+        solid = Image.open(os.path.join(folder, "1.0.png")).getpixel(middle)
+        faint = Image.open(os.path.join(folder, "0.7.png")).getpixel(middle)
+        self.assertEqual(solid[:3], (255, 0, 0))
+        expected = tuple(int(c * 178 / 255 + b * 77 / 255) for c, b in zip((255, 0, 0), chart.BACKGROUND))
+        self.assertTrue(all(abs(f - e) <= 1 for f, e in zip(faint, expected)), (faint, expected))
 
-    def test_a_smooth_chart_with_gaps_and_a_dashed_year(self):
+    def test_a_smooth_chart_with_gaps_and_a_second_scale(self):
         folder = tempfile.mkdtemp()
         series = [chart.Series("Energy", (228, 87, 86), [5, 6, None, 4, 7, 7]),
                   chart.Series("Sounding year", (218, 218, 218), [1980, 1985, 1983, None, 1990, 1981], axis="right")]
@@ -114,7 +122,7 @@ class SmoothLinesTest(unittest.TestCase):
                         used = chart.render_chart(path, range(6), series, SIZE, PLOT, (0, 10), (1975, 1995), smooth=True)
                 else:
                     used = chart.render_chart(path, range(6), series, SIZE, PLOT, (0, 10), (1975, 1995), smooth=True,
-                                              points=False, line_width=2)
+                                              points=False, line_width=2, opacity=0.7)
                 self.assertEqual((used, png_size(path)), (renderer, SIZE))
 
 

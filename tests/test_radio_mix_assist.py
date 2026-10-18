@@ -220,7 +220,7 @@ class RadioMixAssistTest(RadioBase):
         self.finish_check()
         radio = self.tick()
         texts = [text.text for text in main.drift_chart_texts(main.drift_chart_series(radio["events"]))]
-        for text in ("Energy", "5.0 » 6.0 steady", "Sounding year (right, - - -)", "1983 » 1984", "0", "10"):
+        for text in ("Energy", "5.0 » 6.0 steady", "Sounding year (right scale)", "1983 » 1984", "0", "10"):
             self.assertIn(text, texts)
         self.assertTrue(any(text.endswith("| 2 measurements") for text in texts))
         self.run_plugin(action="radio_info")

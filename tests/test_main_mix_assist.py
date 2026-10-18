@@ -279,7 +279,7 @@ class SavedMixMenuTest(MixAssistTestCase):
         window.onFocus(203)
         self.assertTrue(os.path.isfile(window.properties["image"]))
         self.assertIn("in the mix's order", window.properties["text"])
-        self.assertIn("the sounding year dashed, on its own scale (right)", window.properties["text"])
+        self.assertIn("the sounding year in white, on its own scale (right)", window.properties["text"])
         window.onFocus(204)
         self.assertEqual(window.properties["image"], "")
         self.assertIn("[B]Last tidy-up[/B]\nwilfried - fire walk » Medeski Martin & Wood - Think", window.properties["text"])
@@ -300,7 +300,7 @@ class SavedMixMenuTest(MixAssistTestCase):
         self.assertEqual((year["axis"], year["legend"]), ("right", "1985 (1980-1990)"))
         texts = [text.text for text in main.line_chart_texts(data, "Track 1", "Track 3",
                                                              [item["legend"] for item in data["series"]])]
-        self.assertIn("Sounding year (right, - - -)", texts)
+        self.assertIn("Sounding year (right scale)", texts)
         self.assertTrue({"Track 1", "Track 3", "1975", "1995", "0", "10"} <= set(texts))
 
     def test_with_a_font_the_charts_carry_their_text(self):
