@@ -75,13 +75,15 @@ class RadioMenuTest(RadioTestCase):
     def test_icons_like_discovery(self):
         def icons():
             self.menu()
-            return [os.path.basename(item.getArt("icon")) for _url, item, _folder in kodi.directory_items]
+            return {item.getLabel(): os.path.basename(item.getArt("icon")) for _url, item, _folder in kodi.directory_items}
 
-        self.assertEqual(icons(), ["icon-searching.png"])  # Scan stations
+        self.assertEqual(icons()["Scan stations"], "icon-searching.png")
         self.turn_on()
-        self.assertEqual(icons(), ["icon-playing.png", "icon-skip.png", "icon-stop.png"])  # Pick, Skip, Stop
+        self.assertEqual(icons(), {"Pick this station": "icon-playing.png", "Skip station": "icon-skip.png",
+                                   "Stop radio": "icon-stop.png"})
         main.save_radio_state(dict(self.radio(), phase="playing"))
-        self.assertEqual(icons(), ["icon-searching.png", "icon-stop.png"])  # Scan again, Stop
+        playing = icons()
+        self.assertEqual((playing["Scan again"], playing["Stop radio"]), ("icon-searching.png", "icon-stop.png"))
 
     def test_tuning_and_playing(self):
         self.turn_on()
