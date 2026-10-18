@@ -54,6 +54,12 @@ Found on 2026-10-11 while removing the Discovery command channel (F6). They are 
 
 ## Resolved
 
+### F24 · Redrawing the Radio and Discovery screens moved the focus to the first entry
+
+Found by the user on 2026-10-18: while scanning, the Radio screen is redrawn with every snippet (F20), and the focus jumped back to the first entry each time, for example from "Skip station" to "Pick this station". Two causes: every entry's URL carried a new nonce on each redraw, so Kodi couldn't find the focused entry again, and the service redrew with `Container.Update(...,replace)`, which starts the screen afresh.
+
+Fixed in af61f96 (2026-10-18): the entries of both screens have the same URL on every redraw, and the service redraws with `Container.Refresh`, which keeps the focused entry. `test_radio_mode.RadioMenuTest` and `test_main_discovery.DiscoveryMenuFocusTest` check the stable URLs; that Kodi then keeps the focus is Kodi's behaviour and needs a look in Kodi.
+
 ### F20 · The Radio screen kept the first snippet's title while scanning
 
 Found by the user on 2026-10-17: while scanning, the Radio screen's title ("Radio: scanning - <song>") showed the first snippet correctly but was not updated when the next snippet started. The screen was only rebuilt after an action on it.
