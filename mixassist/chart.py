@@ -1,4 +1,6 @@
-"""Charts as PNG images: a line chart (a station's drift), range bars (a mix's sound) and strips (a mix's course).
+"""Charts as PNG images: line charts (a station's drift, a mix's course; straight or smooth) and range bars (a
+mix's sound). A series on the right-hand scale (the sounding year) is drawn dashed, so it doesn't read as one of the
+0-10 scales.
 
 Uses Pillow when Kodi's Python has it (Kodi for Windows ships Pillow 6.2), with smooth lines and, given a TrueType
 font, text in the image; otherwise a small built-in drawing (zlib), with plain lines and no text.
@@ -6,6 +8,7 @@ font, text in the image; otherwise a small built-in drawing (zlib), with plain l
 
 from __future__ import annotations
 
+import math
 import struct
 import zlib
 from typing import List, Optional, Sequence, Tuple
@@ -88,31 +91,98 @@ def plot_points(xs: Sequence[float], values: Sequence[float], plot: Tuple[int, i
     return points
 
 
+def plot_runs(xs: Sequence[float], values: Sequence[Optional[float]], plot: Tuple[int, int, int, int],
+              value_range: Tuple[float, float]) -> List[List[Tuple[float, float]]]:
+    """Like plot_points, but a value may be None (not measured): the line breaks there."""
+    points = plot_points(xs, [value_range[0] if value is None else value for value in values], plot, value_range)
+    runs, run = [], []
+    for point, value in zip(points, values):
+        if value is None:
+            if run:
+                runs.append(run)
+            run = []
+        else:
+            run.append(point)
+    return runs + ([run] if run else [])
+
+
+def smooth_curve(points: Sequence[Tuple[float, float]], steps: int = 10) -> List[Tuple[float, float]]:
+    """A smooth curve through the points, left to right: a monotone cubic spline (Fritsch-Carlson), which doesn't
+    swing above or below its neighbours, so a curve stays within the values it was drawn from."""
+    if len(points) < 3:
+        return list(points)
+    xs, ys = [x for x, _ in points], [y for _, y in points]
+    count = len(points)
+    slopes = [(ys[i + 1] - ys[i]) / ((xs[i + 1] - xs[i]) or 1e-9) for i in range(count - 1)]
+    tangents = [slopes[0]] + [0.0 if slopes[i - 1] * slopes[i] <= 0 else (slopes[i - 1] + slopes[i]) / 2
+                              for i in range(1, count - 1)] + [slopes[-1]]
+    for i, slope in enumerate(slopes):
+        if slope == 0:
+            tangents[i] = tangents[i + 1] = 0.0
+            continue
+        a, b = tangents[i] / slope, tangents[i + 1] / slope
+        if a * a + b * b > 9:
+            factor = 3 / math.sqrt(a * a + b * b)
+            tangents[i], tangents[i + 1] = factor * a * slope, factor * b * slope
+    curve = [points[0]]
+    for i in range(count - 1):
+        width = xs[i + 1] - xs[i]
+        for step in range(1, steps + 1):
+            t = step / steps
+            curve.append((xs[i] + t * width,
+                          (2 * t ** 3 - 3 * t ** 2 + 1) * ys[i] + (t ** 3 - 2 * t ** 2 + t) * width * tangents[i]
+                          + (-2 * t ** 3 + 3 * t ** 2) * ys[i + 1] + (t ** 3 - t ** 2) * width * tangents[i + 1]))
+    return curve
+
+
+def dashes(points: Sequence[Tuple[float, float]], dash: float, gap: float) -> List[List[Tuple[float, float]]]:
+    """The pieces of a dashed line along the points."""
+    pieces, piece, drawing, left = [], [points[0]], True, dash
+    for (x0, y0), (x1, y1) in zip(points, points[1:]):
+        length = math.hypot(x1 - x0, y1 - y0)
+        done = 0.0
+        while length - done > left:
+            done += left
+            point = (x0 + (x1 - x0) * done / length, y0 + (y1 - y0) * done / length)
+            if drawing:
+                pieces.append(piece + [point])
+            piece, drawing, left = [point], not drawing, gap if drawing else dash
+        left -= length - done
+        if drawing:
+            piece.append((x1, y1))
+    if drawing and len(piece) > 1:
+        pieces.append(piece)
+    return pieces
+
+
 def render_chart(path: str, xs: Sequence[float], series: Sequence[Series], size: Tuple[int, int],
                  plot: Tuple[int, int, int, int], left_range: Tuple[float, float],
                  right_range: Optional[Tuple[float, float]] = None, grid_lines: int = 4,
-                 texts: Sequence[Text] = (), font_path: str = "", points: bool = True) -> str:
-    """Draw the panel, a horizontal grid and one line per series; returns which renderer was used."""
+                 texts: Sequence[Text] = (), font_path: str = "", points: bool = True, smooth: bool = False,
+                 line_width: int = 3) -> str:
+    """Draw a horizontal grid and one line per series (None values break it); returns which renderer was used."""
     xs = list(xs)
     if len(xs) == 1:  # a single measurement: a flat line across the plot
         xs = [xs[0], xs[0] + 1]
         series = [Series(s.name, s.color, s.values * 2, s.axis) for s in series]
-    lines = []
-    for item in series:
+    lines = []  # (colour, points, dashed); the right-hand scale first, behind the others
+    for item in sorted(series, key=lambda item: item.axis != "right"):
         value_range = right_range if item.axis == "right" and right_range else left_range
-        lines.append((item.color, plot_points(xs, item.values, plot, value_range)))
+        dashed = item.axis == "right" and right_range is not None
+        lines += [(item.color, run, dashed) for run in plot_runs(xs, item.values, plot, value_range)]
     left, top, right, bottom = plot
     grid = [top + (bottom - top) * step / grid_lines for step in range(grid_lines + 1)]
     try:
         from PIL import Image, ImageDraw  # noqa: F401
     except Exception:
-        _render_plain(path, size, plot, grid, lines)
+        _render_plain(path, size, plot, grid, [(color, run) for color, run, _dashed in lines])
         return "plain"
-    _render_pillow(path, size, plot, grid, lines, texts, font_path, points)
+    _render_pillow(path, size, plot, grid, lines, texts, font_path, points, smooth, line_width)
     return "pillow"
 
 
-def _render_pillow(path, size, plot, grid, lines, texts=(), font_path="", points=True) -> None:
+def _render_pillow(path, size, plot, grid, lines, texts=(), font_path="", points=True, smooth=False,
+                   line_width=3) -> None:
     from PIL import Image, ImageDraw
 
     k = SUPERSAMPLE
@@ -121,12 +191,14 @@ def _render_pillow(path, size, plot, grid, lines, texts=(), font_path="", points
     left, top, right, bottom = plot
     for y in grid:
         draw.line([(left * k, y * k), (right * k, y * k)], fill=GRID, width=k)
-    for color, line_points in lines:
-        scaled = [(x * k, y * k) for x, y in line_points]
-        draw.line(scaled, fill=color, width=3 * k)
-        if points:
+    for color, run, dashed in lines:
+        scaled = [(x * k, y * k) for x, y in run]
+        curve = smooth_curve(scaled) if smooth else scaled
+        for piece in (dashes(curve, 10 * k, 7 * k) if dashed else [curve]):
+            draw.line(piece, fill=color, width=line_width * k, joint="curve")
+        if points or len(run) == 1:  # a lone value would vanish without its dot
             for x, y in scaled:
-                r = 4 * k
+                r = (line_width + 1) * k
                 draw.ellipse([x - r, y - r, x + r, y + r], fill=color)
     draw_texts(draw, texts, font_path, k)
     resample = getattr(Image, "LANCZOS", getattr(Image, "ANTIALIAS", 1))
@@ -213,63 +285,6 @@ def render_bars(path: str, bars: Sequence[Bar], size: Tuple[int, int], font_path
                          width=3 * k)
         else:
             draw.line([(a[0] * k, a[1] * k), (b[0] * k, b[1] * k)], fill=color, width=thickness * k)
-    draw_texts(draw, texts, font_path, k)
-    resample = getattr(Image, "LANCZOS", getattr(Image, "ANTIALIAS", 1))
-    image.resize(size, resample).save(path, "PNG")
-    return "pillow"
-
-
-class Strip:
-    """One row of a strip chart: a name, a value per track (None: not rated), the scale, a text (right)."""
-
-    def __init__(self, name: str, values: Sequence[Optional[float]], color: Tuple[int, int, int],
-                 scale: Tuple[float, float] = (0.0, 10.0), text: str = ""):
-        self.name, self.values, self.color, self.scale, self.text = name, list(values), color, scale, text
-
-
-def render_strips(path: str, strips: Sequence[Strip], size: Tuple[int, int], font_path: str = "") -> str:
-    """Small line charts stacked: per row its name (left), the values across the tracks with their average as a
-    faint line, and a text (right). Returns the renderer used."""
-    width, height = size
-    left, right = int(width * 0.2), int(width * 0.76)
-    row_height = height / max(1, len(strips))
-    texts, lines = [], []  # lines: (colour, points, thickness)
-    for index, strip in enumerate(strips):
-        top, bottom = row_height * index + 8, row_height * (index + 1) - 8
-        low, high = strip.scale
-        span = (high - low) or 1.0
-        count = max(2, len(strip.values))
-
-        def point(position: int, value: float) -> Tuple[float, float]:
-            share = max(0.0, min(1.0, (value - low) / span))
-            return left + (right - left) * position / (count - 1), bottom - (bottom - top) * share
-
-        lines.append((GRID, [(left, bottom), (right, bottom)], 1))
-        known = [value for value in strip.values if value is not None]
-        if known:
-            average = sum(known) / len(known)
-            lines.append((TRACK, [point(0, average), point(count - 1, average)], 2))
-        run: List[Tuple[float, float]] = []
-        for position, value in enumerate(strip.values + [None]):
-            if value is None:
-                if run:
-                    lines.append((strip.color, run if len(run) > 1 else run * 2, 2))
-                run = []
-            else:
-                run.append(point(position, value))
-        middle = (top + bottom) / 2
-        texts.append(Text(20, middle - 14, strip.name, strip.color))
-        texts.append(Text(right + 30, middle - 14, strip.text))
-    try:
-        from PIL import Image, ImageDraw  # noqa: F401
-    except Exception:
-        _render_plain(path, size, (left, 0, right, height), [], [(color, points) for color, points, _w in lines])
-        return "plain"
-    k = SUPERSAMPLE
-    image = Image.new("RGB", (width * k, height * k), BACKGROUND)
-    draw = ImageDraw.Draw(image)
-    for color, points, thickness in lines:
-        draw.line([(x * k, y * k) for x, y in points], fill=color, width=thickness * k)
     draw_texts(draw, texts, font_path, k)
     resample = getattr(Image, "LANCZOS", getattr(Image, "ANTIALIAS", 1))
     image.resize(size, resample).save(path, "PNG")

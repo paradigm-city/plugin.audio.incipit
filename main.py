@@ -6076,8 +6076,9 @@ def mix_info_tabs(info: dict) -> list[dict]:
         path = chart_path("course")
         render_course_chart(course, path, font)
         tabs.append({"title": "Course", "image": path,
-                     "text": "Each track's ratings in the mix's order, from the first track (left) to the last; the "
-                             f"faint line is the mix's average.\n{info['rated']}"})
+                     "text": "Each track's ratings in the mix's order, from the first track (left) to the last: the "
+                             "seven scales from 0 to 10 (left), the sounding year dashed, on its own scale (right).\n"
+                             f"{info['rated']}"})
 
     if info["changes"]:
         changes = [info_heading("Last tidy-up")] + info["changes"]
@@ -6103,17 +6104,33 @@ def render_sound_chart(profile: dict, path: str, font: str) -> str:
     return mix_assist_chart.render_bars(path, bars, INFO_CHART_SIZE, font)
 
 
-def render_course_chart(course: list[list], path: str, font: str) -> str:
-    strips = []
+def course_chart_series(course: list[list]) -> dict:
+    """What the course chart shows: the tracks, one series per dimension (None where a track isn't rated), the
+    sounding-year scale; each series with its legend text (average and range)."""
+    series = []
     for index, (key, color) in enumerate(zip(mix_assist_dimensions.ALL_KEYS, DIMENSION_COLORS)):
         values = [row[index] if index < len(row) else None for row in course]
         known = [value for value in values if value is not None]
         if not known:
             continue
-        scale = year_range(known) if key == mix_assist_dimensions.ERA_KEY else (0, 10)
-        strips.append(mix_assist_chart.Strip(dimension_name(key), values, mix_assist_chart.hex_color(color), scale,
-                                             dimension_range_text(key, min(known), max(known))))
-    return mix_assist_chart.render_strips(path, strips, INFO_CHART_SIZE, font)
+        average = sum(known) / len(known)
+        series.append({"key": key, "name": dimension_name(key), "color": color, "values": values,
+                       "axis": "right" if key == mix_assist_dimensions.ERA_KEY else "left",
+                       "legend": f"{dimension_value_text(key, average)} ({dimension_range_text(key, min(known), max(known))})"})
+    years = [value for item in series if item["axis"] == "right" for value in item["values"] if value is not None]
+    return {"tracks": list(range(1, len(course) + 1)), "series": series, "years": year_range(years)}
+
+
+def render_course_chart(course: list[list], path: str, font: str) -> str:
+    """All dimensions in one chart, track by track, as smooth curves: the seven scales on 0-10 (left), the
+    sounding year on its own scale (right, dashed)."""
+    data = course_chart_series(course)
+    series = [mix_assist_chart.Series(item["name"], mix_assist_chart.hex_color(item["color"]), item["values"], item["axis"])
+              for item in data["series"]]
+    tracks = data["tracks"]
+    texts = line_chart_texts(data, "Track 1", f"Track {tracks[-1]}", [item["legend"] for item in data["series"]])
+    return mix_assist_chart.render_chart(path, tracks, series, INFO_CHART_SIZE, DRIFT_PLOT, (0, 10), data["years"],
+                                         texts=texts, font_path=font, points=False, smooth=True, line_width=2)
 
 
 def year_range(years: list[float]) -> tuple[int, int]:
@@ -7289,13 +7306,24 @@ def drift_chart_series(events: list[dict]) -> dict | None:
 def render_drift_chart(data: dict, path: str, font: str = "") -> str:
     series = [mix_assist_chart.Series(item["name"], mix_assist_chart.hex_color(item["color"]), item["values"], item["axis"])
               for item in data["series"]]
-    texts = drift_chart_texts(data)
     return mix_assist_chart.render_chart(path, data["times"], series, INFO_CHART_SIZE, DRIFT_PLOT, (0, 10), data["years"],
-                                         texts=texts, font_path=font)
+                                         texts=drift_chart_texts(data), font_path=font)
 
 
 def drift_chart_texts(data: dict) -> list:
-    """The axes (0-10 left, years right), the times below, the legend right."""
+    """The drift chart's text: the times below, where each dimension started and where it is now."""
+    times = data["times"]
+    same_day = time.strftime("%Y%m%d", time.localtime(times[0])) == time.strftime("%Y%m%d", time.localtime(times[-1]))
+    clock = "%H:%M" if same_day else "%Y-%m-%d %H:%M"
+    return line_chart_texts(data, time.strftime(clock, time.localtime(times[0])),
+                            f"{time.strftime(clock, time.localtime(times[-1]))} | {len(times)} measurements",
+                            [drift_legend_text(item["key"], item["values"][0], item["values"][-1])
+                             for item in data["series"]])
+
+
+def line_chart_texts(data: dict, first: str, last: str, legends: list[str]) -> list:
+    """The axes (0-10 left, years right), the first and last point below, the legend right: per series its name
+    and a text; the sounding year's name says it has the right-hand scale."""
     left, top, right, bottom = DRIFT_PLOT
     Text = mix_assist_chart.Text
     texts = [Text(left - 14, bottom - (bottom - top) * value / 10 - 13, str(value), align="right", size=20)
@@ -7303,17 +7331,13 @@ def drift_chart_texts(data: dict) -> list:
     low, high = data["years"]
     texts += [Text(right + 12, bottom - (bottom - top) * (year - low) / (high - low) - 13, str(year), size=20)
               for year in (low, (low + high) // 2, high)]
-    times = data["times"]
-    same_day = time.strftime("%Y%m%d", time.localtime(times[0])) == time.strftime("%Y%m%d", time.localtime(times[-1]))
-    clock = "%H:%M" if same_day else "%Y-%m-%d %H:%M"
-    texts.append(Text(left, bottom + 14, time.strftime(clock, time.localtime(times[0])), size=20))
-    texts.append(Text(right, bottom + 14, f"{time.strftime(clock, time.localtime(times[-1]))} | {len(times)} measurements",
-                      align="right", size=20))
-    for index, item in enumerate(data["series"]):
+    texts.append(Text(left, bottom + 14, first, size=20))
+    texts.append(Text(right, bottom + 14, last, align="right", size=20))
+    for index, (item, legend) in enumerate(zip(data["series"], legends)):
         y = 12 + index * 56
-        texts.append(Text(DRIFT_LEGEND_X, y, item["name"], mix_assist_chart.hex_color(item["color"]), size=21))
-        texts.append(Text(DRIFT_LEGEND_X, y + 24, drift_legend_text(item["key"], item["values"][0], item["values"][-1]),
-                          size=19))
+        name = item["name"] + (" (right, - - -)" if item.get("axis") == "right" else "")
+        texts.append(Text(DRIFT_LEGEND_X, y, name, mix_assist_chart.hex_color(item["color"]), size=21))
+        texts.append(Text(DRIFT_LEGEND_X, y + 24, legend, size=19))
     return texts
 
 
