@@ -151,5 +151,47 @@ class BrowseMixUsesTheCurrentMixTest(MusicIPServerTestCase):
         self.assertEqual(main.list_saved_mix_cache_paths(), [saved])  # listed once it is saved
 
 
+class RefreshRedrawTest(MusicIPServerTestCase):
+    """Findings F25: Kodi runs the "Refresh mix" URL again whenever it redraws the folder."""
+
+    def refresh_query(self, cache_path):
+        kodi.directory_items.clear()
+        self.run_plugin(action="browse_saved_mix", cache_path=cache_path)
+        return plugin_query(kodi.directory_items[0][1].context_action("Refresh mix"))
+
+    def test_a_redraw_after_refreshing_does_not_mix_again(self):
+        unsaved = main.create_current_mix(SEED, 20, [SEED, T1])
+        query = self.refresh_query(unsaved)
+        self.musicip.set_mix(SEED, [T2])
+        kodi.respond("select", 0)
+        self.run_plugin(**query)
+        refreshed = main.get_current_mix_cache_path()
+        self.assertFalse(os.path.exists(unsaved))  # replaced: it wasn't saved
+        kodi.directory_items.clear()
+        self.run_plugin(**query)  # Container.Refresh
+        self.assertEqual(len(kodi.dialogs("select")), 1)
+        self.assertEqual(main.get_current_mix_cache_path(), refreshed)
+        self.assertEqual(len(kodi.directory_items), 2)
+        self.assertTrue(kodi.ended[-1]["succeeded"])
+
+    def test_refreshing_again_mixes_again(self):
+        saved = self.save_mix([SEED, T1], size=20)
+        self.musicip.set_mix(SEED, [T2])
+        kodi.respond("select", 0, 0)
+        self.run_plugin(**self.refresh_query(saved))
+        first = main.get_current_mix_cache_path()
+        self.run_plugin(**self.refresh_query(saved))
+        self.assertEqual(len(kodi.dialogs("select")), 2)
+        self.assertNotEqual(main.get_current_mix_cache_path(), first)
+
+    def test_a_redraw_of_a_library_song_mix_after_refreshing(self):
+        self.musicip.set_mix(SEED, [T1])
+        kodi.respond("select", 0)
+        query = {"action": "browse_mix", "seed": SEED, "size": "20", "refresh": "1", "nonce": "123"}
+        self.run_plugin(**query)
+        self.run_plugin(**query)
+        self.assertEqual(len(kodi.dialogs("select")), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
