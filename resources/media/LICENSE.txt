@@ -1,0 +1,4 @@
+The menu icons icon-*.png are drawn from Font Awesome Free 6 by Fonticons, Inc. (tools/make_icons.py).
+
+Font Awesome Free icons are licensed under CC BY 4.0: https://creativecommons.org/licenses/by/4.0/
+See https://fontawesome.com/license/free

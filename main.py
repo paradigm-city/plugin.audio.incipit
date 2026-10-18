@@ -4540,6 +4540,31 @@ def add_saved_mix_item(cache_path: str) -> None:
     )
 
 
+# --- Menu icons: the add-on's own (resources/media, drawn by tools/make_icons.py from Font Awesome, like Arctic
+# Fuse's), or the skin's default icons by name. Radio and Discovery show what they are doing.
+
+SKIN_FOLDER_ICON = "DefaultFolder.png"
+
+
+def media_icon(name: str) -> str:
+    return os.path.join(ADDON.getAddonInfo("path"), "resources", "media", f"icon-{name}.png")
+
+
+def set_item_icon(item: xbmcgui.ListItem, icon: str) -> None:
+    item.setArt({"icon": icon, "thumb": icon})
+
+
+def discovery_icon() -> str:
+    """Searching while Discovery mode plays its snippets (not the radio's scan), else the compass."""
+    state = get_discovery_state()
+    return media_icon("searching" if state.get("enabled") and state.get("owner") != "radio" else "discovery")
+
+
+def radio_icon() -> str:
+    """Playing while a station plays, searching while the radio scans, else the radio."""
+    return media_icon({"playing": "playing", "seeking": "searching"}.get(radio_phase(), "radio"))
+
+
 def show_root() -> None:
     xbmcplugin.setPluginCategory(HANDLE, "MusicIP")
     xbmcplugin.setContent(HANDLE, "files")
@@ -4547,6 +4572,7 @@ def show_root() -> None:
     generate_label = "Generate mix from playing audio"
     generate_item = xbmcgui.ListItem(label=generate_label, offscreen=True)
     apply_music_metadata(generate_item, generate_label)
+    set_item_icon(generate_item, media_icon("generate"))
     add_directory_item(
         HANDLE,
         addon_url(action="generate_current_mix"),
@@ -4556,6 +4582,7 @@ def show_root() -> None:
 
     discovery_item = xbmcgui.ListItem(label="Discovery mode", offscreen=True)
     apply_music_metadata(discovery_item, "Discovery mode")
+    set_item_icon(discovery_item, discovery_icon())
     add_directory_item(
         HANDLE,
         addon_url(action="discovery_mode"),
@@ -4565,6 +4592,7 @@ def show_root() -> None:
 
     radio_item = xbmcgui.ListItem(label="Radio mode", offscreen=True)
     apply_music_metadata(radio_item, "Radio mode")
+    set_item_icon(radio_item, radio_icon())
     add_directory_item(
         HANDLE,
         addon_url(action="radio_mode"),
@@ -4574,6 +4602,7 @@ def show_root() -> None:
 
     recent_item = xbmcgui.ListItem(label="Recent mixes", offscreen=True)
     apply_music_metadata(recent_item, "Recent mixes")
+    set_item_icon(recent_item, SKIN_FOLDER_ICON)  # a folder of mixes: the skin's own folder icon
     add_directory_item(
         HANDLE,
         build_saved_mixes_url(),
@@ -4583,6 +4612,7 @@ def show_root() -> None:
 
     settings_item = xbmcgui.ListItem(label="Settings", offscreen=True)
     apply_music_metadata(settings_item, "Settings")
+    set_item_icon(settings_item, media_icon("settings"))
     settings_item.setProperty("IsPlayable", "false")
     add_directory_item(
         HANDLE,

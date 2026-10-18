@@ -64,7 +64,7 @@ Found on 2026-10-11 while removing the Discovery command channel (F6). They are 
 
 Found by the user on 2026-10-18: while scanning, the Radio screen is redrawn with every snippet (F20), and the focus jumped back to the first entry each time, for example from "Skip station" to "Pick this station". Two causes: every entry's URL carried a new nonce on each redraw, so Kodi couldn't find the focused entry again, and the service redrew with `Container.Update(...,replace)`, which starts the screen afresh.
 
-Fixed in 126d927 (2026-10-18): the entries of both screens have the same URL on every redraw, and the service redraws with `Container.Refresh`, which keeps the focused entry. `test_radio_mode.RadioMenuTest` and `test_main_discovery.DiscoveryMenuFocusTest` check the stable URLs; that Kodi then keeps the focus is Kodi's behaviour and needs a look in Kodi.
+Fixed in af61f96 on `main`, 126d927 on `ai-mix-assist` (2026-10-18): the entries of both screens have the same URL on every redraw, and the service redraws with `Container.Refresh`, which keeps the focused entry. `test_radio_mode.RadioMenuTest` and `test_main_discovery.DiscoveryMenuFocusTest` check the stable URLs; that Kodi then keeps the focus is Kodi's behaviour and needs a look in Kodi.
 
 ### F23 · The information window left two errors in Kodi's log
 
