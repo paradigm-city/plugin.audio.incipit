@@ -339,6 +339,8 @@ Judging a finished MusicIP mix with drift above 0 was tested and does not work: 
 
 **Decided (2026-10-15, "More like this"):** the new tracks are measured against the selected song, not the whole mix: "More like this" refers to THIS song, which may be the seed. Measured against the whole mix, a song at the edge of the mix got no tracks at all.
 
+**Decided (2026-10-18, language):** no language dimension for now. "Instrumental" is already the low end of *Form*; the language of sung tracks has no order, so it could only be a rule (a sung track in another language than the seed's counts as a miss), fed by a per-album language label asked of the AI and stored apart from the ratings, so the 4,184 cached ratings would stay valid. Not built: no mix so far has been spoiled by a language jump. Revisit if listening shows it.
+
 ## Running Claude from Kodi (spike, 2026-10-14)
 
 Tested from Kodi 21's Python (3.8.15) on Windows, inside the running add-on:
