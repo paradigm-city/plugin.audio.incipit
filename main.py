@@ -2611,7 +2611,7 @@ def fetch_mix_confirmed(seed_song: str, size: int) -> list[str]:
         raise MusicIPError("Mix generation cancelled.")
 
     remember_mix_generation_parameters(seed_song, size, params)
-    remember_mix_assist_choices(mix_cache_path(seed_song, size), params)
+    remember_mix_assist_choices(mix_cache_key(seed_song, size), params)
     with BackgroundProgress("Creating a MusicIP mix") as progress:
         return fetch_mix(seed_song, int(params.get("size") or size), mix_params=params, progress=progress)
 
@@ -4643,11 +4643,12 @@ def add_current_mix_item(cache_path: str) -> None:
     set_item_icon(item, CURRENT_MIX_ICON)
     item.setProperty("IsPlayable", "false")
     details = [path_to_label(meta.get("seed", "")), f"{len(tracks)} tracks", "saved" if saved else "not saved"]
-    item.setLabel2(" · ".join(detail for detail in details if detail))
+    item.setLabel2(" | ".join(detail for detail in details if detail))
     context_items = [] if saved else [("Save mix", build_save_mix_action(cache_path))]
     context_items += [
         ("Information", run_plugin_url(action="mix_info", cache_path=cache_path, nonce=new_nonce())),
         ("Check consistency", build_check_mix_action(cache_path)),
+        ("AI Mix Assist...", build_mix_assist_action("mix_assist_menu", cache_path)),
     ]
     item.addContextMenuItems(context_items)
     add_directory_item(HANDLE, build_saved_browse_url(cache_path), item, isFolder=True)
@@ -5745,9 +5746,15 @@ MIX_HISTORY_FORMATTERS = {
 }
 
 
+def mix_history_events(meta: dict) -> list[dict]:
+    """The history's events, oldest first; the AI's naming only once the mix is saved (see mix_name)."""
+    return [event for event in meta.get(MIX_HISTORY_KEY) or []
+            if isinstance(event, dict) and (event.get("kind") != "named" or is_mix_saved(meta))]
+
+
 def build_mix_history_text(meta: dict) -> str:
     """The history, newest first."""
-    events = [event for event in meta.get(MIX_HISTORY_KEY) or [] if isinstance(event, dict)]
+    events = mix_history_events(meta)
     if not events:
         return "Nothing recorded yet. The history starts with mixes created or changed from now on."
     blocks = []
@@ -6079,7 +6086,8 @@ def mix_info_parts(cache_path: str) -> dict:
     length = format_play_length(sum(durations))
     if durations and not all(durations):
         length = "about " + length
-    info["facts"] = f"Created {format_sidecar_ts(meta.get('updated_ts'))} | {len(tracks)} tracks | {length}"
+    info["facts"] = f"Created {format_sidecar_ts(meta.get('updated_ts'))} | {len(tracks)} tracks | {length}" + \
+        ("" if is_mix_saved(meta) else " | not saved yet")
     seed = str(meta.get("seed") or (tracks[0] if tracks else ""))
     info["from"] = ""
     if seed:
@@ -6740,7 +6748,7 @@ def check_more_like_this(cache_path: str, tracks: list[str], selected: int, cand
 MIX_OPENNESS_OFF = -1
 MIX_OPENNESS_LABELS = ("Focused", "Close", "Balanced", "Open", "Adventurous")
 MIX_ASSIST_DIALOG_FIRST = 6  # the generate dialog's lines for AI Mix Assist follow the six MusicIP lines
-PENDING_MIX_ASSIST_CHOICES: dict[str, dict] = {}  # cache path -> choices made in the dialog, until the mix is saved
+PENDING_MIX_ASSIST_CHOICES: dict[str, dict] = {}  # mix_cache_key -> choices made in the dialog, until the mix is stored
 
 
 def mix_openness_label(index: int) -> str:
@@ -6805,24 +6813,26 @@ def select_mix_openness(heading: str, current: int) -> int | None:
     return options[choice]
 
 
-def remember_mix_assist_choices(cache_path: str, params: dict) -> None:
-    """Keep the dialog's AI Mix Assist choices until the new mix is saved (queue_mix_assist_for_new_mix)."""
+def remember_mix_assist_choices(key: str, params: dict) -> None:
+    """Keep the dialog's AI Mix Assist choices until the new mix is stored (queue_mix_assist_for_new_mix).
+    key: mix_cache_key() of the seed and size."""
     choices = {}
     if "assist_openness" in params and int(params["assist_openness"]) != default_mix_openness():
         choices["openness"] = int(params["assist_openness"])
     if str(params.get("assist_intent") or "").strip():
         choices["listener_intent"] = str(params["assist_intent"]).strip()
     if choices:
-        PENDING_MIX_ASSIST_CHOICES[cache_path] = choices
+        PENDING_MIX_ASSIST_CHOICES[key] = choices
     else:
-        PENDING_MIX_ASSIST_CHOICES.pop(cache_path, None)
+        PENDING_MIX_ASSIST_CHOICES.pop(key, None)
 
 
 def apply_mix_assist_choices(cache_path: str, tracks: list[str]) -> None:
-    choices = PENDING_MIX_ASSIST_CHOICES.pop(cache_path, None)
+    meta = get_saved_mix_metadata(cache_path, tracks)
+    choices = PENDING_MIX_ASSIST_CHOICES.pop(mix_cache_key(str(meta.get("seed") or ""), int(meta.get("size") or 0)),
+                                             None)
     if not choices:
         return
-    meta = get_saved_mix_metadata(cache_path, tracks)
     section = get_mix_assist_section(meta)
     section.update(choices)
     meta[MIX_ASSIST_SECTION] = section
@@ -6840,7 +6850,8 @@ def choose_from_mix_assist_menu(cache_path: str) -> str:
     entries = [
         (f"What this mix is about: {shorten(intent, 50) if intent else '<not worked out yet>'}", "mix_assist_edit_intent"),
         (f"Openness: {mix_openness_label(mix_openness_index(meta))}", "mix_assist_openness"),
-    ] + ([(f"Name: {mix_name(meta) or '<given at the first check>'}", "mix_assist_rename")] if mix_naming_enabled() else []) + [
+    ] + ([(f"Name: {mix_name(meta) or '<given at the first check>'}", "mix_assist_rename")]
+         if mix_naming_enabled() and is_mix_saved(meta) else []) + [
         ("Tidy up now", "mix_assist_tidy_up"),
     ]
     if section.get("previous_tracks"):
@@ -6873,8 +6884,9 @@ def mix_naming_enabled() -> bool:
 
 
 def mix_name(meta: dict) -> str:
-    """The mix's name: the listener's, else the AI's; "" without one (or with naming switched off)."""
-    if not mix_naming_enabled():
+    """The mix's name: the listener's, else the AI's; "" without one (or with naming switched off). A mix that isn't
+    saved yet shows no name: the AI's name comes with saving."""
+    if not mix_naming_enabled() or not is_mix_saved(meta):
         return ""
     section = get_mix_assist_section(meta)
     return str(section.get("listener_name") or section.get("ai_name") or "").strip()
