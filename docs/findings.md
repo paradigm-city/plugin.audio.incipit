@@ -60,6 +60,18 @@ Found on 2026-10-11 while removing the Discovery command channel (F6). They are 
 
 ## Resolved
 
+### F23 · The information window left two errors in Kodi's log
+
+Found in the log on 2026-10-18: each time the information window opened, Kodi logged "Control 201 in window 13000 has been asked to focus, but it can't" (the first tab was hidden until the window's properties were set, so the window opened without focus), and some 10 to 40 seconds after it closed, "EXCEPTION: Window id does not exist" (a focus change reported while the window closed reached a window that was gone).
+
+Fixed in e1321be (2026-10-18): the first tab is always shown, and focus changes on a closing window are ignored. `test_main_plugin_routes.MixInfoTest` covers both.
+
+### F22 · Radio asked a failing MusicIP every minute, silently
+
+Found on 2026-10-18 from the log: MusicIP answered every mix with HTTP 500 ("MusicIP API error - invalid request or internal error"), for every song, while it still knew the songs (`/api/getSong` worked). A restart of the MusicIP server is the remedy; the add-on can't repair it. But the station asked again every minute, each time with a server reload, and nothing told the listener; the station would simply have run dry.
+
+Fixed in e1321be (2026-10-18): a refill whose song fails tries the song before it, without another reload (a single song may be the problem). When that fails too, the station waits 1, 2, 4, 8, then 10 minutes between tries, shows one notification ("MusicIP can't make mixes right now ... restart the MusicIP server") and records the outage, and MusicIP's return, in "Station information". `test_radio_mode.StationTest` covers it.
+
 ### F21 · Estuary's Noto Sans draws broken glyphs in Pillow
 
 Found on 2026-10-17 while building the information window: text drawn into the charts with Estuary's `NotoSans-Regular.ttf` came out with parts of the glyphs missing ("Polished" looked like "Folished", 9 like a reversed c), in Pillow 12 (FreeType 2.14) as well, with both layout engines. Kodi itself draws the font correctly. Kodi's own `media/Fonts/arial.ttf` (DejaVu Sans), which every Kodi installation has, draws correctly.
