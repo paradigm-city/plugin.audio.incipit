@@ -1,6 +1,5 @@
-"""Charts as PNG images: line charts (a station's drift, a mix's course; straight or smooth) and range bars (a
-mix's sound). A series on the right-hand scale (the sounding year) is drawn dashed, so it doesn't read as one of the
-0-10 scales.
+"""Charts as PNG images: line charts (a station's drift, a mix's course; straight or smooth, optionally see-through,
+so crossing lines stay visible) and range bars (a mix's sound).
 
 Uses Pillow when Kodi's Python has it (Kodi for Windows ships Pillow 6.2), with smooth lines and, given a TrueType
 font, text in the image; otherwise a small built-in drawing (zlib), with plain lines and no text.
@@ -135,71 +134,58 @@ def smooth_curve(points: Sequence[Tuple[float, float]], steps: int = 10) -> List
     return curve
 
 
-def dashes(points: Sequence[Tuple[float, float]], dash: float, gap: float) -> List[List[Tuple[float, float]]]:
-    """The pieces of a dashed line along the points."""
-    pieces, piece, drawing, left = [], [points[0]], True, dash
-    for (x0, y0), (x1, y1) in zip(points, points[1:]):
-        length = math.hypot(x1 - x0, y1 - y0)
-        done = 0.0
-        while length - done > left:
-            done += left
-            point = (x0 + (x1 - x0) * done / length, y0 + (y1 - y0) * done / length)
-            if drawing:
-                pieces.append(piece + [point])
-            piece, drawing, left = [point], not drawing, gap if drawing else dash
-        left -= length - done
-        if drawing:
-            piece.append((x1, y1))
-    if drawing and len(piece) > 1:
-        pieces.append(piece)
-    return pieces
-
-
 def render_chart(path: str, xs: Sequence[float], series: Sequence[Series], size: Tuple[int, int],
                  plot: Tuple[int, int, int, int], left_range: Tuple[float, float],
                  right_range: Optional[Tuple[float, float]] = None, grid_lines: int = 4,
                  texts: Sequence[Text] = (), font_path: str = "", points: bool = True, smooth: bool = False,
-                 line_width: int = 3) -> str:
-    """Draw a horizontal grid and one line per series (None values break it); returns which renderer was used."""
+                 line_width: int = 3, opacity: float = 1.0) -> str:
+    """Draw a horizontal grid and one line per series (None values break it), each with the given opacity; returns
+    which renderer was used."""
     xs = list(xs)
     if len(xs) == 1:  # a single measurement: a flat line across the plot
         xs = [xs[0], xs[0] + 1]
         series = [Series(s.name, s.color, s.values * 2, s.axis) for s in series]
-    lines = []  # (colour, points, dashed); the right-hand scale first, behind the others
+    lines = []  # (colour, runs) per series; the right-hand scale first, behind the others
     for item in sorted(series, key=lambda item: item.axis != "right"):
         value_range = right_range if item.axis == "right" and right_range else left_range
-        dashed = item.axis == "right" and right_range is not None
-        lines += [(item.color, run, dashed) for run in plot_runs(xs, item.values, plot, value_range)]
+        lines.append((item.color, plot_runs(xs, item.values, plot, value_range)))
     left, top, right, bottom = plot
     grid = [top + (bottom - top) * step / grid_lines for step in range(grid_lines + 1)]
     try:
         from PIL import Image, ImageDraw  # noqa: F401
     except Exception:
-        _render_plain(path, size, plot, grid, [(color, run) for color, run, _dashed in lines])
+        _render_plain(path, size, plot, grid, [(color, run) for color, runs in lines for run in runs])
         return "plain"
-    _render_pillow(path, size, plot, grid, lines, texts, font_path, points, smooth, line_width)
+    _render_pillow(path, size, plot, grid, lines, texts, font_path, points, smooth, line_width, opacity)
     return "pillow"
 
 
 def _render_pillow(path, size, plot, grid, lines, texts=(), font_path="", points=True, smooth=False,
-                   line_width=3) -> None:
+                   line_width=3, opacity=1.0) -> None:
     from PIL import Image, ImageDraw
 
     k = SUPERSAMPLE
-    image = Image.new("RGB", (size[0] * k, size[1] * k), BACKGROUND)
+    image = Image.new("RGBA", (size[0] * k, size[1] * k), BACKGROUND + (255,))
     draw = ImageDraw.Draw(image)
     left, top, right, bottom = plot
     for y in grid:
         draw.line([(left * k, y * k), (right * k, y * k)], fill=GRID, width=k)
-    for color, run, dashed in lines:
-        scaled = [(x * k, y * k) for x, y in run]
-        curve = smooth_curve(scaled) if smooth else scaled
-        for piece in (dashes(curve, 10 * k, 7 * k) if dashed else [curve]):
-            draw.line(piece, fill=color, width=line_width * k, joint="curve")
-        if points or len(run) == 1:  # a lone value would vanish without its dot
-            for x, y in scaled:
-                r = (line_width + 1) * k
-                draw.ellipse([x - r, y - r, x + r, y + r], fill=color)
+    for color, runs in lines:  # each series on a layer of its own, so where it crosses itself it isn't darker
+        layer = Image.new("RGBA", image.size, (0, 0, 0, 0))
+        pen = ImageDraw.Draw(layer)
+        for run in runs:
+            scaled = [(x * k, y * k) for x, y in run]
+            pen.line(smooth_curve(scaled) if smooth else scaled, fill=color + (255,), width=line_width * k,
+                     joint="curve")
+            if points or len(run) == 1:  # a lone value would vanish without its dot
+                for x, y in scaled:
+                    r = (line_width + 1) * k
+                    pen.ellipse([x - r, y - r, x + r, y + r], fill=color + (255,))
+        if opacity < 1:
+            layer.putalpha(layer.getchannel("A").point(lambda alpha: int(alpha * opacity)))
+        image = Image.alpha_composite(image, layer)
+    image = image.convert("RGB")
+    draw = ImageDraw.Draw(image)
     draw_texts(draw, texts, font_path, k)
     resample = getattr(Image, "LANCZOS", getattr(Image, "ANTIALIAS", 1))
     image.resize(size, resample).save(path, "PNG")

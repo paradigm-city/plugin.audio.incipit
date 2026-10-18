@@ -6077,7 +6077,8 @@ def mix_info_tabs(info: dict) -> list[dict]:
         render_course_chart(course, path, font)
         tabs.append({"title": "Course", "image": path,
                      "text": "Each track's ratings in the mix's order, from the first track (left) to the last: the "
-                             "seven scales from 0 to 10 (left), the sounding year dashed, on its own scale (right).\n"
+                             "seven scales from 0 to 10 (left), the sounding year in white, on its own scale "
+                             "(right).\n"
                              f"{info['rated']}"})
 
     if info["changes"]:
@@ -6123,14 +6124,15 @@ def course_chart_series(course: list[list]) -> dict:
 
 def render_course_chart(course: list[list], path: str, font: str) -> str:
     """All dimensions in one chart, track by track, as smooth curves: the seven scales on 0-10 (left), the
-    sounding year on its own scale (right, dashed)."""
+    sounding year on its own scale (right, white); the lines see-through where they cross."""
     data = course_chart_series(course)
     series = [mix_assist_chart.Series(item["name"], mix_assist_chart.hex_color(item["color"]), item["values"], item["axis"])
               for item in data["series"]]
     tracks = data["tracks"]
     texts = line_chart_texts(data, "Track 1", f"Track {tracks[-1]}", [item["legend"] for item in data["series"]])
     return mix_assist_chart.render_chart(path, tracks, series, INFO_CHART_SIZE, DRIFT_PLOT, (0, 10), data["years"],
-                                         texts=texts, font_path=font, points=False, smooth=True, line_width=2)
+                                         texts=texts, font_path=font, points=False, smooth=True, line_width=2,
+                                         opacity=CHART_LINE_OPACITY)
 
 
 def year_range(years: list[float]) -> tuple[int, int]:
@@ -7282,7 +7284,8 @@ def build_radio_drift(events: list[dict]) -> str:
 
 # The drift chart: one line per dimension; the seven scales share the left axis (0-10), the sounding year has
 # its own on the right; the legend on the right says where each started and where it is now.
-DIMENSION_COLORS = ("#E45756", "#4C9BE8", "#F2C14E", "#59C27A", "#B07AE8", "#F28E2B", "#4FD1C5", "#DADADA")
+DIMENSION_COLORS = ("#E45756", "#4C9BE8", "#F2C14E", "#59C27A", "#B07AE8", "#F28E2B", "#4FD1C5", "#FFFFFF")
+CHART_LINE_OPACITY = 0.7  # lines see-through, so crossings stay readable
 DRIFT_PLOT = (64, 24, 740, 410)  # left, top, right, bottom of the plot in the chart (INFO_CHART_SIZE)
 DRIFT_LEGEND_X = 840
 
@@ -7307,7 +7310,8 @@ def render_drift_chart(data: dict, path: str, font: str = "") -> str:
     series = [mix_assist_chart.Series(item["name"], mix_assist_chart.hex_color(item["color"]), item["values"], item["axis"])
               for item in data["series"]]
     return mix_assist_chart.render_chart(path, data["times"], series, INFO_CHART_SIZE, DRIFT_PLOT, (0, 10), data["years"],
-                                         texts=drift_chart_texts(data), font_path=font)
+                                         texts=drift_chart_texts(data), font_path=font,
+                                         opacity=CHART_LINE_OPACITY)
 
 
 def drift_chart_texts(data: dict) -> list:
@@ -7335,7 +7339,7 @@ def line_chart_texts(data: dict, first: str, last: str, legends: list[str]) -> l
     texts.append(Text(right, bottom + 14, last, align="right", size=20))
     for index, (item, legend) in enumerate(zip(data["series"], legends)):
         y = 12 + index * 56
-        name = item["name"] + (" (right, - - -)" if item.get("axis") == "right" else "")
+        name = item["name"] + (" (right scale)" if item.get("axis") == "right" else "")
         texts.append(Text(DRIFT_LEGEND_X, y, name, mix_assist_chart.hex_color(item["color"]), size=21))
         texts.append(Text(DRIFT_LEGEND_X, y + 24, legend, size=19))
     return texts
