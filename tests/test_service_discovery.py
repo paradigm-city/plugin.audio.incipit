@@ -253,6 +253,12 @@ class MenuRefreshAndResetTest(KodiTestCase):
         service.refresh_discovery_menu_if_visible()
         self.assertEqual(kodi.builtins, ["Container.Refresh"])  # keeps the focused item
 
+    def test_the_visible_root_follows_discovery(self):
+        service.save_discovery_state({"ui_refresh_requested": True})
+        kodi.info_labels["Container.FolderPath"] = "plugin://plugin.audio.musicip/"
+        service.refresh_discovery_menu_if_visible()
+        self.assertEqual(kodi.builtins, ["Container.Refresh"])
+
     def test_hidden_menu_is_not_refreshed(self):
         service.save_discovery_state({"ui_refresh_requested": True})
         service.refresh_discovery_menu_if_visible()

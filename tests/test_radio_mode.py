@@ -471,6 +471,17 @@ class StationTest(RadioTestCase):
 
 
 class RadioServiceIntegrationTest(RadioTestCase):
+    def test_the_visible_root_follows_the_radio(self):
+        for folder in ("plugin://plugin.audio.musicip/", "plugin://plugin.audio.musicip", "plugin://plugin.audio.musicip/?"):
+            with self.subTest(folder=folder):
+                kodi.builtins.clear()
+                main.save_radio_state({"phase": "playing", "ui_refresh_requested": True})
+                kodi.info_labels["Container.FolderPath"] = folder
+                service.refresh_radio_menu_if_visible()
+                self.assertEqual(kodi.builtins, ["Container.Refresh"])
+        self.assertFalse(service.is_addon_root("plugin://plugin.audio.musicip/?action=saved_mixes"))
+        self.assertFalse(service.is_addon_root("plugin://plugin.audio.other/"))
+
     def test_visible_radio_screen_is_refreshed_once(self):
         main.save_radio_state({"phase": "off", "ui_refresh_requested": True})
         folder = "plugin://plugin.audio.musicip/?action=radio_mode&nonce=1"

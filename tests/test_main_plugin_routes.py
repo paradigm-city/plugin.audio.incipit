@@ -22,6 +22,41 @@ def item_by_label(label):
     raise AssertionError(f"{label!r} not listed; have {[i.getLabel() for _u, i, _f in kodi.directory_items]}")
 
 
+class RootIconTest(KodiTestCase):
+    def icons(self):
+        kodi.directory_items.clear()
+        self.run_plugin()
+        return {item.getLabel(): os.path.basename(item.getArt("icon")) for _url, item, _folder in kodi.directory_items}
+
+    def test_each_entry_has_its_icon(self):
+        self.assertEqual(self.icons(), {
+            "Generate mix from playing audio": "icon-generate.png", "Discovery mode": "icon-discovery.png",
+            "Radio mode": "icon-radio.png", "Recent mixes": "DefaultFolder.png", "Settings": "icon-settings.png"})
+        for _url, item, _folder in kodi.directory_items:
+            self.assertEqual(item.getArt("thumb"), item.getArt("icon"))
+
+    def test_the_icons_are_shipped(self):
+        media = os.path.join(ADDON_DIR, "resources", "media")
+        for name in ("generate", "discovery", "searching", "radio", "playing", "settings"):
+            self.assertTrue(os.path.isfile(os.path.join(media, f"icon-{name}.png")), name)
+        self.assertTrue(os.path.isfile(os.path.join(media, "LICENSE.txt")))  # Font Awesome: CC BY 4.0
+        self.assertEqual(main.media_icon("radio"), os.path.join(main.ADDON.getAddonInfo("path"), "resources", "media",
+                                                                "icon-radio.png"))
+
+    def test_discovery_searching(self):
+        main.save_discovery_state({"enabled": True})
+        self.assertEqual(self.icons()["Discovery mode"], "icon-searching.png")
+
+    def test_radio_scanning_and_playing(self):
+        main.save_discovery_state({"enabled": True, "owner": "radio"})  # the radio's scan, not Discovery mode
+        main.save_radio_state({"phase": "seeking"})
+        icons = self.icons()
+        self.assertEqual((icons["Discovery mode"], icons["Radio mode"]), ("icon-discovery.png", "icon-searching.png"))
+        main.save_discovery_state({})
+        main.save_radio_state({"phase": "playing"})
+        self.assertEqual(self.icons()["Radio mode"], "icon-playing.png")
+
+
 class RootAndSettingsTest(KodiTestCase):
     def test_root_menu(self):
         self.run_plugin()
