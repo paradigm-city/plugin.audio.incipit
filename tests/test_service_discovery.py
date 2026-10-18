@@ -251,7 +251,7 @@ class MenuRefreshAndResetTest(KodiTestCase):
         kodi.info_labels["Container.FolderPath"] = folder
         service.refresh_discovery_menu_if_visible()
         service.refresh_discovery_menu_if_visible()
-        self.assertEqual(kodi.builtins, [f"Container.Update({folder},replace)"])
+        self.assertEqual(kodi.builtins, ["Container.Refresh"])  # keeps the focused item
 
     def test_hidden_menu_is_not_refreshed(self):
         service.save_discovery_state({"ui_refresh_requested": True})

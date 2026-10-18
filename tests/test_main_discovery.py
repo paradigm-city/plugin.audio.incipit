@@ -45,6 +45,17 @@ class DiscoveryMenuTest(KodiTestCase):
         self.assertIn(("setPluginCategory", "Discovery mode: Artist 1 - Song 1"), kodi.directory_calls)
 
 
+class DiscoveryMenuFocusTest(KodiTestCase):
+    def test_a_redrawn_screen_has_the_same_urls_so_kodi_keeps_the_focus(self):
+        main.save_discovery_state({"enabled": True, "current_label": "Artist 1 - Song 1"})
+        self.run_plugin(action="discovery_mode")
+        first = [url for url, _item, _folder in kodi.directory_items]
+        kodi.directory_items.clear()
+        main.save_discovery_state({"enabled": True, "current_label": "Artist 2 - Song 2"})
+        self.run_plugin(action="discovery_mode")
+        self.assertEqual([url for url, _item, _folder in kodi.directory_items], first)
+
+
 class StartStopTest(KodiTestCase):
     def test_start_fills_playlist_and_plays_from_offset(self):
         add_library_songs()
