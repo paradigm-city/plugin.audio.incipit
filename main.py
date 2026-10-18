@@ -4608,13 +4608,15 @@ def add_discovery_run_action_item(label: str, action: str) -> None:
 
 
 def add_discovery_action_item(label: str, action: str, is_folder: bool = True) -> None:
+    # The same URL every time (no nonce): when the screen is redrawn, Kodi finds the focused item by its URL and
+    # keeps the focus on it.
     item = xbmcgui.ListItem(label=label, offscreen=True)
     apply_music_metadata(item, label)
     if not is_folder:
         item.setProperty("IsPlayable", "false")
     add_directory_item(
         HANDLE,
-        addon_url(action=action, nonce=new_nonce()),
+        addon_url(action=action),
         item,
         isFolder=is_folder,
     )
@@ -4745,11 +4747,12 @@ def radio_phase() -> str:
 
 
 def add_radio_action_item(label: str, action: str) -> None:
-    # Actions, not folders: Kodi runs them without expecting a directory listing.
+    # Actions, not folders: Kodi runs them without expecting a directory listing. The same URL every time (no
+    # nonce): when the screen is redrawn (while scanning, with every snippet), Kodi keeps the focus on the item.
     item = xbmcgui.ListItem(label=label, offscreen=True)
     apply_music_metadata(item, label)
     item.setProperty("IsPlayable", "false")
-    add_directory_item(HANDLE, addon_url(action=action, nonce=new_nonce()), item, isFolder=False)
+    add_directory_item(HANDLE, addon_url(action=action), item, isFolder=False)
 
 
 def show_radio_mode_menu() -> None:
