@@ -63,6 +63,15 @@ class RadioMenuTest(RadioTestCase):
             self.assertEqual(item.getProperty("IsPlayable"), "false")
             self.assertEqual(plugin_query(url)["action"], "radio_on")
 
+    def test_a_redrawn_screen_has_the_same_urls_so_kodi_keeps_the_focus(self):
+        self.turn_on()
+        self.menu()
+        first = [url for url, _item, _folder in kodi.directory_items]
+        self.clock.advance(5)  # a later redraw
+        self.menu()
+        self.assertEqual([url for url, _item, _folder in kodi.directory_items], first)
+        self.assertTrue(all("nonce" not in url for url in first))
+
     def test_tuning_and_playing(self):
         self.turn_on()
         self.assertEqual(self.menu(), ["Pick this station", "Skip station", "Stop radio"])
@@ -97,7 +106,7 @@ class TuningTest(RadioTestCase):
         main.skip_discovery_song()  # the next snippet
         self.tick()
         service.refresh_radio_menu_if_visible()
-        self.assertEqual(kodi.builtins, ["Container.Update(plugin://plugin.audio.musicip/?action=radio_mode&nonce=1,replace)"])
+        self.assertEqual(kodi.builtins, ["Container.Refresh"])
 
     def test_no_redraw_while_kodi_is_loading_a_list(self):
         self.turn_on()
@@ -530,7 +539,7 @@ class RadioServiceIntegrationTest(RadioTestCase):
         kodi.info_labels["Container.FolderPath"] = folder
         service.refresh_radio_menu_if_visible()
         service.refresh_radio_menu_if_visible()
-        self.assertEqual(kodi.builtins, [f"Container.Update({folder},replace)"])
+        self.assertEqual(kodi.builtins, ["Container.Refresh"])  # keeps the focused item
 
     def test_hidden_radio_screen_is_not_refreshed(self):
         main.save_radio_state({"phase": "off", "ui_refresh_requested": True})
