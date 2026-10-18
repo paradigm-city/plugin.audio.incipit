@@ -4637,11 +4637,13 @@ def add_discovery_run_action_item(label: str, action: str) -> None:
     )
 
 
-def add_discovery_action_item(label: str, action: str, is_folder: bool = True) -> None:
+def add_discovery_action_item(label: str, action: str, is_folder: bool = True, icon: str = "") -> None:
     # The same URL every time (no nonce): when the screen is redrawn, Kodi finds the focused item by its URL and
     # keeps the focus on it.
     item = xbmcgui.ListItem(label=label, offscreen=True)
     apply_music_metadata(item, label)
+    if icon:
+        set_item_icon(item, media_icon(icon))
     if not is_folder:
         item.setProperty("IsPlayable", "false")
     add_directory_item(
@@ -4668,13 +4670,12 @@ def show_discovery_mode_menu() -> None:
     xbmcplugin.setContent(HANDLE, "files")
 
     if active:
-        add_discovery_action_item("Create mix from current discovery song", "discovery_mix_current", is_folder=True)
-        add_discovery_action_item("Skip to next discovery song", "discovery_next", is_folder=True)
-        add_discovery_action_item("Stop discovery mode", "discovery_stop", is_folder=True)
-    else:
-        add_discovery_action_item("Start discovery mode", "discovery_start", is_folder=True)
-
-    add_discovery_action_item("Discovery mode settings", "open_settings", is_folder=False)
+        add_discovery_action_item("Create mix from current discovery song", "discovery_mix_current", is_folder=True,
+                                  icon="generate")
+        add_discovery_action_item("Skip to next discovery song", "discovery_next", is_folder=True, icon="skip")
+        add_discovery_action_item("Stop discovery mode", "discovery_stop", is_folder=True, icon="stop")
+    else:  # it scans through snippets, like the radio: the same icon
+        add_discovery_action_item("Start discovery mode", "discovery_start", is_folder=True, icon="searching")
 
     end_directory(HANDLE, cacheToDisc=False)
 

@@ -1,5 +1,6 @@
 """Discovery mode, plugin side: menu, start/stop/next, and creating a mix from the current discovery song."""
 
+import os
 import time
 import unittest
 from unittest import mock
@@ -30,9 +31,13 @@ class DiscoveryHelpersTest(unittest.TestCase):
 
 
 class DiscoveryMenuTest(KodiTestCase):
+    def icons(self):
+        return [os.path.basename(item.getArt("icon")) for _url, item, _folder in kodi.directory_items]
+
     def test_inactive_menu(self):
         self.run_plugin(action="discovery_mode")
-        self.assertEqual(self.listed_labels(), ["Start discovery mode", "Discovery mode settings"])
+        self.assertEqual(self.listed_labels(), ["Start discovery mode"])
+        self.assertEqual(self.icons(), ["icon-searching.png"])  # it scans, like the radio
         self.assertIn(("setPluginCategory", "MusicIP discovery mode"), kodi.directory_calls)
 
     def test_active_menu(self):
@@ -40,8 +45,9 @@ class DiscoveryMenuTest(KodiTestCase):
         self.run_plugin(action="discovery_mode")
         self.assertEqual(self.listed_labels(), [
             "Create mix from current discovery song", "Skip to next discovery song",
-            "Stop discovery mode", "Discovery mode settings",
+            "Stop discovery mode",
         ])
+        self.assertEqual(self.icons(), ["icon-generate.png", "icon-skip.png", "icon-stop.png"])
         self.assertIn(("setPluginCategory", "Discovery mode: Artist 1 - Song 1"), kodi.directory_calls)
 
 
