@@ -346,7 +346,10 @@ class GenerateDialogTest(MusicIPServerTestCase):
     def setUp(self):
         super().setUp()
         self.musicip.set_mix(TRACKS[0], TRACKS[1:])
-        self.cache_path = main.mix_cache_path(TRACKS[0], 20)
+
+    @property
+    def cache_path(self):
+        return main.get_current_mix_cache_path()
 
     def sidecar(self):
         return self.read_json(main.mix_meta_path_from_cache_path(self.cache_path))
@@ -429,6 +432,46 @@ class MixNameTest(MixAssistTestCase):
         self.assertEqual(self.label(), "Seed (5 tracks)")
 
 
+class CurrentMixNameTest(MixAssistTestCase):
+    """The AI's name of a mix that isn't saved yet stays hidden; saving lists the mix under it."""
+
+    def setUp(self):
+        super().setUp()
+        self.cache_path = self.save_mix(TRACKS, saved=False)
+        result = plan()
+        result["name"] = "Cosmic Analog Journeys"
+        self.tidy_up(result)
+
+    def meta(self):
+        return main.get_saved_mix_metadata(self.cache_path, TRACKS)
+
+    def test_the_name_is_hidden_until_the_mix_is_saved(self):
+        self.assertEqual(self.section()["ai_name"], "Cosmic Analog Journeys")
+        self.assertEqual(main.mix_name(self.meta()), "")
+        page = main.build_mix_info_page(self.cache_path)
+        self.assertNotIn("Cosmic Analog Journeys", page)
+        self.assertIn(" | not saved yet", page)
+        kodi.respond("select", -1)
+        self.run_plugin(action="mix_assist_menu", cache_path=self.cache_path)
+        self.assertFalse(any(label.startswith("Name") for label in kodi.dialogs("select")[-1][1][1]))
+
+    def test_saving_lists_the_mix_under_the_ai_name(self):
+        self.run_plugin(action="save_mix", cache_path=self.cache_path)
+        self.assertNotified('Saved as "Cosmic Analog Journeys".')
+        self.assertEqual(main.format_saved_mix_label(self.meta()), "Cosmic Analog Journeys (5 tracks)")
+        self.assertIn('named the mix "Cosmic Analog Journeys"', main.build_mix_history_text(self.meta()))
+        self.assertNotIn("not saved yet", main.build_mix_info_page(self.cache_path))
+
+    def test_the_first_screen_says_current_mix(self):
+        self.run_plugin()
+        labels = [item.getLabel() for _url, item, _folder in kodi.directory_items]
+        self.assertIn("Current mix", labels)
+        self.assertFalse(any("Cosmic" in label for label in labels))
+        item = [item for _url, item, _folder in kodi.directory_items if item.getLabel() == "Current mix"][0]
+        self.assertNotIn("Cosmic", item.getLabel2())
+        self.assertIn("AI Mix Assist...", [label for label, _action in item.context_menu])
+
+
 class SubmixFetcherTest(MusicIPServerTestCase):
     def test_musicip_reloads_only_before_the_first_submix(self):
         self.musicip.set_mix(TRACKS[1], [TRACKS[3]])
@@ -478,7 +521,7 @@ class NewMixGenerationQueueTest(MusicIPServerTestCase):
         self.run_plugin(action="browse_mix", seed=TRACKS[0], size="20")
         entries = self.read_json(main.mix_assist_queue_path()).get("entries", [])
         self.assertEqual([(e["cache_path"], e["tracks"]) for e in entries],
-                         [(main.mix_cache_path(TRACKS[0], 20), TRACKS)])
+                         [(main.get_current_mix_cache_path(), TRACKS)])
 
 
 class ProcessNewMixTest(MixAssistTestCase):

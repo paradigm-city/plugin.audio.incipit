@@ -39,9 +39,10 @@ class CurrentMixTest(KodiTestCase):
         self.assertTrue(is_folder)
         self.assertEqual(plugin_query(url), {"action": "browse_saved_mix", "cache_path": cache_path,
                                              "nonce": plugin_query(url)["nonce"]})
-        self.assertEqual(item.getLabel2(), "01 Ace of Spades · 2 tracks · not saved")
+        self.assertEqual(item.getLabel2(), "01 Ace of Spades | 2 tracks | not saved")
         self.assertEqual(os.path.basename(item.getArt("icon")), "DefaultMusicPlaylists.png")
-        self.assertEqual([label for label, _a in item.context_menu], ["Save mix", "Information", "Check consistency"])
+        self.assertEqual([label for label, _a in item.context_menu],
+                         ["Save mix", "Information", "Check consistency", "AI Mix Assist..."])
         self.assertIn("Saved: not yet", item.getProperty("Plot"))
 
     def test_saving_lists_the_mix_and_keeps_it_current(self):
@@ -55,7 +56,7 @@ class CurrentMixTest(KodiTestCase):
         self.assertEqual(main.get_current_mix_cache_path(), cache_path)
         self.root()
         _url, item, _folder = item_by_label("Current mix")
-        self.assertEqual(item.getLabel2(), "01 Ace of Spades · 2 tracks · saved")
+        self.assertEqual(item.getLabel2(), "01 Ace of Spades | 2 tracks | saved")
         self.assertNotIn("Save mix", [label for label, _a in item.context_menu])
         sidecar = self.read_json(main.mix_meta_path_from_cache_path(cache_path))
         self.assertNotIn("unsaved", sidecar)
