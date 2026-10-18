@@ -145,7 +145,7 @@ msgid "Name mixes and stations"
 msgstr ""
 
 msgctxt "#30413"
-msgid "At its first check, AI Mix Assist gives a mix or radio station a short name of 2 to 4 words saying what it is about, like \"Cosmic Analog Journeys\". It is shown instead of the seed song; a mix can be renamed in its \"AI Mix Assist...\" menu. Off: mixes and stations are named after their seed song."
+msgid "At its first check, AI Mix Assist gives a mix or radio station a short name of 2 to 4 words saying what it is about, like \"Cosmic Analog Journeys\". It is shown instead of the seed song and suggested when you save a mix; a mix can be renamed in its \"AI Mix Assist...\" menu. Off: mixes and stations are named after their seed song, unless you name them yourself."
 msgstr ""
 
 msgctxt "#30414"

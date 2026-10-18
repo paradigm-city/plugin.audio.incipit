@@ -1476,7 +1476,7 @@ def save_current_mix(cache_path: str, name: str = "") -> str:
         stored.pop("unsaved", None)
         stored["saved_ts"] = int(time.time())
         name = " ".join(name.split())
-        if name and name != suggested_mix_name(meta):
+        if name and name not in (suggested_mix_name(meta), plain(suggested_mix_name(meta))):
             stored["name"] = name
         save_json_file(mix_meta_path_from_cache_path(cache_path), stored)
         meta = get_saved_mix_metadata(cache_path)
@@ -1490,7 +1490,7 @@ def ask_and_save_mix(cache_path: str) -> str | None:
     meta = get_saved_mix_metadata(cache_path, load_mix_by_cache_path(cache_path))
     if is_mix_saved(meta):
         return saved_mix_name(meta)
-    name = ask_text("Save mix as", suggested_mix_name(meta))
+    name = ask_text("Save mix as", plain(suggested_mix_name(meta)))
     if name is None:
         return None
     return save_current_mix(cache_path, name)
@@ -6638,7 +6638,7 @@ def record_mix_assist_result(cache_path: str, original: list[str], plan: dict, a
         section["ai_name"] = plan["name"]
     meta[MIX_ASSIST_SECTION] = section
     save_json_file(mix_meta_path_from_cache_path(cache_path), meta)
-    if named and mix_naming_enabled() and not section.get("listener_name"):
+    if named and mix_naming_enabled() and not own_mix_name(meta):
         record_mix_history(cache_path, "named", name=plan["name"])
     record_mix_history(
         cache_path, "ai_tidy_up", automatic=automatic, intent=plan["intent"],
@@ -6906,31 +6906,37 @@ def mix_naming_enabled() -> bool:
     return get_setting_bool("mix_assist_name_mixes", True)
 
 
+def own_mix_name(meta: dict) -> str:
+    """The listener's name for the mix, given when saving or renaming it ("" without one). Older mixes kept a renamed
+    mix's name in the AI Mix Assist section."""
+    return str(meta.get("name") or get_mix_assist_section(meta).get("listener_name") or "").strip()
+
+
 def mix_name(meta: dict) -> str:
-    """The mix's name: the listener's, else the AI's; "" without one (or with naming switched off). A mix that isn't
-    saved yet shows no name: the AI's name comes with saving."""
-    if not mix_naming_enabled() or not is_mix_saved(meta):
+    """The mix's name: the listener's, else the AI's (unless naming is switched off); "" without one. A mix that
+    isn't saved yet shows no name: the AI's name comes with saving."""
+    if not is_mix_saved(meta):
         return ""
-    section = get_mix_assist_section(meta)
-    return str(section.get("listener_name") or section.get("ai_name") or "").strip()
+    ai_name = str(get_mix_assist_section(meta).get("ai_name") or "").strip() if mix_naming_enabled() else ""
+    return own_mix_name(meta) or ai_name
 
 
 def rename_mix(cache_path: str) -> bool:
     """Your own name for the mix; an empty name goes back to the AI's."""
-    meta = get_saved_mix_metadata(cache_path, load_mix_by_cache_path(cache_path))
-    section = get_mix_assist_section(meta)
-    current = mix_name(meta)
+    meta = load_json_file(mix_meta_path_from_cache_path(cache_path))
+    current = mix_name(get_saved_mix_metadata(cache_path, load_mix_by_cache_path(cache_path)))
     value = ask_text("Name of this mix", plain(current))
     if value is None:
         return False
     value = " ".join(value.split())
-    if value == current or (not value and not section.get("listener_name")):
+    if value == current or (not value and not own_mix_name(meta)):
         return False
+    meta.pop("name", None)
+    section = get_mix_assist_section(meta)
+    if section.pop("listener_name", None) is not None:  # where older versions kept it
+        meta[MIX_ASSIST_SECTION] = section
     if value:
-        section["listener_name"] = value
-    else:
-        section.pop("listener_name", None)
-    meta[MIX_ASSIST_SECTION] = section
+        meta["name"] = value
     save_json_file(mix_meta_path_from_cache_path(cache_path), meta)
     record_mix_history(cache_path, "renamed", name=value)
     xbmc.executebuiltin("Container.Refresh")
