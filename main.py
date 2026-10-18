@@ -4777,11 +4777,20 @@ def radio_phase() -> str:
     return phase if phase in ("seeking", "playing") else "off"
 
 
+# The Radio screen's icons, by action: the same as Discovery's for the same things (scan, skip, stop).
+RADIO_ACTION_ICONS = {
+    "radio_on": "searching", "radio_retune": "searching", "radio_play": "playing", "radio_tune": "skip",
+    "radio_stop": "stop",
+}
+
+
 def add_radio_action_item(label: str, action: str) -> None:
     # Actions, not folders: Kodi runs them without expecting a directory listing. The same URL every time (no
     # nonce): when the screen is redrawn (while scanning, with every snippet), Kodi keeps the focus on the item.
     item = xbmcgui.ListItem(label=label, offscreen=True)
     apply_music_metadata(item, label)
+    if action in RADIO_ACTION_ICONS:
+        set_item_icon(item, media_icon(RADIO_ACTION_ICONS[action]))
     item.setProperty("IsPlayable", "false")
     add_directory_item(HANDLE, addon_url(action=action), item, isFolder=False)
 
