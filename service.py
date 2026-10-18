@@ -839,7 +839,7 @@ def refresh_discovery_menu_if_visible() -> None:
     save_discovery_state(state)
 
     try:
-        xbmc.executebuiltin(f"Container.Update({container_folder},replace)")
+        xbmc.executebuiltin("Container.Refresh")  # a refresh keeps the focused item (Container.Update resets it)
         log_info("Discovery mode: refreshed visible Discovery mode menu.")
     except Exception as exc:
         log_info(f"Discovery mode: could not refresh Discovery mode menu: {exc}")
@@ -1361,7 +1361,7 @@ def refresh_radio_menu_if_visible() -> None:
     state["ui_refresh_requested"] = False
     save_radio_state(state)
     try:
-        xbmc.executebuiltin(f"Container.Update({container_folder},replace)")
+        xbmc.executebuiltin("Container.Refresh")  # a refresh keeps the focused item (Container.Update resets it)
     except Exception as exc:
         log_info(f"Radio mode: could not refresh the Radio screen: {exc}")
 
