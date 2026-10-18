@@ -1,5 +1,5 @@
-"""Charts as PNG images (the drift chart, the sound bars, the course strips), with Pillow and with the
-built-in drawing; text only with Pillow and a font."""
+"""Charts as PNG images (the drift and course line charts, the sound bars), with Pillow and with the built-in
+drawing; text only with Pillow and a font."""
 
 import builtins
 import os
@@ -78,23 +78,59 @@ def without_pillow():
     return mock.patch.object(builtins, "__import__", no_pil)
 
 
-class BarsAndStripsTest(unittest.TestCase):
+class SmoothLinesTest(unittest.TestCase):
+    def test_the_curve_goes_through_the_points_and_not_beyond_them(self):
+        points = [(0, 10), (10, 30), (20, 30), (30, 0), (40, 20)]
+        curve = chart.smooth_curve(points, steps=10)
+        self.assertEqual(len(curve), 41)
+        for point in points:
+            self.assertIn(point, [(round(x, 6), round(y, 6)) for x, y in curve])
+        for (x0, y0), (x1, y1) in zip(points, points[1:]):  # monotone: each piece stays between its two values
+            piece = [y for x, y in curve if x0 <= x <= x1]
+            self.assertGreaterEqual(min(piece), min(y0, y1) - 1e-9)
+            self.assertLessEqual(max(piece), max(y0, y1) + 1e-9)
+        self.assertEqual(chart.smooth_curve(points[:2]), points[:2])
+
+    def test_a_missing_value_breaks_the_line(self):
+        runs = chart.plot_runs([0, 1, 2, 3, 4], [5, 6, None, 7, None], PLOT, (0, 10))
+        self.assertEqual([len(run) for run in runs], [2, 1])
+        self.assertEqual(runs[1][0][0], 40 + 260 * 3 / 4)  # the x scale is the whole series'
+
+    def test_dashes(self):
+        pieces = chart.dashes([(0, 0), (100, 0)], 10, 5)
+        self.assertEqual(len(pieces), 7)
+        self.assertEqual((pieces[0][0], pieces[0][-1], pieces[1][0]), ((0, 0), (10.0, 0.0), (15.0, 0.0)))
+        self.assertEqual(pieces[-1][-1], (100, 0))
+
+    def test_a_smooth_chart_with_gaps_and_a_dashed_year(self):
+        folder = tempfile.mkdtemp()
+        series = [chart.Series("Energy", (228, 87, 86), [5, 6, None, 4, 7, 7]),
+                  chart.Series("Sounding year", (218, 218, 218), [1980, 1985, 1983, None, 1990, 1981], axis="right")]
+        for renderer in ("pillow", "plain"):
+            with self.subTest(renderer=renderer):
+                path = os.path.join(folder, f"{renderer}.png")
+                if renderer == "plain":
+                    with without_pillow():
+                        used = chart.render_chart(path, range(6), series, SIZE, PLOT, (0, 10), (1975, 1995), smooth=True)
+                else:
+                    used = chart.render_chart(path, range(6), series, SIZE, PLOT, (0, 10), (1975, 1995), smooth=True,
+                                              points=False, line_width=2)
+                self.assertEqual((used, png_size(path)), (renderer, SIZE))
+
+
+class BarsTest(unittest.TestCase):
     def setUp(self):
         self.folder = tempfile.mkdtemp()
         self.bars = [chart.Bar("Energy", 2, 5, 8, (228, 87, 86), "5.0 steady (2-8)"),
                      chart.Bar("Sounding year", 1978, 1983, 1990, (218, 218, 218), "1983 (1978-1990)", (1975, 1995))]
-        self.strips = [chart.Strip("Energy", [2, 4, None, 6, 8], (228, 87, 86), text="2-8"),
-                       chart.Strip("Sounding year", [1980, None], (218, 218, 218), (1975, 1995), "1980-1980")]
 
-    def test_bars_and_strips_with_and_without_pillow(self):
-        for name, draw, items in (("bars", chart.render_bars, self.bars), ("strips", chart.render_strips, self.strips)):
-            with self.subTest(chart=name):
-                path = os.path.join(self.folder, f"{name}.png")
-                self.assertEqual(draw(path, items, SIZE), "pillow")
-                self.assertEqual(png_size(path), SIZE)
-                with without_pillow():
-                    self.assertEqual(draw(path, items, SIZE), "plain")
-                self.assertEqual(png_size(path), SIZE)
+    def test_bars_with_and_without_pillow(self):
+        path = os.path.join(self.folder, "bars.png")
+        self.assertEqual(chart.render_bars(path, self.bars, SIZE), "pillow")
+        self.assertEqual(png_size(path), SIZE)
+        with without_pillow():
+            self.assertEqual(chart.render_bars(path, self.bars, SIZE), "plain")
+        self.assertEqual(png_size(path), SIZE)
 
     def test_text_needs_pillow_and_a_font(self):
         font = find_font()

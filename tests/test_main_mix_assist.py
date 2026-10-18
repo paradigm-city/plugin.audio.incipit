@@ -279,6 +279,7 @@ class SavedMixMenuTest(MixAssistTestCase):
         window.onFocus(203)
         self.assertTrue(os.path.isfile(window.properties["image"]))
         self.assertIn("in the mix's order", window.properties["text"])
+        self.assertIn("the sounding year dashed, on its own scale (right)", window.properties["text"])
         window.onFocus(204)
         self.assertEqual(window.properties["image"], "")
         self.assertIn("[B]Last tidy-up[/B]\nwilfried - fire walk » Medeski Martin & Wood - Think", window.properties["text"])
@@ -286,6 +287,21 @@ class SavedMixMenuTest(MixAssistTestCase):
         charts = os.listdir(os.path.dirname(sound))
         self.assertEqual(sorted(name.split("_")[0] for name in charts), ["course", "sound"])
         self.assertNotIn(os.path.basename(sound), charts)
+
+    def test_the_course_chart_has_all_dimensions_on_one_scale_and_the_year_on_its_own(self):
+        keys = main.mix_assist_dimensions.ALL_KEYS
+        course = [[2.0] * (len(keys) - 1) + [1980.0], [None] * len(keys), [6.0] * (len(keys) - 1) + [1990.0]]
+        data = main.course_chart_series(course)
+        self.assertEqual(data["tracks"], [1, 2, 3])
+        self.assertEqual(data["years"], (1975, 1995))
+        energy, year = data["series"][0], data["series"][-1]
+        self.assertEqual((energy["name"], energy["axis"], energy["values"]), ("Energy", "left", [2.0, None, 6.0]))
+        self.assertEqual(energy["legend"], f"{main.dimension_value_text('energy', 4.0)} (2-6)")
+        self.assertEqual((year["axis"], year["legend"]), ("right", "1985 (1980-1990)"))
+        texts = [text.text for text in main.line_chart_texts(data, "Track 1", "Track 3",
+                                                             [item["legend"] for item in data["series"]])]
+        self.assertIn("Sounding year (right, - - -)", texts)
+        self.assertTrue({"Track 1", "Track 3", "1975", "1995", "0", "10"} <= set(texts))
 
     def test_with_a_font_the_charts_carry_their_text(self):
         result = plan()
