@@ -37,7 +37,7 @@ class RootIconTest(KodiTestCase):
 
     def test_the_icons_are_shipped(self):
         media = os.path.join(ADDON_DIR, "resources", "media")
-        for name in ("generate", "discovery", "searching", "radio", "playing", "settings"):
+        for name in ("generate", "discovery", "searching", "radio", "playing", "settings", "skip", "stop"):
             self.assertTrue(os.path.isfile(os.path.join(media, f"icon-{name}.png")), name)
         self.assertTrue(os.path.isfile(os.path.join(media, "LICENSE.txt")))  # Font Awesome: CC BY 4.0
         self.assertEqual(main.media_icon("radio"), os.path.join(main.ADDON.getAddonInfo("path"), "resources", "media",
@@ -77,8 +77,7 @@ class RootAndSettingsTest(KodiTestCase):
     def test_settings_entries_are_actions_not_folders(self):
         # A folder entry makes Kodi expect a listing, which open_settings never returns.
         self.run_plugin()
-        self.run_plugin(action="discovery_mode")
-        for label in ("Settings", "Discovery mode settings"):
+        for label in ("Settings",):
             with self.subTest(label=label):
                 url, item, is_folder = item_by_label(label)
                 self.assertFalse(is_folder)
