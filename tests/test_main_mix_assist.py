@@ -455,12 +455,54 @@ class CurrentMixNameTest(MixAssistTestCase):
         self.run_plugin(action="mix_assist_menu", cache_path=self.cache_path)
         self.assertFalse(any(label.startswith("Name") for label in kodi.dialogs("select")[-1][1][1]))
 
-    def test_saving_lists_the_mix_under_the_ai_name(self):
+    def save(self, name):
+        kodi.respond("keyboard", name)
         self.run_plugin(action="save_mix", cache_path=self.cache_path)
+
+    def test_saving_lists_the_mix_under_the_ai_name(self):
+        self.save("Cosmic Analog Journeys")
+        self.assertEqual(kodi.dialogs("keyboard")[0][1], ("Save mix as", "Cosmic Analog Journeys"))
         self.assertNotified('Saved as "Cosmic Analog Journeys".')
+        self.assertNotIn("name", self.read_json(main.mix_meta_path_from_cache_path(self.cache_path)))
         self.assertEqual(main.format_saved_mix_label(self.meta()), "Cosmic Analog Journeys (5 tracks)")
         self.assertIn('named the mix "Cosmic Analog Journeys"', main.build_mix_history_text(self.meta()))
         self.assertNotIn("not saved yet", main.build_mix_info_page(self.cache_path))
+
+    def test_a_name_of_your_own_when_saving_wins_over_later_checks(self):
+        self.save("Night Drive")
+        self.assertNotified('Saved as "Night Drive".')
+        result = plan()
+        result["name"] = "Something Else"
+        self.tidy_up(result)
+        self.assertEqual(main.format_saved_mix_label(self.meta()), "Night Drive (5 tracks)")
+        kodi.settings["mix_assist_name_mixes"] = "false"  # the setting is about the AI's names
+        self.assertEqual(main.format_saved_mix_label(self.meta()), "Night Drive (5 tracks)")
+
+    def test_without_naming_the_seed_song_is_suggested(self):
+        kodi.settings["mix_assist_name_mixes"] = "false"
+        self.save("Seed")
+        self.assertEqual(kodi.dialogs("keyboard")[0][1], ("Save mix as", "Seed"))
+        self.assertEqual(main.format_saved_mix_label(self.meta()), "Seed (5 tracks)")
+
+    def test_renaming_keeps_the_name_where_saving_does(self):
+        self.save("Night Drive")
+        kodi.respond("select", 2)  # Name
+        kodi.respond("keyboard", "Late Night Drive")
+        self.run_plugin(action="mix_assist_menu", cache_path=self.cache_path)
+        sidecar = self.read_json(main.mix_meta_path_from_cache_path(self.cache_path))
+        self.assertEqual(sidecar["name"], "Late Night Drive")
+        self.assertNotIn("listener_name", sidecar.get("mix_assist", {}))
+
+    def test_a_name_given_by_an_older_version_is_still_used(self):
+        self.save("Cosmic Analog Journeys")
+        sidecar = self.read_json(main.mix_meta_path_from_cache_path(self.cache_path))
+        sidecar["mix_assist"]["listener_name"] = "Old Name"
+        self.write_json(main.mix_meta_path_from_cache_path(self.cache_path), sidecar)
+        self.assertEqual(main.format_saved_mix_label(self.meta()), "Old Name (5 tracks)")
+        kodi.respond("select", 2)
+        kodi.respond("keyboard", "")  # back to the AI's name
+        self.run_plugin(action="mix_assist_menu", cache_path=self.cache_path)
+        self.assertEqual(main.format_saved_mix_label(self.meta()), "Cosmic Analog Journeys (5 tracks)")
 
     def test_the_first_screen_says_current_mix(self):
         self.run_plugin()
