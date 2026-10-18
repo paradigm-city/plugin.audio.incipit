@@ -1181,7 +1181,7 @@ RADIO_STOP_GRACE_SECONDS = 3     # playback must be stopped this long (gaps betw
 RADIO_MAX_SEEN = 5000            # songs remembered per session to avoid repeats
 RADIO_CHECKED_THRESHOLD = 3      # with AI Mix Assist: top up when fewer songs remain (the check takes 1-2 minutes)
 RADIO_CHECK_SIZE = 75            # MusicIP candidates per checked refill (MusicIP's maximum)
-RADIO_CHECKED_BATCH = 8          # songs per checked refill (20-50 minutes): small steps for a smooth meander
+RADIO_CHECKED_BATCH = 6          # songs per checked refill (15-40 minutes): small steps for a smooth meander; 6 is an experiment (was 8)
 
 # One AI Mix Assist check at a time, in a background thread; the radio tick applies its result.
 RADIO_CHECK: dict = {"thread": None, "station": 0, "kind": "", "result": None, "fallback": [], "seed": "",

@@ -4857,7 +4857,7 @@ def start_radio_from_song(seed: str) -> None:
     start_radio_station(seed)
 
 
-RADIO_ASSISTED_START_SIZE = 8  # with AI Mix Assist: one refill's worth, so the station soon starts to meander
+RADIO_ASSISTED_START_SIZE = 6  # with AI Mix Assist: one refill's worth, so the station soon starts to meander
 
 
 def start_radio_station(seed: str, favourite: dict | None = None) -> bool:
