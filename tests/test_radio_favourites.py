@@ -10,6 +10,21 @@ from test_radio_mode import SONGS, RadioTestCase as RadioBase
 SONGS_FIRST = SONGS[0]
 
 
+class FavouriteIconTest(RadioBase):
+    def test_icons(self):
+        self.start()
+        main.save_radio_favourites([{"id": "f1", "name": "Night Drive", "seed": "D:\\x.mp3"}])
+        self.menu()
+        icons = {item.getLabel(): os.path.basename(item.getArt("icon")) for _url, item, _folder in kodi.directory_items}
+        self.assertEqual(icons["Station information"], "icon-info.png")
+        self.assertEqual(icons["Save as favourite station"], "icon-favourite.png")
+        self.assertEqual(icons["Favourite stations (1)"], "DefaultFolder.png")
+        kodi.directory_items.clear()
+        self.run_plugin(action="radio_favourites")
+        self.assertEqual([os.path.basename(item.getArt("icon")) for _url, item, _folder in kodi.directory_items],
+                         ["icon-radio.png"])
+
+
 class FavouriteStationsTest(RadioBase):
     def favourites(self):
         return main.load_radio_favourites()
