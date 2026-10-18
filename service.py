@@ -1177,6 +1177,7 @@ RADIO_REFILL_THRESHOLD = 3       # top up when fewer future songs remain
 RADIO_BACKLOG_SIZE = 10          # played songs kept in the playlist
 RADIO_REFILL_SEEDS = 3           # last queued songs tried as seed when a mix brings nothing new
 RADIO_REFILL_RETRY_SECONDS = 60  # wait after a failed or empty top-up
+RADIO_OUTAGE_MAX_WAIT_SECONDS = 600  # MusicIP failing again and again: the wait doubles up to this
 RADIO_STOP_GRACE_SECONDS = 3     # playback must be stopped this long (gaps between songs are shorter)
 RADIO_MAX_SEEN = 5000            # songs remembered per session to avoid repeats
 RADIO_CHECKED_THRESHOLD = 3      # with AI Mix Assist: top up when fewer songs remain (the check takes 1-2 minutes)
@@ -1484,20 +1485,23 @@ def refill_radio_queue(state: dict, checked: bool = False) -> int:
     size = plugin.get_playlist_size()
     offset = int(state.get("refill_seed_offset") or 0) if checked else 0
 
-    for entry in list(reversed(queue))[offset:offset + RADIO_REFILL_SEEDS]:
+    server_error = None
+    for attempt, entry in enumerate(list(reversed(queue))[offset:offset + RADIO_REFILL_SEEDS]):
         seed = str(entry["file"])
         try:
             request_size = RADIO_CHECK_SIZE if checked else size
-            tracks = plugin.fetch_mix(seed, request_size, plugin.get_effective_mix_parameters(size_override=request_size))
-        except plugin.MusicIPError as exc:
-            if "empty mix" in str(exc):
+            tracks = plugin.fetch_mix(seed, request_size, plugin.get_effective_mix_parameters(size_override=request_size),
+                                      reload=attempt == 0)
+        except Exception as exc:
+            if isinstance(exc, plugin.MusicIPError) and "empty mix" in str(exc):
                 log_info(f"Radio mode: MusicIP returned no songs for {seed!r}.")
                 continue  # try the song before it
             log(f"Radio mode: MusicIP mix for {seed!r} failed: {exc}", xbmc.LOGWARNING)
-            break  # server problem: retry later
-        except Exception as exc:
-            log(f"Radio mode: MusicIP mix for {seed!r} failed: {exc}", xbmc.LOGWARNING)
-            break
+            if server_error is None:
+                server_error = exc
+                continue  # it may be this song: try the one before it, once
+            break  # two songs failed: MusicIP itself has a problem
+        server_error = None
         new_tracks = []
         for track in tracks:
             identity = plugin.normalize_track_identity(track)
@@ -1508,6 +1512,13 @@ def refill_radio_queue(state: dict, checked: bool = False) -> int:
             break
         log_info(f"Radio mode: mix from {seed!r} brought no new songs.")
 
+    if server_error is not None:
+        musicip_outage(state, plugin, server_error)
+        return 0
+    if int(state.get("musicip_failures") or 0):
+        state["musicip_failures"] = 0
+        add_radio_event(state, "musicip_back")
+        log_info("Radio mode: MusicIP makes mixes again.")
     if not new_tracks:
         state["next_refill_ts"] = now + RADIO_REFILL_RETRY_SECONDS
         state["refill_seed_offset"] = 0
@@ -1531,6 +1542,24 @@ def refill_radio_queue(state: dict, checked: bool = False) -> int:
         return 0
 
     return append_radio_tracks(state, plugin, used_seed, new_tracks, event={"kind": "refill", "checked": False})
+
+
+def musicip_outage(state: dict, plugin, error: Exception) -> None:
+    """MusicIP failed for two songs in a row: wait longer each time (1, 2, 4, 8, then 10 minutes), so a struggling
+    server isn't asked (and reloaded) every minute; say so once, on the screen and in the station's history."""
+    failures = int(state.get("musicip_failures") or 0) + 1
+    wait = min(RADIO_OUTAGE_MAX_WAIT_SECONDS, RADIO_REFILL_RETRY_SECONDS * 2 ** (failures - 1))
+    state["musicip_failures"] = failures
+    state["next_refill_ts"] = int(time.time()) + wait
+    state["refill_seed_offset"] = 0
+    log(f"Radio mode: MusicIP can't make mixes ({error}); trying again in {wait} s.", xbmc.LOGWARNING)
+    if failures == 1:
+        add_radio_event(state, "musicip_failed", error=str(error))
+        try:
+            plugin.notify("MusicIP can't make mixes right now. The station plays on and tries again; if it lasts, "
+                          "restart the MusicIP server.", xbmcgui.NOTIFICATION_WARNING)
+        except Exception:
+            pass
 
 
 def append_radio_tracks(state: dict, plugin, used_seed: str, new_tracks: list[str], event: dict | None = None) -> int:

@@ -81,7 +81,6 @@
 					<label>$INFO[Window.Property(tab1)]</label>
 					<altlabel>$INFO[Window.Property(tab1)]</altlabel>
 					<usealttexture>String.IsEqual(Window.Property(tab),1)</usealttexture>
-					<visible>!String.IsEmpty(Window.Property(tab1))</visible>
 				</control>
 				<control type="togglebutton" id="202">
 					<width>340</width>

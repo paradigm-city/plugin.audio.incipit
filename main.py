@@ -5765,11 +5765,17 @@ class InfoWindow(xbmcgui.WindowXMLDialog):
 
     def onFocus(self, control_id: int) -> None:
         if control_id in INFO_TAB_IDS[:len(self.tabs)]:
-            self.show_tab(INFO_TAB_IDS.index(control_id))
+            try:
+                self.show_tab(INFO_TAB_IDS.index(control_id))
+            except RuntimeError:  # Kodi tells of a focus change while the window closes: it is gone
+                pass
 
     def onClick(self, control_id: int) -> None:
         if control_id in INFO_TAB_IDS:
-            self.setFocusId(INFO_TEXT_GROUP)
+            try:
+                self.setFocusId(INFO_TEXT_GROUP)
+            except RuntimeError:
+                pass
 
 
 def show_info_window(heading: str, facts: str, tabs: list[dict], fallback) -> None:
@@ -7380,6 +7386,10 @@ def format_radio_event(event: dict) -> list[str]:
                 "trying an earlier song"]
     if kind == "profile":
         return ["The late AI check updated the station's profile"]
+    if kind == "musicip_failed":
+        return [f"MusicIP couldn't make a mix ({event.get('error', '')}); the station tries again, less and less often"]
+    if kind == "musicip_back":
+        return ["MusicIP makes mixes again"]
     return [str(kind)]
 
 
