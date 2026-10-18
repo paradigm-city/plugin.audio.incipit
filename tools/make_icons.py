@@ -22,6 +22,8 @@ ICONS = {  # file name -> Font Awesome glyph
     "icon-searching": 0xF002,  # magnifying-glass: Discovery mode on, or the radio scanning
     "icon-radio": 0xF8D7,      # radio: Radio mode, off
     "icon-playing": 0xF144,    # circle-play: a radio station playing
+    "icon-skip": 0xF051,       # forward-step: on to the next snippet
+    "icon-stop": 0xF28D,       # circle-stop: the partner of circle-play
     "icon-settings": 0xF013,   # gear
 }
 
