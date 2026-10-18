@@ -21,15 +21,20 @@ class HistoryTestCase(KodiTestCase):
 
 
 class MixHistoryTest(HistoryTestCase):
-    def test_creating_and_creating_again(self):
+    def test_creating_and_saving(self):
         main.remember_mix_generation_parameters(A, 3, {"size": 3, "variety": 4, "style_ui": 0, "rejectsize": 6})
         cache_path = self.save_mix([A, B, C], size=3)
-        main.save_mix(A, 3, [A, C])
-        created, again = self.history(cache_path)
-        self.assertEqual((created["kind"], created["again"], created["tracks"]), ("created", False, 3))
+        created, saved = self.history(cache_path)
+        self.assertEqual((created["kind"], created["tracks"]), ("created", 3))
         self.assertEqual(created["seed"], main.path_to_label(A))
         self.assertEqual(created["parameters"], "variety 4, style 0/10, no artist repeat within 6 tracks, no filter")
-        self.assertEqual((again["again"], again["tracks"]), (True, 2))
+        self.assertEqual((saved["kind"], saved["name"]), ("saved", main.path_to_label(A)))
+        text = main.build_mix_history_text(self.read_json(main.mix_meta_path_from_cache_path(cache_path)))
+        self.assertIn(f'Saved as "{main.path_to_label(A)}"', text)
+
+    def test_mixes_from_older_versions_were_created_again(self):
+        self.assertIn("Created again from", main.build_mix_history_text(
+            {"history": [{"kind": "created", "again": True, "seed": "Song", "tracks": 2, "ts": 0}]}))
 
     def test_removing_a_track(self):
         cache_path = self.save_mix([A, B, C], size=3)
@@ -53,7 +58,7 @@ class MixHistoryTest(HistoryTestCase):
         self.assertEqual(history[0]["kind"], "removed")
 
     def test_history_text_is_newest_first(self):
-        cache_path = self.save_mix([A, B, C], size=3)
+        cache_path = self.save_mix([A, B, C], size=3, saved=False)
         main.record_mix_history(cache_path, "more_like_this", song="Song 2", added=["New 1", "New 2"])
         text = main.build_mix_history_text(self.read_json(main.mix_meta_path_from_cache_path(cache_path)))
         first, second = text.split("\n\n")
@@ -69,7 +74,7 @@ class MixHistoryTest(HistoryTestCase):
 
 class MixInformationPagesTest(HistoryTestCase):
     def test_pages_work_like_tabs(self):
-        cache_path = self.save_mix([A, B], size=2)
+        cache_path = self.save_mix([A, B], size=2, saved=False)
         kodi.respond("select", 1, 0, -1)  # History, then Overview, then close
         self.run_plugin(action="mix_info", cache_path=cache_path)
         _method, (heading, choices), _kwargs = kodi.dialogs("select")[0]
@@ -111,7 +116,7 @@ class EditingHistoryAndProgressTest(MusicIPServerTestCase, HistoryTestCase):
         self.musicip.mix_status = 500
         self.run_plugin(action="less_like_this", seed=A, size="4", index="1", path=B, cache_path=self.cache_path)
         self.assertEqual(self.progress_calls()[-1][0], "progress.close")
-        self.assertEqual(self.history(self.cache_path)[-1]["kind"], "created")
+        self.assertEqual(self.history(self.cache_path)[-1]["kind"], "saved")  # nothing recorded since
 
     def test_creating_a_mix_shows_progress(self):
         self.musicip.set_mix(C, [C, A, B])

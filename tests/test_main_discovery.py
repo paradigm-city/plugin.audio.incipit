@@ -164,9 +164,10 @@ class MixFromDiscoverySongTest(MusicIPServerTestCase):
         self.assertEqual(state["stop_reason"], "mix_from_discovery_song")
         self.assertFalse(state["mix_dialog_active"])
         self.assertEqual(kodi.playlist_files(), [self.seed, mix_track])
-        self.assertEqual(main.load_mix(self.seed, 20), [self.seed, mix_track])
+        self.assertEqual(self.current_mix_tracks(), [self.seed, mix_track])
         self.assertNotified("Discovery mode stopped. Playing generated mix.")
-        self.assertEqual(plugin_query(kodi.builtins[-1])["action"], "browse_mix")
+        update = plugin_query(kodi.builtins[-1])
+        self.assertEqual((update["action"], update["cache_path"]), ("browse_saved_mix", main.get_current_mix_cache_path()))
 
     def test_dialog_hold_pauses_auto_skip(self):
         def check_hold(*args):

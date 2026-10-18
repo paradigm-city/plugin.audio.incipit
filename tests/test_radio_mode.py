@@ -207,9 +207,10 @@ class StartRadioTest(RadioTestCase):
         self.assertEqual(kodi.playlist[0][1].getLabel(), first)
         self.assertEqual(first, f"Artist {index + 1} - Song {index + 1}")  # from the library
 
-    def test_station_is_not_saved_as_a_recent_mix(self):
+    def test_station_is_not_a_mix(self):
         self.start()
         self.assertEqual(glob.glob(os.path.join(main.get_profile_dir(), "mix_*.m3u")), [])
+        self.assertEqual(main.get_current_mix_cache_path(), "")
 
     def test_server_error_keeps_tuning(self):
         self.turn_on()

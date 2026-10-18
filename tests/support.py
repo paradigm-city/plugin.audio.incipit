@@ -100,16 +100,21 @@ class KodiTestCase(unittest.TestCase):
         return [item.getLabel() for _url, item, _folder in kodi.directory_items]
 
     # --- saved mixes ---------------------------------------------------------------------
-    def save_mix(self, tracks, seed=None, size=None, **meta):
+    def save_mix(self, tracks, seed=None, size=None, saved=True, **meta):
+        """A new mix (the current mix), saved unless saved=False. Returns its file."""
         seed = seed if seed is not None else tracks[0]
         size = size if size is not None else len(tracks)
-        main.save_mix(seed, size, list(tracks))
-        cache_path = main.mix_cache_path(seed, size)
+        cache_path = main.create_current_mix(seed, size, list(tracks))
+        if saved:
+            main.save_current_mix(cache_path)
         if meta:
             sidecar = self.read_json(main.mix_meta_path_from_cache_path(cache_path))
             sidecar.update(meta)
             self.write_json(main.mix_meta_path_from_cache_path(cache_path), sidecar)
         return cache_path
+
+    def current_mix_tracks(self):
+        return main.load_mix_by_cache_path(main.get_current_mix_cache_path())
 
     def read_mix(self, cache_path):
         with open(cache_path, encoding="utf-8") as handle:
