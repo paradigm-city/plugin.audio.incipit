@@ -49,7 +49,9 @@ class CurrentMixTest(KodiTestCase):
         cache_path = main.create_current_mix(SEED, 20, [SEED, T1])
         self.root()
         _url, item, _folder = item_by_label("Current mix")
+        kodi.respond("keyboard", "01 Ace of Spades")  # the suggested name, confirmed
         self.run_plugin(**plugin_query(item.context_action("Save mix")))
+        self.assertEqual(kodi.dialogs("keyboard")[0][1], ("Save mix as", "01 Ace of Spades"))
         self.assertNotified('Saved as "01 Ace of Spades".')
         self.assertEqual(kodi.builtins[-1], "Container.Refresh")
         self.assertEqual(main.list_saved_mix_cache_paths(), [cache_path])
@@ -60,7 +62,38 @@ class CurrentMixTest(KodiTestCase):
         self.assertNotIn("Save mix", [label for label, _a in item.context_menu])
         sidecar = self.read_json(main.mix_meta_path_from_cache_path(cache_path))
         self.assertNotIn("unsaved", sidecar)
+        self.assertNotIn("name", sidecar)  # no name of the listener's own
         self.assertGreater(sidecar["saved_ts"], 0)
+
+    def test_the_name_can_be_edited_when_saving(self):
+        cache_path = main.create_current_mix(SEED, 20, [SEED, T1])
+        kodi.respond("keyboard", "  Loud   and Fast ")
+        self.run_plugin(action="save_mix", cache_path=cache_path)
+        self.assertNotified('Saved as "Loud and Fast".')
+        meta = main.get_saved_mix_metadata(cache_path)
+        self.assertEqual(main.format_saved_mix_label(meta), "Loud and Fast (2 tracks)")
+        self.assertIn('Saved as "Loud and Fast"', main.build_mix_history_text(meta))
+        self.assertIn("Name: Loud and Fast", main.build_mix_info_message(cache_path))
+
+    def test_an_empty_name_saves_under_the_suggested_one(self):
+        cache_path = main.create_current_mix(SEED, 20, [SEED, T1])
+        kodi.respond("keyboard", "")
+        self.run_plugin(action="save_mix", cache_path=cache_path)
+        self.assertNotified('Saved as "01 Ace of Spades".')
+        self.assertEqual(main.list_saved_mix_cache_paths(), [cache_path])
+
+    def test_cancelling_the_name_leaves_the_mix_unsaved(self):
+        cache_path = main.create_current_mix(SEED, 20, [SEED, T1])
+        self.run_plugin(action="save_mix", cache_path=cache_path)  # no keyboard response: cancelled
+        self.assertEqual(main.list_saved_mix_cache_paths(), [])
+        self.assertEqual(kodi.notifications, [])
+        self.assertNotIn("Container.Refresh", kodi.builtins)
+
+    def test_a_saved_mix_is_not_asked_again(self):
+        cache_path = self.save_mix([SEED, T1])
+        self.run_plugin(action="save_mix", cache_path=cache_path)
+        self.assertEqual(kodi.dialogs("keyboard"), [])
+        self.assertNotified('Saved as "01 Ace of Spades".')
 
     def test_saving_twice_records_it_once(self):
         cache_path = main.create_current_mix(SEED, 20, [SEED, T1])

@@ -24,7 +24,7 @@ Sidecar metadata keeps saved mixes inspectable and repairable.
 
 ## Saving
 
-`updated_ts` is when the mix was made; Saved mixes are ordered and grouped by it. `"unsaved": true` marks the current mix until the listener saves it; saving removes the key and records `saved_ts`. See "The current mix and saved mixes" in `concept_overview.md`.
+`updated_ts` is when the mix was made; Saved mixes are ordered and grouped by it. `"unsaved": true` marks the current mix until the listener saves it; saving removes the key and records `saved_ts`, and `name` if the listener gave the mix a name of their own. See "The current mix and saved mixes" in `concept_overview.md`.
 
 ## Mix parameters
 

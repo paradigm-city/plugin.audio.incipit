@@ -1467,17 +1467,33 @@ def refreshed_mix_cache_path(refresh_token: str) -> str:
     return ""
 
 
-def save_current_mix(cache_path: str) -> str:
-    """Keep a mix: from now on it is listed under Saved mixes. Returns the name it is listed under."""
+def save_current_mix(cache_path: str, name: str = "") -> str:
+    """Keep a mix: from now on it is listed under Saved mixes. name: the listener's name for it ("" or the suggested
+    name: none of their own). Returns the name it is listed under."""
     meta = get_saved_mix_metadata(cache_path, load_mix_by_cache_path(cache_path))
     if not is_mix_saved(meta):
         stored = load_json_file(mix_meta_path_from_cache_path(cache_path))
         stored.pop("unsaved", None)
         stored["saved_ts"] = int(time.time())
+        name = " ".join(name.split())
+        if name and name != suggested_mix_name(meta):
+            stored["name"] = name
         save_json_file(mix_meta_path_from_cache_path(cache_path), stored)
         meta = get_saved_mix_metadata(cache_path)
         record_mix_history(cache_path, "saved", name=saved_mix_name(meta))
     return saved_mix_name(meta)
+
+
+def ask_and_save_mix(cache_path: str) -> str | None:
+    """"Save mix": the listener confirms or edits the suggested name. Returns the name it is listed under; None
+    when cancelled (the mix stays unsaved)."""
+    meta = get_saved_mix_metadata(cache_path, load_mix_by_cache_path(cache_path))
+    if is_mix_saved(meta):
+        return saved_mix_name(meta)
+    name = ask_text("Save mix as", suggested_mix_name(meta))
+    if name is None:
+        return None
+    return save_current_mix(cache_path, name)
 
 
 def build_save_mix_action(cache_path: str) -> str:
@@ -2329,7 +2345,14 @@ def ensure_repair_ready(cache_path: str) -> None:
         raise MusicIPError(f"{repair_readiness_action_label(readiness)}.")
 
 
+def suggested_mix_name(meta: dict) -> str:
+    """The name "Save mix" suggests: the AI's (with "Name mixes and stations" on), else the seed song's."""
+    ai_name = str(get_mix_assist_section(meta).get("ai_name") or "").strip() if mix_naming_enabled() else ""
+    return ai_name or meta.get("label") or path_to_label(meta.get("seed", ""))
+
+
 def saved_mix_name(meta: dict) -> str:
+    """The mix's name (see mix_name), else the seed song's."""
     return mix_name(meta) or meta.get("label") or path_to_label(meta.get("seed", ""))
 
 
@@ -7690,9 +7713,11 @@ def router() -> None:
     if action == "save_mix":
         cache_path = params.get("cache_path", "").strip()
         try:
-            name = save_current_mix(cache_path)
+            name = ask_and_save_mix(cache_path)
         except MusicIPError as exc:
             notify(str(exc), xbmcgui.NOTIFICATION_ERROR)
+            return
+        if name is None:
             return
         notify(f'Saved as "{name}".')
         xbmc.executebuiltin("Container.Refresh")
