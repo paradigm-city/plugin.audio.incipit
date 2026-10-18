@@ -4780,7 +4780,7 @@ def radio_phase() -> str:
 # The Radio screen's icons, by action: the same as Discovery's for the same things (scan, skip, stop).
 RADIO_ACTION_ICONS = {
     "radio_on": "searching", "radio_retune": "searching", "radio_play": "playing", "radio_tune": "skip",
-    "radio_stop": "stop",
+    "radio_stop": "stop", "radio_info": "info", "radio_save_favourite": "favourite",
 }
 
 
@@ -7073,6 +7073,7 @@ def add_radio_favourites_folder() -> None:
     label = f"Favourite stations ({count})"
     item = xbmcgui.ListItem(label=label, offscreen=True)
     apply_music_metadata(item, label)
+    set_item_icon(item, SKIN_FOLDER_ICON)  # a folder of stations, like Recent mixes
     add_directory_item(HANDLE, addon_url(action="radio_favourites"), item, isFolder=True)
 
 
@@ -7113,6 +7114,7 @@ def show_radio_favourites() -> None:
         label = plain(station.get("name") or station.get("seed_label") or path_to_label(station["seed"]))
         item = xbmcgui.ListItem(label=label, offscreen=True)
         apply_music_metadata(item, label)
+        set_item_icon(item, media_icon("radio"))
         openness, drift = favourite_setting_labels(station)
         item.setLabel2(plain(f"{station.get('seed_label') or ''} | {openness} | {drift}"))
         item.setProperty("IsPlayable", "false")

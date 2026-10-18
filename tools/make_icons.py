@@ -25,6 +25,8 @@ ICONS = {  # file name -> Font Awesome glyph
     "icon-skip": 0xF051,       # forward-step: on to the next snippet
     "icon-stop": 0xF28D,       # circle-stop: the partner of circle-play
     "icon-settings": 0xF013,   # gear
+    "icon-info": 0xF05A,       # circle-info: Station information
+    "icon-favourite": 0xF005,  # star (Kodi's favourites are stars): save a station as a favourite
 }
 
 
