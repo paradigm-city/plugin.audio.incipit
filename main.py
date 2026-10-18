@@ -1377,8 +1377,10 @@ def new_mix_cache_path(seed: str, size: int) -> str:
         stamp += 1
 
 
-def create_current_mix(seed: str, size: int, tracks: list[str], track_metadata_list: list[dict] | None = None) -> str:
-    """Store a new mix as the current mix, not saved yet. Returns its file."""
+def create_current_mix(seed: str, size: int, tracks: list[str], track_metadata_list: list[dict] | None = None,
+                       refresh_token: str = "") -> str:
+    """Store a new mix as the current mix, not saved yet. Returns its file. refresh_token: the nonce of the
+    "Refresh mix" URL that made it (see refreshed_mix_cache_path)."""
     previous = get_current_mix_cache_path()
     path = new_mix_cache_path(seed, size)
     payload = "\n".join(tracks)
@@ -1416,12 +1418,21 @@ def create_current_mix(seed: str, size: int, tracks: list[str], track_metadata_l
             meta["track_metadata_library_freshest_ts"] = freshest_ts
 
     save_json_file(mix_meta_path_from_cache_path(path), meta)
-    save_json_file(current_mix_state_path(), {"cache_path": path})
+    save_json_file(current_mix_state_path(), {"cache_path": path, "refresh_token": refresh_token})
     if previous and previous != path and not is_mix_saved(load_json_file(mix_meta_path_from_cache_path(previous))):
         delete_saved_mix_files(previous)
     record_mix_history(path, "created", seed=mix_track_labels(path, [seed])[0],
                        tracks=len(tracks), parameters=describe_mix_parameters(meta.get("mix_generation_parameters")))
     return path
+
+
+def refreshed_mix_cache_path(refresh_token: str) -> str:
+    """The current mix if the "Refresh mix" URL with this nonce made it, else "". Kodi runs a folder's URL again
+    when it redraws the folder (Container.Refresh, the service's metadata redraw): that must not mix again."""
+    state = load_json_file(current_mix_state_path())
+    if refresh_token and state.get("refresh_token") == refresh_token:
+        return get_current_mix_cache_path()
+    return ""
 
 
 def save_current_mix(cache_path: str) -> str:
@@ -5367,6 +5378,7 @@ def browse_mix(
     update_listing: bool = False,
     focus_index: int = -1,
     focus_token: str = "",
+    refresh_token: str = "",
 ) -> None:
     """The mix of a seed song (from the library's context menu): the current mix if it is this song's, else a new
     current mix."""
@@ -5374,12 +5386,15 @@ def browse_mix(
     xbmcplugin.setContent(HANDLE, "songs")
     xbmcplugin.addSortMethod(HANDLE, xbmcplugin.SORT_METHOD_UNSORTED)
 
+    if force_refresh and refreshed_mix_cache_path(refresh_token):
+        force_refresh = False  # a redraw after the refresh
     cache_path = get_current_mix_cache_path()
     created = False
     try:
         current = get_saved_mix_metadata(cache_path) if cache_path else {}
         if force_refresh or current.get("seed") != seed or int(current.get("size") or 0) != size:
-            cache_path = create_current_mix(seed, size, fetch_mix_confirmed(seed, size))
+            cache_path = create_current_mix(seed, size, fetch_mix_confirmed(seed, size),
+                                            refresh_token=refresh_token if force_refresh else "")
             created = True
         else:
             log("Loaded the current mix.")
@@ -5442,9 +5457,13 @@ def browse_saved_mix(
     update_listing: bool = False,
     focus_index: int = -1,
     focus_token: str = "",
+    refresh_token: str = "",
 ) -> None:
     """A stored mix: a saved one, or the current mix. Refresh mix makes a new current mix from its seed (a saved mix
     stays as it is)."""
+    refreshed = refreshed_mix_cache_path(refresh_token) if force_refresh else ""
+    if refreshed:  # a redraw after the refresh: its mix, not the one refreshed (which may be gone)
+        cache_path, force_refresh = refreshed, False
     try:
         tracks = load_mix_by_cache_path(cache_path)
         meta = get_saved_mix_metadata(cache_path, tracks)
@@ -5464,7 +5483,7 @@ def browse_saved_mix(
             return
         try:
             tracks = fetch_mix_confirmed(seed, size)
-            cache_path = create_current_mix(seed, size, tracks)
+            cache_path = create_current_mix(seed, size, tracks, refresh_token=refresh_token)
             meta = get_saved_mix_metadata(cache_path, tracks)
             created = True
         except MusicIPError as exc:
@@ -6073,6 +6092,7 @@ def router() -> None:
             update_listing=refresh,
             focus_index=focus_index,
             focus_token=focus_token,
+            refresh_token=params.get("nonce", "") if refresh else "",
         )
         return
 
@@ -6094,6 +6114,7 @@ def router() -> None:
             update_listing=refresh,
             focus_index=focus_index,
             focus_token=focus_token,
+            refresh_token=params.get("nonce", "") if refresh else "",
         )
         return
 
