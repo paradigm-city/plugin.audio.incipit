@@ -832,7 +832,8 @@ def refresh_discovery_menu_if_visible() -> None:
     except Exception:
         container_folder = ""
 
-    if "plugin.audio.musicip" not in container_folder or "action=discovery_mode" not in container_folder:
+    if not (is_addon_root(container_folder) or
+            "plugin.audio.musicip" in container_folder and "action=discovery_mode" in container_folder):
         return
 
     state["ui_refresh_requested"] = False
@@ -1348,6 +1349,11 @@ def refill_radio_queue(state: dict) -> int:
     return len(new_tracks)
 
 
+def is_addon_root(folder: str) -> bool:
+    """The add-on's first screen (its icons show what Radio and Discovery are doing)."""
+    return folder.rstrip("/").rstrip("?").rstrip("/") == f"plugin://{ADDON_ID}"
+
+
 def refresh_radio_menu_if_visible() -> None:
     state = load_radio_state()
     if not state.get("ui_refresh_requested") or kodi_is_loading_a_list():
@@ -1356,7 +1362,8 @@ def refresh_radio_menu_if_visible() -> None:
         container_folder = xbmc.getInfoLabel("Container.FolderPath")
     except Exception:
         container_folder = ""
-    if "plugin.audio.musicip" not in container_folder or "action=radio_mode" not in container_folder:
+    if not (is_addon_root(container_folder) or
+            "plugin.audio.musicip" in container_folder and "action=radio_mode" in container_folder):
         return
     state["ui_refresh_requested"] = False
     save_radio_state(state)
