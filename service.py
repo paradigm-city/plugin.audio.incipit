@@ -2299,6 +2299,34 @@ def run_metadata_refresh_tick(max_items: int = METADATA_REFRESH_BATCH_SIZE) -> i
     return refreshed
 
 
+# --- Cover collages for saved mixes: one mix at a time, now and then, so the service loop stays quick ---------
+
+MIX_COLLAGE_INTERVAL_SECONDS = 15
+MIX_COLLAGE_STATE = {"last_ts": 0, "tried": {}}  # cache path -> collage path tried (too few covers: not again)
+
+
+def run_mix_collage_tick() -> str:
+    """Draw the collage of one saved mix that has none for its current tracks. Returns its path or ""."""
+    now = time.time()
+    if now - MIX_COLLAGE_STATE["last_ts"] < MIX_COLLAGE_INTERVAL_SECONDS:
+        return ""
+    MIX_COLLAGE_STATE["last_ts"] = now
+    plugin = load_plugin_module()
+    for cache_path in plugin.list_saved_mix_cache_paths():
+        try:
+            tracks = plugin.load_mix_by_cache_path(cache_path)
+            wanted = plugin.mix_collage_path(cache_path, tracks)
+        except Exception:
+            continue
+        if os.path.isfile(wanted) or MIX_COLLAGE_STATE["tried"].get(cache_path) == wanted:
+            continue
+        MIX_COLLAGE_STATE["tried"][cache_path] = wanted
+        path = plugin.make_mix_collage(cache_path)
+        log_info(f"Mix cover collage for {cache_path!r}: {path or 'too few covers'}.")
+        return path
+    return ""
+
+
 def main() -> None:
     monitor = xbmc.Monitor()
     playback_monitor = DiscoveryPlaybackMonitor()
@@ -2335,6 +2363,11 @@ def main() -> None:
             refresh_radio_menu_if_visible()
         except Exception as exc:
             log(f"Radio mode tick failed: {exc}", xbmc.LOGERROR)
+
+        try:
+            run_mix_collage_tick()
+        except Exception as exc:
+            log(f"Mix cover collage tick failed: {exc}", xbmc.LOGERROR)
 
         now_for_metadata = int(time.time())
         if last_metadata_refresh_ts <= 0 or now_for_metadata - last_metadata_refresh_ts >= METADATA_REFRESH_INTERVAL_SECONDS:

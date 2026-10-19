@@ -4528,6 +4528,7 @@ def add_saved_mix_item(cache_path: str) -> None:
     list_item = xbmcgui.ListItem(label=display_label, offscreen=True)
     apply_music_metadata(list_item, display_label)
     apply_saved_mix_info_metadata(list_item, cache_path)
+    album = apply_mix_album_metadata(list_item, cache_path, tracks, meta)
     list_item.setProperty("IsPlayable", "false")
     if inconsistent:
         list_item.setProperty("MusicIP.Inconsistent", "true")
@@ -4550,9 +4551,9 @@ def add_saved_mix_item(cache_path: str) -> None:
     list_item.addContextMenuItems(context_items)
 
     updated_ts = int(meta.get("updated_ts") or 0)
-    detail_parts: list[str] = []
+    detail_parts: list[str] = [album["seed_label"]] if album["seed_label"] else []
     if updated_ts > 0:
-        detail_parts.append(time.strftime("%Y-%m-%d %H:%M", time.localtime(updated_ts)))
+        detail_parts.append(time.strftime("%H:%M", time.localtime(updated_ts)))  # the date is the folder's
     if consistency_label and consistency_label != "OK":
         detail_parts.append(consistency_label)
     if inconsistent and repair_readiness and not is_repair_ready(repair_readiness):
@@ -5319,7 +5320,7 @@ def show_saved_mixes() -> None:
 
 def show_saved_mixes_by_date(date_key: str) -> None:
     xbmcplugin.setPluginCategory(HANDLE, f"MusicIP saved mixes: {date_key}")
-    xbmcplugin.setContent(HANDLE, "files")
+    xbmcplugin.setContent(HANDLE, "albums")  # mixes are shown as compilation albums
 
     cache_paths = list_saved_mix_cache_paths()
     grouped = dict(group_saved_mixes_by_date(cache_paths))
@@ -5791,6 +5792,187 @@ def apply_saved_mix_info_metadata(list_item: xbmcgui.ListItem, cache_path: str) 
             tag.setComment(message)
     except Exception:
         pass
+
+
+# --- A saved mix as a compilation album -----------------------------------------------------------------------
+# Album fields from the mix's track metadata (its album artist is MusicIP), the seed song as the second text, and a
+# collage of the covers in the mix as its picture. The service draws the collages in the background
+# (run_mix_collage_tick in service.py); until then, and without enough covers, the seed's own cover is shown.
+
+MIX_ALBUM_ARTIST = "MusicIP"
+COLLAGE_SIZE = 800  # pixels
+COLLAGE_GAP = 4
+COLLAGE_GRIDS = (4, 3, 2)  # 4 x 4 covers; with fewer covers 3 x 3, or 2 x 2
+
+
+def mix_track_snapshot_list(meta: dict, tracks: list[str]) -> list[dict]:
+    snapshots = build_sidecar_track_metadata_map(meta)
+    return [snapshots.get(canonical_audio_path(track)) or {} for track in tracks]
+
+
+def snapshot_artist(snapshot: dict) -> str:
+    artist = snapshot.get("artist")
+    return ", ".join(str(a) for a in artist) if isinstance(artist, list) else str(artist or "").strip()
+
+
+def mix_album_fields(meta: dict, tracks: list[str]) -> dict:
+    """The mix as a compilation album: its artists (the seed's first, then the most frequent), genres, middle
+    release year, length, and the seed song with its cover and fanart."""
+    snapshots = mix_track_snapshot_list(meta, tracks)
+    seed = str(meta.get("seed") or (tracks[0] if tracks else ""))
+    seed_snapshot = build_sidecar_track_metadata_map(meta).get(canonical_audio_path(seed)) or {}
+    counts: dict[str, int] = {}
+    for snapshot in snapshots:
+        artist = snapshot_artist(snapshot)
+        if artist:
+            counts[artist] = counts.get(artist, 0) + 1
+    seed_artist = snapshot_artist(seed_snapshot)
+    artists = ([seed_artist] if seed_artist else []) + [
+        artist for artist, _count in sorted(counts.items(), key=lambda item: -item[1]) if artist != seed_artist]
+    genres: dict[str, int] = {}
+    for snapshot in snapshots:
+        for genre in snapshot.get("genre") or []:
+            genres[str(genre)] = genres.get(str(genre), 0) + 1
+    years = sorted(int(snapshot.get("year") or 0) for snapshot in snapshots if int(snapshot.get("year") or 0) > 0)
+    title = str(seed_snapshot.get("title") or "").strip()
+    seed_label = f"{seed_artist} – {title}" if seed_artist and title else title or (path_to_label(seed) if seed else "")
+    return {
+        "artists": artists,
+        "genres": [genre for genre, _count in sorted(genres.items(), key=lambda item: -item[1])[:3]],
+        "year": years[len(years) // 2] if years else 0,
+        "duration": sum(int(snapshot.get("duration") or 0) for snapshot in snapshots),
+        "seed_label": seed_label,
+        "seed_thumb": str(seed_snapshot.get("thumbnail") or ""),
+        "seed_fanart": str(seed_snapshot.get("fanart") or ""),
+    }
+
+
+def mix_artist_text(artists: list[str], shown: int = 3) -> str:
+    """"A, B, C and 32 more": a mix has too many artists for one line."""
+    if len(artists) <= shown:
+        return ", ".join(artists)
+    return f"{', '.join(artists[:shown])} and {len(artists) - shown} more"
+
+
+def apply_mix_album_metadata(list_item: xbmcgui.ListItem, cache_path: str, tracks: list[str], meta: dict) -> dict:
+    """Show the mix as a compilation album (skins show these fields in their album views and info panels).
+    Returns the album fields."""
+    fields = mix_album_fields(meta, tracks)
+    try:
+        tag = list_item.getMusicInfoTag()
+        tag.setMediaType("album")
+        tag.setAlbum(saved_mix_name(meta))
+        tag.setAlbumArtist(MIX_ALBUM_ARTIST)
+        if fields["artists"]:
+            tag.setArtist(mix_artist_text(fields["artists"]))
+        if fields["genres"]:
+            tag.setGenres(fields["genres"])
+        if fields["year"]:
+            tag.setYear(fields["year"])
+        if fields["duration"]:
+            tag.setDuration(fields["duration"])
+    except Exception as exc:
+        log(f"Mix album fields for {cache_path!r}: {exc}", xbmc.LOGDEBUG)
+    list_item.setProperty("Album_Type", "Mix")
+    list_item.setProperty("Album_Label", MIX_ALBUM_ARTIST)
+    if fields["seed_label"]:
+        list_item.setProperty("Album_Description", f"From: {fields['seed_label']}")
+    cover = existing_mix_collage(cache_path, tracks) or fields["seed_thumb"]
+    art = {"thumb": cover, "icon": cover, "poster": cover} if cover else {}
+    if fields["seed_fanart"]:
+        art["fanart"] = fields["seed_fanart"]
+    if art:
+        list_item.setArt(art)
+    return fields
+
+
+def mix_collage_path(cache_path: str, tracks: list[str]) -> str:
+    """One file per mix and track list: a changed mix gets a new collage (and Kodi, which caches images by path,
+    shows it)."""
+    key = hashlib.sha1("\n".join(canonical_audio_path(track) for track in tracks).encode("utf-8")).hexdigest()[:12]
+    name = os.path.splitext(os.path.basename(cache_path))[0]
+    return os.path.join(get_profile_dir(), "covers", f"{name}_{key}.jpg")
+
+
+def existing_mix_collage(cache_path: str, tracks: list[str]) -> str:
+    path = mix_collage_path(cache_path, tracks)
+    return path if os.path.isfile(path) else ""
+
+
+def cover_image_file(thumbnail: str) -> str:
+    """A readable file for a cover URL from Kodi's library: Kodi's cached copy, else the image file itself (covers
+    embedded in music files are only readable once Kodi has cached them)."""
+    if not thumbnail:
+        return ""
+    try:
+        result = execute_jsonrpc("Textures.GetTextures", {
+            "properties": ["cachedurl"], "filter": {"field": "url", "operator": "is", "value": thumbnail}})
+        for texture in result.get("textures") or []:
+            path = xbmcvfs.translatePath(f"special://thumbnails/{texture.get('cachedurl', '')}")
+            if texture.get("cachedurl") and os.path.isfile(path):
+                return path
+    except Exception:
+        pass
+    inner = unquote(thumbnail[len("image://"):].rstrip("/")) if thumbnail.startswith("image://") else thumbnail
+    return inner if os.path.splitext(inner)[1].lower() in (".jpg", ".jpeg", ".png") and os.path.isfile(inner) else ""
+
+
+def mix_cover_files(meta: dict, tracks: list[str]) -> list[str]:
+    """The readable covers of the mix, each once, in mix order, the seed's first."""
+    seed = str(meta.get("seed") or "")
+    thumbnails = [str(snapshot.get("thumbnail") or "") for snapshot in mix_track_snapshot_list(meta, [seed] + tracks)]
+    files = []
+    for thumbnail in dict.fromkeys(thumbnail for thumbnail in thumbnails if thumbnail):
+        path = cover_image_file(thumbnail)
+        if path and path not in files:
+            files.append(path)
+    return files
+
+
+def pick_spread(items: list[str], count: int) -> list[str]:
+    """The first item, then count - 1 more spread evenly over the rest."""
+    if len(items) <= count:
+        return list(items)
+    rest = items[1:]
+    return [items[0]] + [rest[round(i * (len(rest) - 1) / max(1, count - 2))] for i in range(count - 1)]
+
+
+def make_mix_collage(cache_path: str) -> str:
+    """Draw the mix's cover collage (4 x 4, or 3 x 3 / 2 x 2 with fewer covers); older ones of the mix are removed.
+    Returns its path, or "" (too few covers, or no Pillow in Kodi's Python)."""
+    try:
+        from PIL import Image
+    except Exception:
+        return ""
+    tracks = load_mix_by_cache_path(cache_path)
+    meta = get_saved_mix_metadata(cache_path, tracks)
+    covers = mix_cover_files(meta, tracks)
+    grid = next((size for size in COLLAGE_GRIDS if len(covers) >= size * size), 0)
+    if not grid:
+        return ""
+    cell = (COLLAGE_SIZE - (grid - 1) * COLLAGE_GAP) // grid
+    collage = Image.new("RGB", (COLLAGE_SIZE, COLLAGE_SIZE), (0, 0, 0))
+    resample = getattr(Image, "LANCZOS", getattr(Image, "ANTIALIAS", 1))
+    for index, cover in enumerate(pick_spread(covers, grid * grid)):
+        try:
+            image = Image.open(cover).convert("RGB")
+        except Exception:
+            continue
+        side = min(image.size)
+        left, top = (image.width - side) // 2, (image.height - side) // 2
+        image = image.crop((left, top, left + side, top + side)).resize((cell, cell), resample)
+        collage.paste(image, ((index % grid) * (cell + COLLAGE_GAP), (index // grid) * (cell + COLLAGE_GAP)))
+    path = mix_collage_path(cache_path, tracks)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    prefix = os.path.basename(path).rsplit("_", 1)[0] + "_"
+    for name in os.listdir(os.path.dirname(path)):
+        if name.startswith(prefix) and name.endswith(".jpg"):
+            try:
+                os.remove(os.path.join(os.path.dirname(path), name))
+            except OSError:
+                pass
+    collage.save(path, "JPEG", quality=88)
+    return path
 
 
 def build_mix_playlist_item(track: str, metadata: dict, mix_position: int) -> xbmcgui.ListItem:
