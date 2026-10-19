@@ -4495,7 +4495,17 @@ def track_origin(meta: dict, path: str, seed: str = "") -> dict:
         return {"origin": "seed", "note": "The song the mix was made from"}
     origins = meta.get("track_origins") if isinstance(meta.get("track_origins"), dict) else {}
     origin = origins.get(canonical_audio_path(path))
-    return origin if isinstance(origin, dict) and origin.get("origin") in TRACK_ORIGIN_LABELS else {}
+    if isinstance(origin, dict) and origin.get("origin") in TRACK_ORIGIN_LABELS:
+        return origin
+    # Mixes tidied up before origins were kept: the last tidy-up's replacements
+    for change in get_mix_assist_section(meta).get("replaced") or []:
+        if canonical_audio_path(str(change.get("new") or "")) == canonical_audio_path(path):
+            return {"origin": "ai", "note": ai_replacement_note(change)}
+    return {}
+
+
+def ai_replacement_note(change: dict) -> str:
+    return f"Replaced by AI Mix Assist: {change.get('old_label', '')} ({change.get('reason', '')})"
 
 
 def add_track_item(
@@ -4545,11 +4555,11 @@ def add_track_item(
     if origin:
         details = format_track_details(year=parse_year(metadata.get('year')), decade=str(metadata.get('decade') or ''),
                                        genres=metadata.get('genre'), duration=parse_duration_seconds(metadata.get('duration')))
-        list_item.setLabel2(" · ".join(part for part in (TRACK_ORIGIN_LABELS[origin["origin"]], details) if part))
+        list_item.setLabel2(plain(" · ".join(part for part in (TRACK_ORIGIN_LABELS[origin["origin"]], details) if part)))
         list_item.setProperty("MusicIP.Origin", origin["origin"])
         if origin.get("note"):
             try:
-                list_item.getMusicInfoTag().setComment(str(origin["note"]))
+                list_item.getMusicInfoTag().setComment(plain(origin["note"]))
             except Exception:
                 pass
     if missing:
@@ -4745,8 +4755,8 @@ def radio_status() -> str:
 
 
 def radio_station_label(state: dict) -> str:
-    """What names the playing station here: the song it plays."""
-    return str(state.get("current_label") or "").strip()
+    """What names the playing station here: its name (a favourite's, or the AI's), else the song it plays."""
+    return station_name(state) or str(state.get("current_label") or "").strip()
 
 
 def discovery_status() -> str:
@@ -4804,7 +4814,7 @@ def show_root() -> None:
     discovery_item = xbmcgui.ListItem(label="Discovery mode", offscreen=True)
     apply_music_metadata(discovery_item, "Discovery mode")
     set_item_icon(discovery_item, discovery_icon())
-    discovery_item.setLabel2(discovery_status())
+    discovery_item.setLabel2(plain(discovery_status()))
     add_directory_item(
         HANDLE,
         addon_url(action="discovery_mode"),
@@ -4815,7 +4825,7 @@ def show_root() -> None:
     radio_item = xbmcgui.ListItem(label="Radio mode", offscreen=True)
     apply_music_metadata(radio_item, "Radio mode")
     set_item_icon(radio_item, radio_icon())
-    radio_item.setLabel2(radio_status())
+    radio_item.setLabel2(plain(radio_status()))
     add_directory_item(
         HANDLE,
         addon_url(action="radio_mode"),
@@ -6992,6 +7002,9 @@ def record_mix_assist_result(cache_path: str, original: list[str], plan: dict, a
         section["ai_name"] = plan["name"]
     meta[MIX_ASSIST_SECTION] = section
     save_json_file(mix_meta_path_from_cache_path(cache_path), meta)
+    if plan["changes"]:
+        record_track_origins(cache_path, [change["new"] for change in plan["changes"]], "ai",
+                             [ai_replacement_note(change) for change in plan["changes"]])
     if named and mix_naming_enabled() and not own_mix_name(meta):
         record_mix_history(cache_path, "named", name=plan["name"])
     record_mix_history(
