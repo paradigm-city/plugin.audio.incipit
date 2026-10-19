@@ -5817,10 +5817,10 @@ def apply_saved_mix_info_metadata(list_item: xbmcgui.ListItem, cache_path: str) 
 MIX_ALBUM_ARTIST = "MusicIP"
 COLLAGE_GAP = 4
 COLLAGES = {  # kind -> size in pixels, grids (columns, rows) from the largest (with fewer covers the next), contrast
-    "cover": ((800, 800), ((4, 4), (3, 3), (2, 2)), 0.8),
-    "fanart": ((1920, 960), ((8, 4), (6, 3), (4, 2)), 0.65),  # a calmer background
+    "cover": ((800, 800), ((4, 4), (3, 3), (2, 2)), 0.7),
+    "fanart": ((1920, 960), ((8, 4), (6, 3), (4, 2)), 0.55),  # a calmer background
 }
-COLLAGE_STYLE = "2"  # part of the file names: a change of the drawing draws all collages again
+COLLAGE_STYLE = "3"  # part of the file names: a change of the drawing draws all collages again
 
 
 def mix_track_snapshot_list(meta: dict, tracks: list[str]) -> list[dict]:
