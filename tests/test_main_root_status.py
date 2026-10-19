@@ -24,7 +24,7 @@ class RootStatusTest(KodiTestCase):
         meta["track_metadata_by_path"] = {main.canonical_audio_path(t): {"title": "x", "duration": 1900} for t in tracks}
         self.write_json(main.mix_meta_path_from_cache_path(cache_path), meta)
         name = main.saved_mix_name(main.get_saved_mix_metadata(cache_path))
-        self.assertEqual(self.labels2()["Current mix"], f"{name} · 1 h 03 min · not saved")
+        self.assertEqual(self.labels2()["Current mix"], f"{name} | 1 h 03 min | not saved")
         self.assertEqual(main.format_mix_length(59 * 60), "59 min")
 
     def test_a_playing_station_and_since_when(self):
@@ -32,17 +32,19 @@ class RootStatusTest(KodiTestCase):
         main.save_radio_state({"phase": "playing", "current_label": "Air – La femme d'argent",
                                "playing_started_ts": started})
         self.assertEqual(self.labels2()["Radio mode"],
-                         f"Air – La femme d'argent · since {time.strftime('%H:%M', time.localtime(started))}")
+                         f"Air - La femme d'argent | since {time.strftime('%H:%M', time.localtime(started))}")
+        main.save_radio_state(dict(main.get_radio_state(), name="Night Drive", favourite_id="f1"))
+        self.assertTrue(self.labels2()["Radio mode"].startswith("Night Drive | since "))  # the station's name
 
     def test_scanning_shows_the_snippet_on_the_radio_not_on_discovery(self):
         main.save_radio_state({"phase": "seeking"})
         main.save_discovery_state({"enabled": True, "owner": "radio", "current_label": "Moby – Porcelain"})
         status = self.labels2()
-        self.assertEqual((status["Radio mode"], status["Discovery mode"]), ("Scanning: Moby – Porcelain", ""))
+        self.assertEqual((status["Radio mode"], status["Discovery mode"]), ("Scanning: Moby - Porcelain", ""))
 
     def test_discovery_shows_its_snippet(self):
         main.save_discovery_state({"enabled": True, "current_label": "Moby – Porcelain"})
-        self.assertEqual(self.labels2()["Discovery mode"], "Moby – Porcelain")
+        self.assertEqual(self.labels2()["Discovery mode"], "Moby - Porcelain")
 
 
 if __name__ == "__main__":

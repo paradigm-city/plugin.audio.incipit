@@ -75,6 +75,28 @@ class TidyUpTest(MixAssistTestCase):
                                               "reason": "Danceable disco, bright"}])
         self.assertEqual(event["removed"], [{"track": "Track 5", "reason": ""}])
 
+    def test_a_replacement_says_it_came_from_ai_mix_assist(self):
+        self.tidy_up(plan(changes=[REPLACE_DISCO]))
+        origin = main.track_origin(main.get_saved_mix_metadata(self.cache_path), REPLACEMENT)
+        self.assertEqual(origin["origin"], "ai")
+        self.assertEqual(origin["note"], "Replaced by AI Mix Assist: wilfried \u2013 fire walk (Danceable disco, bright)")
+        for track in self.read_mix(self.cache_path):
+            kodi.add_media(track)
+        kodi.directory_items.clear()
+        self.run_plugin(action="browse_saved_mix", cache_path=self.cache_path)
+        item = [item for _url, item, _folder in kodi.directory_items][2]
+        self.assertTrue(item.getLabel2().startswith("AI Mix Assist"))
+        self.assertEqual(item.getMusicInfoTag().getComment(),
+                         "Replaced by AI Mix Assist: wilfried - fire walk (Danceable disco, bright)")  # plain
+
+    def test_older_tidy_ups_count_too(self):
+        meta_path = main.mix_meta_path_from_cache_path(self.cache_path)
+        meta = self.read_json(meta_path)
+        meta["mix_assist"] = {"replaced": [dict(REPLACE_DISCO)]}  # before origins were kept
+        self.write_json(meta_path, meta)
+        self.assertEqual(main.track_origin(main.get_saved_mix_metadata(self.cache_path), REPLACEMENT)["origin"], "ai")
+        self.assertEqual(main.track_origin(main.get_saved_mix_metadata(self.cache_path), TRACKS[1]), {})
+
     def test_a_fitting_mix_is_left_unchanged(self):
         self.tidy_up(plan())
         self.assertEqual(self.read_mix(self.cache_path), TRACKS)
