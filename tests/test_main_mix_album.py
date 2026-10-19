@@ -53,10 +53,21 @@ class MixAlbumTest(MixAlbumTestCase):
         self.assertEqual(tag.getArtist(), "Artist 3, Artist 0, Artist 1 and 2 more")  # the seed's artist first
         self.assertEqual(tag.getGenres(), ["Rock", "Blues"])
         self.assertEqual((tag.getYear(), tag.getDuration()), (1980, 20 * 200))  # the middle release year
-        self.assertTrue(item.getLabel2().startswith("Artist 3 – Song 3 · "))
-        self.assertEqual(item.getProperty("Album_Description"), "From: Artist 3 – Song 3")
+        self.assertTrue(item.getLabel2().startswith("Artist 3 - Song 3 | "))  # plain punctuation on this branch
+        self.assertEqual(item.getProperty("Album_Description"), "From: Artist 3 - Song 3")
         self.assertEqual((item.getProperty("Album_Type"), item.getProperty("Album_Label")), ("Mix", "MusicIP"))
         self.assertEqual((item.getArt("thumb"), item.getArt("fanart")), ("image://cover3.jpg/", "image://fanart3.jpg/"))
+
+    def test_ai_mix_assist_adds_what_it_is_about_and_the_sound_in_words(self):
+        meta = self.read_json(main.mix_meta_path_from_cache_path(self.cache_path))
+        meta["mix_assist"] = {"intent": "dark, abstract, instrumental", "profile": {"values": {
+            "energy": [5.0, 2, 8], "mood": [2.6, 1, 4], "danceability": [3.7, 2, 7], "exploration": [2.5, 1, 6],
+            "making": [0.6, 0, 4], "production": [6.7, 4, 8], "form": [8.1, 7, 9], "sounding_year": [1991, 1972, 2020]}}}
+        self.write_json(main.mix_meta_path_from_cache_path(self.cache_path), meta)
+        item = self.mix_item()
+        self.assertEqual(item.getProperty("Album_Description"), "dark, abstract, instrumental\nFrom: Artist 3 - Song 3")
+        self.assertEqual(item.getProperty("Album_Mood"), "steady, brooding, swaying")
+        self.assertEqual(item.getProperty("Album_Style"), "familiar, hand-played, clean, song")
 
     def test_a_short_artist_list_is_shown_whole(self):
         self.assertEqual(main.mix_artist_text(["A", "B"]), "A, B")
