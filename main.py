@@ -6371,13 +6371,16 @@ def apply_saved_mix_info_metadata(list_item: xbmcgui.ListItem, cache_path: str) 
 
 # --- A saved mix as a compilation album -----------------------------------------------------------------------
 # Album fields from the mix's track metadata (its album artist is MusicIP), the seed song as the second text, and a
-# collage of the covers in the mix as its picture. The service draws the collages in the background
-# (run_mix_collage_tick in service.py); until then, and without enough covers, the seed's own cover is shown.
+# collage of the covers in the mix as its picture, a wide one as its fanart. The service draws the collages in the
+# background (run_mix_collage_tick in service.py); until then, and without enough covers, the seed's own cover and
+# fanart are shown.
 
 MIX_ALBUM_ARTIST = "MusicIP"
-COLLAGE_SIZE = 800  # pixels
 COLLAGE_GAP = 4
-COLLAGE_GRIDS = (4, 3, 2)  # 4 x 4 covers; with fewer covers 3 x 3, or 2 x 2
+COLLAGES = {  # kind -> size in pixels, grids (columns, rows) from the largest; with fewer covers the next one
+    "cover": ((800, 800), ((4, 4), (3, 3), (2, 2))),
+    "fanart": ((1920, 960), ((8, 4), (6, 3), (4, 2))),
+}
 
 
 def mix_track_snapshot_list(meta: dict, tracks: list[str]) -> list[dict]:
@@ -6454,7 +6457,10 @@ def apply_mix_album_metadata(list_item: xbmcgui.ListItem, cache_path: str, track
         list_item.setProperty("Album_Description", f"From: {fields['seed_label']}")
     cover = existing_mix_collage(cache_path, tracks) or fields["seed_thumb"]
     art = {"thumb": cover, "icon": cover, "poster": cover} if cover else {}
-    if fields["seed_fanart"]:
+    wide = existing_mix_collage(cache_path, tracks, "fanart")
+    if wide:
+        art.update(fanart=wide, landscape=wide)
+    elif fields["seed_fanart"]:
         art["fanart"] = fields["seed_fanart"]
     if art:
         list_item.setArt(art)
@@ -6487,17 +6493,30 @@ def apply_mix_assist_album_metadata(list_item: xbmcgui.ListItem, meta: dict, alb
             list_item.setProperty(prop, ", ".join(words))
 
 
-def mix_collage_path(cache_path: str, tracks: list[str]) -> str:
-    """One file per mix and track list: a changed mix gets a new collage (and Kodi, which caches images by path,
-    shows it)."""
+def mix_collage_path(cache_path: str, tracks: list[str], kind: str = "cover") -> str:
+    """One file per mix, track list and kind (cover, fanart): a changed mix gets new collages (and Kodi, which
+    caches images by path, shows them)."""
     key = hashlib.sha1("\n".join(canonical_audio_path(track) for track in tracks).encode("utf-8")).hexdigest()[:12]
     name = os.path.splitext(os.path.basename(cache_path))[0]
-    return os.path.join(get_profile_dir(), "covers", f"{name}_{key}.jpg")
+    return os.path.join(get_profile_dir(), "covers", f"{name}_{key}{'' if kind == 'cover' else '_' + kind}.jpg")
 
 
-def existing_mix_collage(cache_path: str, tracks: list[str]) -> str:
-    path = mix_collage_path(cache_path, tracks)
+def existing_mix_collage(cache_path: str, tracks: list[str], kind: str = "cover") -> str:
+    path = mix_collage_path(cache_path, tracks, kind)
     return path if os.path.isfile(path) else ""
+
+
+def remove_old_mix_collages(cache_path: str, keep: list[str]) -> None:
+    """The mix's collages for earlier track lists (exactly its own: one mix's name may begin another's)."""
+    folder = os.path.join(get_profile_dir(), "covers")
+    name = re.escape(os.path.splitext(os.path.basename(cache_path))[0])
+    pattern = re.compile(rf"{name}_[0-9a-f]{{12}}(_fanart)?\.jpg")
+    for file_name in os.listdir(folder) if os.path.isdir(folder) else []:
+        if pattern.fullmatch(file_name) and os.path.join(folder, file_name) not in keep:
+            try:
+                os.remove(os.path.join(folder, file_name))
+            except OSError:
+                pass
 
 
 def cover_image_file(thumbnail: str) -> str:
@@ -6538,23 +6557,22 @@ def pick_spread(items: list[str], count: int) -> list[str]:
     return [items[0]] + [rest[round(i * (len(rest) - 1) / max(1, count - 2))] for i in range(count - 1)]
 
 
-def make_mix_collage(cache_path: str) -> str:
-    """Draw the mix's cover collage (4 x 4, or 3 x 3 / 2 x 2 with fewer covers); older ones of the mix are removed.
-    Returns its path, or "" (too few covers, or no Pillow in Kodi's Python)."""
+def draw_collage(covers: list[str], kind: str, path: str) -> bool:
+    """A grid of covers (square cells, the first cover top left); False with too few covers or without Pillow."""
     try:
         from PIL import Image
     except Exception:
-        return ""
-    tracks = load_mix_by_cache_path(cache_path)
-    meta = get_saved_mix_metadata(cache_path, tracks)
-    covers = mix_cover_files(meta, tracks)
-    grid = next((size for size in COLLAGE_GRIDS if len(covers) >= size * size), 0)
-    if not grid:
-        return ""
-    cell = (COLLAGE_SIZE - (grid - 1) * COLLAGE_GAP) // grid
-    collage = Image.new("RGB", (COLLAGE_SIZE, COLLAGE_SIZE), (0, 0, 0))
+        return False
+    (width, height), grids = COLLAGES[kind]
+    columns, rows = next(((c, r) for c, r in grids if len(covers) >= c * r), (0, 0))
+    if not columns:
+        return False
+    cell = min((width - (columns - 1) * COLLAGE_GAP) // columns, (height - (rows - 1) * COLLAGE_GAP) // rows)
+    collage = Image.new("RGB", (width, height), (0, 0, 0))
+    left0 = (width - columns * cell - (columns - 1) * COLLAGE_GAP) // 2
+    top0 = (height - rows * cell - (rows - 1) * COLLAGE_GAP) // 2
     resample = getattr(Image, "LANCZOS", getattr(Image, "ANTIALIAS", 1))
-    for index, cover in enumerate(pick_spread(covers, grid * grid)):
+    for index, cover in enumerate(pick_spread(covers, columns * rows)):
         try:
             image = Image.open(cover).convert("RGB")
         except Exception:
@@ -6562,18 +6580,25 @@ def make_mix_collage(cache_path: str) -> str:
         side = min(image.size)
         left, top = (image.width - side) // 2, (image.height - side) // 2
         image = image.crop((left, top, left + side, top + side)).resize((cell, cell), resample)
-        collage.paste(image, ((index % grid) * (cell + COLLAGE_GAP), (index // grid) * (cell + COLLAGE_GAP)))
-    path = mix_collage_path(cache_path, tracks)
+        collage.paste(image, (left0 + (index % columns) * (cell + COLLAGE_GAP),
+                              top0 + (index // columns) * (cell + COLLAGE_GAP)))
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    prefix = os.path.basename(path).rsplit("_", 1)[0] + "_"
-    for name in os.listdir(os.path.dirname(path)):
-        if name.startswith(prefix) and name.endswith(".jpg"):
-            try:
-                os.remove(os.path.join(os.path.dirname(path), name))
-            except OSError:
-                pass
     collage.save(path, "JPEG", quality=88)
-    return path
+    return True
+
+
+def make_mix_collage(cache_path: str) -> str:
+    """Draw the mix's collages: the cover (4 x 4, or 3 x 3 / 2 x 2 with fewer covers) and the fanart (8 x 4, or
+    6 x 3 / 4 x 2); older ones of the mix are removed. Returns the cover's path, or "" (too few covers, or no
+    Pillow in Kodi's Python)."""
+    tracks = load_mix_by_cache_path(cache_path)
+    meta = get_saved_mix_metadata(cache_path, tracks)
+    covers = mix_cover_files(meta, tracks)
+    made = [path for path in (mix_collage_path(cache_path, tracks, kind) for kind in COLLAGES)
+            if draw_collage(covers, "fanart" if path.endswith("_fanart.jpg") else "cover", path)]
+    remove_old_mix_collages(cache_path, keep=made)
+    cover = mix_collage_path(cache_path, tracks)
+    return cover if cover in made else ""
 
 
 def build_mix_playlist_item(track: str, metadata: dict, mix_position: int) -> xbmcgui.ListItem:

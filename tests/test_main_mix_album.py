@@ -84,10 +84,42 @@ class MixCollageTest(MixAlbumTestCase):
         path = main.make_mix_collage(self.cache_path)
         self.assertEqual(path, main.mix_collage_path(self.cache_path, TRACKS))
         image = Image.open(path)
-        self.assertEqual(image.size, (main.COLLAGE_SIZE, main.COLLAGE_SIZE))
-        cell = (main.COLLAGE_SIZE - 3 * main.COLLAGE_GAP) // 4
+        self.assertEqual(image.size, (800, 800))
+        cell = (800 - 3 * main.COLLAGE_GAP) // 4
         self.assertEqual(image.getpixel((cell // 2, cell // 2))[0] // 10, 3)  # the seed's cover first (red = 30)
         self.assertEqual(self.mix_item().getArt("thumb"), path)
+
+    def test_a_wide_collage_becomes_the_mixs_fanart(self):
+        from PIL import Image
+        self.add_covers(20)  # 20 covers: 6 x 3 (8 x 4 needs 32)
+        main.make_mix_collage(self.cache_path)
+        wide = main.mix_collage_path(self.cache_path, TRACKS, "fanart")
+        self.assertEqual(Image.open(wide).size, (1920, 960))
+        item = self.mix_item()
+        self.assertEqual((item.getArt("fanart"), item.getArt("landscape")), (wide, wide))
+        for index in range(20, 40):
+            kodi.textures[f"image://cover{index}.jpg/"] = "c/0.jpg"  # same picture: counted once
+        self.assertEqual(len(main.mix_cover_files(main.get_saved_mix_metadata(self.cache_path), TRACKS)), 20)
+
+    def test_fewer_covers_make_a_smaller_fanart_or_leave_the_seeds(self):
+        self.add_covers(8)
+        self.assertTrue(main.make_mix_collage(self.cache_path))
+        self.assertTrue(main.existing_mix_collage(self.cache_path, TRACKS, "fanart"))
+        kodi.textures.clear()
+        self.add_covers(5)
+        main.save_mix_by_cache_path(self.cache_path, TRACKS[:19])
+        self.assertTrue(main.make_mix_collage(self.cache_path))  # 2 x 2 cover, too few for a fanart
+        self.assertEqual(main.existing_mix_collage(self.cache_path, TRACKS[:19], "fanart"), "")
+        self.assertEqual(self.mix_item().getArt("fanart"), "image://fanart3.jpg/")  # the seed's
+
+    def test_another_mixs_collages_are_left_alone(self):
+        self.add_covers(20)
+        other = os.path.join(os.path.dirname(main.mix_collage_path(self.cache_path, TRACKS)),
+                             os.path.splitext(os.path.basename(self.cache_path))[0] + "_1792346220176_0123456789ab.jpg")
+        os.makedirs(os.path.dirname(other), exist_ok=True)
+        open(other, "wb").close()  # a mix whose name begins with this one's
+        main.make_mix_collage(self.cache_path)
+        self.assertTrue(os.path.isfile(other))
 
     def test_fewer_covers_make_a_smaller_grid_or_none(self):
         self.add_covers(3)
@@ -102,7 +134,8 @@ class MixCollageTest(MixAlbumTestCase):
         main.save_mix_by_cache_path(self.cache_path, TRACKS[:18])
         new = main.make_mix_collage(self.cache_path)
         self.assertNotEqual(old, new)
-        self.assertEqual(os.listdir(os.path.dirname(new)), [os.path.basename(new)])
+        self.assertEqual(sorted(os.listdir(os.path.dirname(new))),
+                         sorted([os.path.basename(new), os.path.basename(new).replace(".jpg", "_fanart.jpg")]))
 
     def test_the_service_draws_missing_collages_one_at_a_time(self):
         self.add_covers(20)
