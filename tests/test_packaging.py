@@ -77,7 +77,17 @@ class SettingsXmlTest(unittest.TestCase):
         self.assertEqual(used - set(self.settings), set())
 
     def test_every_declared_setting_is_used(self):
-        self.assertEqual(set(self.settings) - self.used_setting_ids(), set())
+        values = {setting_id for setting_id, node in self.settings.items() if node.get("type") != "action"}
+        self.assertEqual(values - self.used_setting_ids(), set())
+
+    def test_buttons_run_an_action_of_the_add_on(self):
+        buttons = {setting_id: node for setting_id, node in self.settings.items() if node.get("type") == "action"}
+        for setting_id, node in buttons.items():
+            with self.subTest(setting=setting_id):
+                data = node.find("data").text
+                self.assertTrue(data.startswith(f"RunPlugin(plugin://{ADDON_ID}/?action="), data)
+                action = data.split("action=")[1].rstrip(")")
+                self.assertIn(f'action == "{action}"', read("main.py"))
 
     def test_slider_defaults_are_inside_their_range(self):
         for setting_id, node in self.settings.items():
