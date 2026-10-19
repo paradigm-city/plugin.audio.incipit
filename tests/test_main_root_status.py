@@ -36,14 +36,12 @@ class RootStatusTest(KodiTestCase):
         self.assertEqual(self.labels2()["Current mix"], f"{name} | 1 h 03 min | not saved")
         self.assertEqual(main.format_mix_length(59 * 60), "59 min")
 
-    def test_a_playing_station_and_since_when(self):
-        started = int(time.time())
+    def test_a_playing_station_shows_its_song(self):
         main.save_radio_state({"phase": "playing", "current_label": "Air – La femme d'argent",
-                               "playing_started_ts": started})
-        self.assertEqual(self.labels2()["Radio mode"],
-                         f"Air - La femme d'argent | since {time.strftime('%H:%M', time.localtime(started))}")
+                               "playing_started_ts": int(time.time())})
+        self.assertEqual(self.labels2()["Radio mode"], "Air - La femme d'argent")  # what plays, not since when
         main.save_radio_state(dict(main.get_radio_state(), name="Night Drive", favourite_id="f1"))
-        self.assertTrue(self.labels2()["Radio mode"].startswith("Night Drive | since "))  # the station's name
+        self.assertEqual(self.labels2()["Radio mode"], "Night Drive: Air - La femme d'argent")  # with its name
 
     def test_scanning_shows_the_snippet_on_the_radio_not_on_discovery(self):
         main.save_radio_state({"phase": "seeking"})

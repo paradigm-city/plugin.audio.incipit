@@ -4763,7 +4763,7 @@ def current_mix_status(meta: dict, tracks: list[str]) -> str:
 
 
 def radio_status() -> str:
-    """The Radio entry's second text: what the station plays and since when, or the snippet while it scans."""
+    """The Radio entry's second text: what the station plays, or the snippet while it scans."""
     phase = radio_phase()
     state = get_radio_state()
     if phase == "seeking":
@@ -4771,16 +4771,14 @@ def radio_status() -> str:
         return f"Scanning: {snippet}" if snippet else "Scanning"
     if phase != "playing":
         return ""
-    parts = [radio_station_label(state)]
-    started = int(state.get("playing_started_ts") or 0)
-    if started:
-        parts.append(f"since {time.strftime('%H:%M', time.localtime(started))}")
-    return " · ".join(part for part in parts if part)
+    return radio_station_label(state)
 
 
 def radio_station_label(state: dict) -> str:
-    """What names the playing station here: its name (a favourite's, or the AI's), else the song it plays."""
-    return station_name(state) or str(state.get("current_label") or "").strip()
+    """What the station plays, after its name (a favourite's, or the AI's) when it has one."""
+    song = str(state.get("current_label") or "").strip()
+    name = station_name(state)
+    return f"{name}: {song}" if name and song else name or song
 
 
 def discovery_status() -> str:
