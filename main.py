@@ -7632,13 +7632,14 @@ def save_station_as_favourite() -> None:
 def show_radio_favourites() -> None:
     xbmcplugin.setPluginCategory(HANDLE, "Favourite stations")
     xbmcplugin.setContent(HANDLE, "files")
+    keep_second_lines()
     for station in sorted(load_radio_favourites(), key=lambda entry: str(entry.get("name") or "").casefold()):
         label = plain(station.get("name") or station.get("seed_label") or path_to_label(station["seed"]))
         item = xbmcgui.ListItem(label=label, offscreen=True)
         apply_music_metadata(item, label)
         set_item_icon(item, media_icon("radio"))
         openness, drift = favourite_setting_labels(station)
-        item.setLabel2(plain(f"{station.get('seed_label') or ''} | {openness} | {drift}"))
+        set_second_line(item, plain(f"{station.get('seed_label') or ''} | {openness} | {drift}"))
         item.setProperty("IsPlayable", "false")
         item.addContextMenuItems([
             (f"Openness: {openness}",
