@@ -60,6 +60,12 @@ Found on 2026-10-11 while removing the Discovery command channel (F6). They are 
 
 ## Resolved
 
+### F27 · The add-on's second texts (Label2) were never shown
+
+Found by the user on 2026-10-19: the first screen's Discovery and Radio entries showed "Folder" under their names instead of what they were doing. Kodi rewrites the Label2 of every add-on entry from the listing's label masks; without a sort method of the add-on's own, folders get none and files their duration. So every `setLabel2()` of the add-on was lost: the first screen's status texts, the saved mixes' seed song, a missing track's "Missing file", the tracks' origins. Arctic Fuse then shows a fallback ("Folder"). Checked in the running Kodi with a test listing: the Label2 stayed empty with the default masks and with `%h`.
+
+Fixed in 43212c9 (2026-10-19): listings with second lines (the first screen, the saved mixes of a date) put them in the entries' artist field as well and ask for `%A` as the second label (`keep_second_lines()`), so skins that show the artist (Arctic Fuse) and skins that show Label2 both show them. A track's origin is shown after its name (a file's second label stays its duration). Still to be seen in Kodi.
+
 ### F26 · Drawing a mix's collage could delete another mix's collage
 
 Found on 2026-10-19 while adding the fanart collage: `make_mix_collage()` removed the mix's older collages by the beginning of their file name. Mix files can be named `mix_<id>.m3u` and `mix_<id>_<time>.m3u`, so the first mix's name begins the second's, and drawing its collage deleted the other's. The service then drew that one again, and so on.

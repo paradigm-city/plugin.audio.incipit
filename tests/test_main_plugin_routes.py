@@ -339,7 +339,7 @@ class BrowseMixTest(MusicIPServerTestCase):
         self.run_plugin(action="browse_mix", seed=SEED, size="20")
         self.assertEqual(self.musicip.requests, [])
         self.assertEqual(self.listed_labels(), [
-            "1. (Unknown Artist) - 01 Ace of Spades",
+            "1. (Unknown Artist) - 01 Ace of Spades  [COLOR FF8C929C]Seed[/COLOR]",  # the seed says so
             "2. (Unknown Artist) - 01 Overkill",
             "[B][COLOR red]![/COLOR][/B] 3. (Unknown Artist) - 01 Motorcycle Man",
         ])

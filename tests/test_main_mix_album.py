@@ -50,11 +50,15 @@ class MixAlbumTest(MixAlbumTestCase):
         self.assertIn(("setContent", "albums"), kodi.directory_calls)
         self.assertEqual((tag.getMediaType(), tag.getAlbumArtist()), ("album", "MusicIP"))
         self.assertEqual(tag.getAlbum(), main.saved_mix_name(main.get_saved_mix_metadata(self.cache_path)))
-        self.assertEqual(tag.getArtist(), "Artist 3, Artist 0, Artist 1 and 2 more")  # the seed's artist first
+        self.assertTrue(tag.getArtist().startswith("Artist 3 - Song 3 | "))  # the seed song: the second line
+        self.assertEqual(tag.getArtist(), item.getLabel2())
+        self.assertIn(("addSortMethod", main.xbmcplugin.SORT_METHOD_UNSORTED, {"labelMask": "%L", "label2Mask": "%A"}),
+                      kodi.directory_calls)  # Kodi keeps it as the second label
         self.assertEqual(tag.getGenres(), ["Rock", "Blues"])
         self.assertEqual((tag.getYear(), tag.getDuration()), (1980, 20 * 200))  # the middle release year
         self.assertTrue(item.getLabel2().startswith("Artist 3 - Song 3 | "))  # plain punctuation on this branch
-        self.assertEqual(item.getProperty("Album_Description"), "From: Artist 3 - Song 3")
+        self.assertEqual(item.getProperty("Album_Description"),
+                         "From: Artist 3 - Song 3\nArtists: Artist 3, Artist 0, Artist 1, Artist 2, Artist 4")
         self.assertEqual((item.getProperty("Album_Type"), item.getProperty("Album_Label")), ("Mix", "MusicIP"))
         self.assertEqual((item.getArt("thumb"), item.getArt("fanart")), ("image://cover3.jpg/", "image://fanart3.jpg/"))
 
@@ -65,7 +69,8 @@ class MixAlbumTest(MixAlbumTestCase):
             "making": [0.6, 0, 4], "production": [6.7, 4, 8], "form": [8.1, 7, 9], "sounding_year": [1991, 1972, 2020]}}}
         self.write_json(main.mix_meta_path_from_cache_path(self.cache_path), meta)
         item = self.mix_item()
-        self.assertEqual(item.getProperty("Album_Description"), "dark, abstract, instrumental\nFrom: Artist 3 - Song 3")
+        self.assertEqual(item.getProperty("Album_Description"), "dark, abstract, instrumental\nFrom: Artist 3 - Song 3\n"
+                         "Artists: Artist 3, Artist 0, Artist 1, Artist 2, Artist 4")
         self.assertEqual(item.getProperty("Album_Mood"), "steady, brooding, swaying")
         self.assertEqual(item.getProperty("Album_Style"), "familiar, hand-played, clean, song")
 

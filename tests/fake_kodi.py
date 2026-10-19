@@ -716,7 +716,7 @@ def _setResolvedUrl(handle, succeeded, listitem):
 
 def _record(name):
     def call(handle, *args, **kwargs):
-        kodi.directory_calls.append((name,) + args)
+        kodi.directory_calls.append((name,) + args + ((dict(kwargs),) if kwargs else ()))
     return call
 
 
