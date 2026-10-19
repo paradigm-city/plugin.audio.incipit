@@ -2867,8 +2867,11 @@ def insert_more_like_this_into_mix(seed: str, size: int, index: int, path: str, 
     insert_at = insert_after + 1
     updated_tracks = source_tracks[:insert_at] + new_tracks + source_tracks[insert_at:]
     save_mix_by_cache_path(target_cache_path, updated_tracks)
-    record_mix_history(target_cache_path, "more_like_this", song=mix_track_labels(target_cache_path, [path])[0],
+    song = mix_track_labels(target_cache_path, [path])[0]
+    record_mix_history(target_cache_path, "more_like_this", song=song,
                        added=mix_track_labels(target_cache_path, new_tracks))
+    record_track_origins(target_cache_path, new_tracks, "more_like_this",
+                         [f"Added by More like this for {song}"] * len(new_tracks))
     return len(new_tracks)
 
 
@@ -3880,6 +3883,8 @@ def record_repair_history(cache_path: str, replaced: list[tuple[str, str]], auto
     new_labels = mix_track_labels(cache_path, [new for _old, new in replaced])
     record_mix_history(cache_path, "repaired", automatic=automatic,
                        replaced=[{"old": old, "new": new} for old, new in zip(old_labels, new_labels)])
+    record_track_origins(cache_path, [new for _old, new in replaced], "repaired",
+                         [f"Replaced the missing file of {old}" for old in old_labels])
 
 
 def repair_saved_mix_foreground(cache_path: str, progress=None) -> int:
@@ -4407,6 +4412,33 @@ def run_selected_mix_keyboard_action(property_name: str, action_label: str) -> N
     finish_plugin_action()
 
 
+# --- Where a mix's tracks came from: kept with the mix ("track_origins": path -> origin, note), shown in the
+# track list (the second text) and in the track's information (its comment). Tracks without one are MusicIP's.
+
+TRACK_ORIGIN_LABELS = {"seed": "Seed", "more_like_this": "More like this", "repaired": "Repaired",
+                       "ai": "AI Mix Assist"}
+
+
+def record_track_origins(cache_path: str, tracks: list[str], origin: str, notes: list[str] | None = None) -> None:
+    meta_path = mix_meta_path_from_cache_path(cache_path)
+    meta = load_json_file(meta_path)
+    origins = meta.get("track_origins") if isinstance(meta.get("track_origins"), dict) else {}
+    for index, track in enumerate(tracks):
+        note = notes[index] if notes and index < len(notes) else ""
+        origins[canonical_audio_path(track)] = {"origin": origin, "note": note, "ts": int(time.time())}
+    meta["track_origins"] = origins
+    save_json_file(meta_path, meta)
+
+
+def track_origin(meta: dict, path: str, seed: str = "") -> dict:
+    """{"origin", "note"} for a track of the mix; {} for MusicIP's own."""
+    if seed and canonical_audio_path(path) == canonical_audio_path(seed):
+        return {"origin": "seed", "note": "The song the mix was made from"}
+    origins = meta.get("track_origins") if isinstance(meta.get("track_origins"), dict) else {}
+    origin = origins.get(canonical_audio_path(path))
+    return origin if isinstance(origin, dict) and origin.get("origin") in TRACK_ORIGIN_LABELS else {}
+
+
 def add_track_item(
     seed: str,
     size: int,
@@ -4415,6 +4447,7 @@ def add_track_item(
     cache_path: str = '',
     metadata: dict | None = None,
     unsaved: bool = False,
+    origin: dict | None = None,
 ) -> None:
     metadata = metadata if isinstance(metadata, dict) else get_track_metadata(path)
     mix_position = int(index) + 1
@@ -4450,6 +4483,16 @@ def add_track_item(
         genres=metadata.get('genre'),
         duration=parse_duration_seconds(metadata.get('duration')),
     )
+    if origin:
+        details = format_track_details(year=parse_year(metadata.get('year')), decade=str(metadata.get('decade') or ''),
+                                       genres=metadata.get('genre'), duration=parse_duration_seconds(metadata.get('duration')))
+        list_item.setLabel2(" · ".join(part for part in (TRACK_ORIGIN_LABELS[origin["origin"]], details) if part))
+        list_item.setProperty("MusicIP.Origin", origin["origin"])
+        if origin.get("note"):
+            try:
+                list_item.getMusicInfoTag().setComment(str(origin["note"]))
+            except Exception:
+                pass
     if missing:
         try:
             list_item.setLabel2("[B][COLOR red]![/COLOR][/B] Missing file")
@@ -4609,6 +4652,50 @@ def radio_icon() -> str:
     return media_icon({"playing": "playing", "seeking": "searching"}.get(radio_phase(), "radio"))
 
 
+# --- What runs, as the first screen's second texts -------------------------------------------------------------
+
+def format_mix_length(seconds: int) -> str:
+    minutes = max(0, int(seconds)) // 60
+    return f"{minutes // 60} h {minutes % 60:02d} min" if minutes >= 60 else f"{minutes} min"
+
+
+def current_mix_status(meta: dict, tracks: list[str]) -> str:
+    """"Name · 2 h 41 min · not saved" (the length from the tracks' metadata, "40 tracks" without it)."""
+    durations = [int(snapshot.get("duration") or 0) for snapshot in mix_track_snapshot_list(meta, tracks)]
+    length = format_mix_length(sum(durations)) if any(durations) else f"{len(tracks)} tracks"
+    parts = [saved_mix_name(meta), length, "saved" if is_mix_saved(meta) else "not saved"]
+    return " · ".join(part for part in parts if part)
+
+
+def radio_status() -> str:
+    """The Radio entry's second text: what the station plays and since when, or the snippet while it scans."""
+    phase = radio_phase()
+    state = get_radio_state()
+    if phase == "seeking":
+        snippet = str(get_discovery_state().get("current_label") or "").strip()
+        return f"Scanning: {snippet}" if snippet else "Scanning"
+    if phase != "playing":
+        return ""
+    parts = [radio_station_label(state)]
+    started = int(state.get("playing_started_ts") or 0)
+    if started:
+        parts.append(f"since {time.strftime('%H:%M', time.localtime(started))}")
+    return " · ".join(part for part in parts if part)
+
+
+def radio_station_label(state: dict) -> str:
+    """What names the playing station here: the song it plays."""
+    return str(state.get("current_label") or "").strip()
+
+
+def discovery_status() -> str:
+    """The Discovery entry's second text: the snippet playing (not the radio's scan, which the Radio entry shows)."""
+    state = get_discovery_state()
+    if not state.get("enabled") or state.get("owner") == "radio":
+        return ""
+    return str(state.get("current_label") or "").strip() or "Playing snippets"
+
+
 def add_current_mix_item(cache_path: str) -> None:
     """The first screen's "Current mix": the newest mix, named by its seed until it is saved."""
     tracks = load_mix_by_cache_path(cache_path)
@@ -4620,8 +4707,7 @@ def add_current_mix_item(cache_path: str) -> None:
     apply_saved_mix_info_metadata(item, cache_path)
     set_item_icon(item, CURRENT_MIX_ICON)
     item.setProperty("IsPlayable", "false")
-    details = [path_to_label(meta.get("seed", "")), f"{len(tracks)} tracks", "saved" if saved else "not saved"]
-    item.setLabel2(" · ".join(detail for detail in details if detail))
+    item.setLabel2(current_mix_status(meta, tracks))
     context_items = [] if saved else [("Save mix", build_save_mix_action(cache_path))]
     context_items += [
         ("Information", run_plugin_url(action="mix_info", cache_path=cache_path, nonce=new_nonce())),
@@ -4656,6 +4742,7 @@ def show_root() -> None:
     discovery_item = xbmcgui.ListItem(label="Discovery mode", offscreen=True)
     apply_music_metadata(discovery_item, "Discovery mode")
     set_item_icon(discovery_item, discovery_icon())
+    discovery_item.setLabel2(discovery_status())
     add_directory_item(
         HANDLE,
         addon_url(action="discovery_mode"),
@@ -4666,6 +4753,7 @@ def show_root() -> None:
     radio_item = xbmcgui.ListItem(label="Radio mode", offscreen=True)
     apply_music_metadata(radio_item, "Radio mode")
     set_item_icon(radio_item, radio_icon())
+    radio_item.setLabel2(radio_status())
     add_directory_item(
         HANDLE,
         addon_url(action="radio_mode"),
@@ -5483,6 +5571,7 @@ def list_mix_tracks(cache_path: str, tracks: list[str], seed: str, size: int, up
                 cache_path=cache_path,
                 metadata=track_metadata_list[index] if index < len(track_metadata_list) else None,
                 unsaved=not is_mix_saved(meta),
+                origin=track_origin(meta, path, seed=str(meta.get("seed") or seed)),
             )
 
     end_directory(HANDLE, updateListing=update_listing, cacheToDisc=False)
