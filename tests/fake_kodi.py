@@ -86,6 +86,10 @@ class InfoTagMusic:
     def setURL(self, value): self.values["url"] = value
     def getURL(self): return self.values["url"]
     def setComment(self, value): self.values["comment"] = value
+    def setAlbumArtist(self, value): self.values["albumartist"] = value
+    def getAlbumArtist(self): return self.values.get("albumartist", "")
+    def setMediaType(self, value): self.values["mediatype"] = value
+    def getMediaType(self): return self.values.get("mediatype", "")
     def getComment(self): return self.values["comment"]
 
 
@@ -244,6 +248,7 @@ class KodiState:
         self.kodi_settings = {}
         self.jsonrpc_calls = []
         self.jsonrpc_failures = {}
+        self.textures = {}  # Textures.GetTextures: image URL -> cached file in special://thumbnails
         self.media_files = set()
         self.media_entries = {}  # media_key -> (original path, is_folder), for listdir()
         self.playlist = []
@@ -271,6 +276,9 @@ class KodiState:
         if path.startswith("special://skin"):  # the skin's folder (tests put colour files there)
             rest = path[len("special://skin"):].lstrip("/")
             return os.path.join(self.root, "skin", *[part for part in rest.split("/") if part])
+        if path.startswith("special://thumbnails"):  # Kodi's image cache (tests put covers there)
+            rest = path[len("special://thumbnails"):].lstrip("/")
+            return os.path.join(self.root, "thumbnails", *[part for part in rest.split("/") if part])
         if path.startswith("special://profile"):
             rest = path[len("special://profile"):].lstrip("/")
             translated = os.path.join(self.root, "profile", *[part for part in rest.split("/") if part])
@@ -390,6 +398,9 @@ class KodiState:
             return self.library.get_songs(params)
         if method == "AudioLibrary.GetSongDetails":
             return self.library.get_song_details(params)
+        if method == "Textures.GetTextures":  # kodi.textures: image URL -> cached file (relative to the cache)
+            value = (params.get("filter") or {}).get("value")
+            return {"textures": [{"cachedurl": self.textures[value], "textureid": 1}] if value in self.textures else []}
         if method == "AudioLibrary.GetProperties":
             return {key: self.library_properties.get(key, "") for key in params.get("properties") or []}
         if method in ("AudioLibrary.Scan", "AudioLibrary.Clean"):
