@@ -16,7 +16,10 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
+
+from mixassist import usage
 
 CREATE_NO_WINDOW = 0x08000000
 
@@ -146,13 +149,46 @@ def parse_structured(stdout: str, stderr: str = "") -> dict:
     return structured
 
 
+def call_usage(stdout: str) -> dict:
+    """What a print-mode call reports about itself: tokens, the equivalent API cost (not billed on a
+    subscription) and Claude's own time; {} when the answer isn't readable."""
+    try:
+        payload = json.loads(stdout)
+    except ValueError:
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    tokens = payload.get("usage") if isinstance(payload.get("usage"), dict) else {}
+    return {
+        "input_tokens": int(tokens.get("input_tokens") or 0),
+        "output_tokens": int(tokens.get("output_tokens") or 0),
+        "cache_read_tokens": int(tokens.get("cache_read_input_tokens") or 0),
+        "cache_write_tokens": int(tokens.get("cache_creation_input_tokens") or 0),
+        "cost_usd": float(payload.get("total_cost_usd") or 0),
+    }
+
+
 def ask(cli: str, system_prompt: str, schema: dict, message: str, model: str = DEFAULT_MODEL,
         effort: str = DEFAULT_EFFORT, timeout: int = DEFAULT_TIMEOUT, runner: Callable = subprocess.run) -> dict:
-    """One structured request; returns the parsed structured output."""
+    """One structured request; returns the parsed structured output. Each request is reported (usage.emit
+    "ai_call"): its system prompt (the add-on tells the purpose from it), whether it worked, tokens and time."""
     if not cli:
         raise ClaudeError(NOT_FOUND, "The Claude CLI was not found.")
-    stdout, stderr = run_command(cli, structured_command(system_prompt, schema, model, effort), message, timeout, runner)
-    return parse_structured(stdout, stderr)
+    started = time.monotonic()
+    report = {"system_prompt": system_prompt, "model": model, "ok": False}
+    try:
+        stdout, stderr = run_command(cli, structured_command(system_prompt, schema, model, effort), message, timeout,
+                                     runner)
+        report.update(call_usage(stdout))
+        result = parse_structured(stdout, stderr)
+        report["ok"] = True
+        return result
+    except ClaudeError as exc:
+        report["failure"] = exc.kind
+        raise
+    finally:
+        report["seconds"] = round(time.monotonic() - started, 1)
+        usage.emit("ai_call", **report)
 
 
 def check(cli: str, runner: Callable = subprocess.run) -> dict:

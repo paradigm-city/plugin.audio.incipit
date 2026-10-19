@@ -212,6 +212,22 @@ msgctxt "#30429"
 msgid "Full path to the Claude Code program (claude.exe). Leave empty to find it automatically, for example in the VS Code extension. AI Mix Assist uses your claude.ai subscription through it."
 msgstr ""
 
+msgctxt "#30430"
+msgid "Show statistics"
+msgstr ""
+
+msgctxt "#30431"
+msgid "What AI Mix Assist costs and does: requests to the AI, tokens, the rating cache's hit rate, what it changed in mixes and stations, and how often you undid it. Today, the last 7 and 30 days, all time."
+msgstr ""
+
+msgctxt "#30432"
+msgid "Reset statistics"
+msgstr ""
+
+msgctxt "#30433"
+msgid "Deletes the statistics counted so far (after asking). Statistics are kept for a year."
+msgstr ""
+
 msgctxt "#30500"
 msgid "Discovery mode"
 msgstr ""

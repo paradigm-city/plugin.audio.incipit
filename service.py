@@ -1305,6 +1305,14 @@ def add_radio_event(state: dict, kind: str, **details) -> None:
     events = [event for event in state.get("events") or [] if isinstance(event, dict)]
     events.append(dict(details, kind=kind, ts=int(time.time())))
     state["events"] = events[-RADIO_MAX_EVENTS:]
+    try:  # AI Mix Assist's statistics
+        plugin = load_plugin_module()
+        plugin.mix_assist_usage.emit(
+            "radio", event=kind, checked=bool(details.get("checked")), added=len(details.get("added") or []),
+            skipped=int(details.get("skipped_count") or 0), removed=len(details.get("removed") or []),
+            reason=plugin.RADIO_UNCHECKED_REASONS.get(str(details.get("reason") or ""), "other"))
+    except Exception:
+        pass
 
 
 def radio_song_label(state: dict, path: str) -> str:
@@ -1785,6 +1793,15 @@ def notify_repair_waiting_for_library(labels: list[str], sources_blocked: bool =
         xbmcgui.Dialog().notification(ADDON.getAddonInfo("name"), message, xbmcgui.NOTIFICATION_WARNING)
     except Exception as exc:
         log(f"Could not show repair notification: {exc}", xbmc.LOGWARNING)
+
+
+def prune_statistics_on_startup() -> None:
+    try:
+        removed = load_plugin_module().usage_log().prune()
+        if removed:
+            log_info(f"AI Mix Assist statistics: {removed} event(s) older than a year removed.")
+    except Exception as exc:
+        log(f"Pruning the statistics failed: {exc}", xbmc.LOGWARNING)
 
 
 def clear_current_mix_on_startup() -> None:
@@ -2627,6 +2644,7 @@ def main() -> None:
 
     reset_discovery_mode_on_startup()
     clear_current_mix_on_startup()
+    prune_statistics_on_startup()
     reset_radio_mode_on_startup()
 
     while not monitor.abortRequested():

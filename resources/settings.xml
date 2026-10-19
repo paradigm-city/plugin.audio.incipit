@@ -132,6 +132,18 @@
                     <constraints><allowempty>true</allowempty></constraints>
                     <control type="edit" format="string"><heading>30428</heading></control>
                 </setting>
+                <setting id="mix_assist_statistics" type="action" label="30430" help="30431">
+                    <level>0</level>
+                    <data>RunPlugin(plugin://plugin.audio.musicip/?action=mix_assist_statistics)</data>
+                    <constraints><allowempty>true</allowempty></constraints>
+                    <control type="button" format="action"><close>true</close></control>
+                </setting>
+                <setting id="mix_assist_statistics_reset" type="action" label="30432" help="30433">
+                    <level>0</level>
+                    <data>RunPlugin(plugin://plugin.audio.musicip/?action=mix_assist_statistics_reset)</data>
+                    <constraints><allowempty>true</allowempty></constraints>
+                    <control type="button" format="action"><close>true</close></control>
+                </setting>
             </group>
         </category>
         <category id="discovery" label="30500">

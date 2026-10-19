@@ -33,7 +33,9 @@ from mixassist import dimensions as mix_assist_dimensions
 from mixassist import cache as mix_assist_cache
 from mixassist import chart as mix_assist_chart
 from mixassist import claude as mix_assist_claude
+from mixassist import checks as mix_assist_checks
 from mixassist import library as mix_assist_library
+from mixassist import usage as mix_assist_usage
 
 
 ADDON = xbmcaddon.Addon()
@@ -5824,6 +5826,10 @@ def record_mix_history(cache_path: str, kind: str, **details) -> None:
         save_json_file(meta_path, meta)
     except Exception as exc:
         log(f"Mix history: could not record {kind!r} for {cache_path!r}: {exc}", xbmc.LOGWARNING)
+    if kind in ("ai_tidy_up", "ai_undone", "intent_edited", "more_like_this"):
+        mix_assist_usage.emit("mix", event=kind, automatic=bool(details.get("automatic")),
+                              judged=int(details.get("judged") or 0),
+                              **{key: len(details.get(key) or []) for key in ("replaced", "removed", "added", "skipped")})
 
 
 def describe_mix_parameters(params: dict) -> str:
@@ -6089,6 +6095,213 @@ class InfoWindow(xbmcgui.WindowXMLDialog):
                 self.setFocusId(INFO_TEXT_GROUP)
             except RuntimeError:
                 pass
+
+
+# --- AI Mix Assist statistics: what it costs and what it does (Settings: "Show statistics") ----------------------
+# mixassist.usage counts; the events are kept in usage.db for a year. The AI calls are told apart by their system
+# prompt: rating new music, describing a mix (its intent, its name), judging tracks against an intent.
+
+AI_FAILURE_LABELS = {mix_assist_claude.USAGE_LIMIT: "usage limit", mix_assist_claude.NOT_LOGGED_IN: "not logged in",
+                     mix_assist_claude.TIMEOUT: "no answer in time", mix_assist_claude.NOT_FOUND: "CLI not found",
+                     mix_assist_claude.FAILED: "failed"}
+RADIO_UNCHECKED_REASONS = {"the AI check took too long": "slow", "the AI check failed": "failed",
+                           "nothing fitted and the station was about to run dry": "dry"}
+
+
+def usage_log() -> mix_assist_usage.UsageLog:
+    return mix_assist_usage.UsageLog(os.path.join(get_profile_dir(), "mixassist", "usage.db"))
+
+
+def ai_purpose(system_prompt: str) -> str:
+    if system_prompt.startswith(mix_assist_checks.SEED_INTENT_PROMPT):
+        return "describing"
+    if system_prompt.startswith(mix_assist_checks.INTENT_PROMPT):
+        return "judging"
+    return "rating" if system_prompt == mix_assist_dimensions.build_system_prompt() else "other"
+
+
+def record_usage(kind: str, **fields) -> None:
+    if kind == "ai_call":
+        fields["purpose"] = ai_purpose(str(fields.pop("system_prompt", "")))
+    usage_log().record(kind, **fields)
+
+
+mix_assist_usage.set_sink(record_usage)
+
+
+def format_count(value: float) -> str:
+    return f"{int(round(value)):,}"
+
+
+def format_tokens(value: float) -> str:
+    if value >= 1_000_000:
+        return f"{value / 1_000_000:.2f} M"
+    return f"{value / 1000:.0f} k" if value >= 1000 else str(int(value))
+
+
+def format_share(part: float, whole: float) -> str:
+    return f"{round(100 * part / whole)} %" if whole else "-"
+
+
+def ai_statistics_lines(total: dict) -> list[str]:
+    requests = total.get("requests", 0)
+    if not requests:
+        return ["No requests."]
+    purposes = ", ".join(f"{format_count(total[f'requests_{purpose}'])} {purpose}"
+                         for purpose in mix_assist_usage.PURPOSES if total.get(f"requests_{purpose}"))
+    lines = [f"{format_count(requests)} requests" + (f": {purposes}" if purposes else "")]
+    if total.get("failed"):
+        kinds = ", ".join(f"{label} {format_count(total[f'failed_{kind}'])}" for kind, label in AI_FAILURE_LABELS.items()
+                          if total.get(f"failed_{kind}"))
+        lines.append(f"{format_count(total['failed'])} failed ({kinds})")
+    read = total.get("cache_read_tokens", 0)
+    sent = total.get("input_tokens", 0) + read + total.get("cache_write_tokens", 0)
+    lines.append(f"Tokens: {format_tokens(sent)} in ({format_tokens(read)} of them from Claude's prompt cache), "
+                 f"{format_tokens(total.get('output_tokens', 0))} out")
+    if total.get("cost_usd"):
+        lines.append(f"Equivalent API cost: ${total['cost_usd']:.2f} (not billed: the subscription covers it)")
+    if total.get("seconds_average") is not None:
+        lines.append(f"Time: {total['seconds_average']:.1f} s on average, {total['seconds_longest']:.0f} s the longest")
+    return lines
+
+
+def cache_statistics_lines(total: dict) -> list[str]:
+    hits, misses = total.get("cache_hits", 0), total.get("cache_misses", 0)
+    if not hits + misses:
+        return ["No lookups."]
+    return [f"Albums looked up: {format_count(hits + misses)}, already rated: {format_count(hits)} "
+            f"({format_share(hits, hits + misses)})",
+            f"Newly rated: {format_count(total.get('rated', 0))}"]
+
+
+def mix_statistics_lines(total: dict) -> list[str]:
+    lines = []
+    if total.get("tidy_ups"):
+        lines.append(f"Checks: {format_count(total['tidy_ups'])} ({format_count(total.get('tidy_ups_automatic', 0))} "
+                     f"of new mixes, {format_count(total.get('tidy_ups_requested', 0))} on request), "
+                     f"{format_count(total.get('judged', 0))} tracks judged")
+        lines.append(f"Replaced: {format_count(total.get('replaced', 0))}, removed: {format_count(total.get('removed', 0))}")
+    if total.get("tidy_ups_changed") or total.get("undone"):
+        lines.append(f"Undone by you: {format_count(total.get('undone', 0))} of {format_count(total.get('tidy_ups_changed', 0))} "
+                     f"tidy-ups that changed a mix ({format_share(total.get('undone', 0), total.get('tidy_ups_changed', 0))})")
+    if total.get("intent_edited"):
+        lines.append(f"\"What it is about\" rewritten by you: {format_count(total['intent_edited'])}")
+    if total.get("more_like_this"):
+        lines.append(f"More like this: {format_count(total['more_like_this'])} times, "
+                     f"{format_count(total.get('more_added', 0))} tracks added, "
+                     f"{format_count(total.get('more_skipped', 0))} skipped as not close enough")
+    return lines or ["Nothing checked."]
+
+
+def radio_statistics_lines(total: dict) -> list[str]:
+    lines = []
+    if total.get("radio_starts"):
+        lines.append(f"Stations checked at the start: {format_count(total['radio_starts'])} "
+                     f"({format_count(total.get('radio_start_removed', 0))} songs taken out)")
+    if total.get("radio_refills"):
+        kept, skipped = total.get("radio_kept", 0), total.get("radio_skipped", 0)
+        lines.append(f"Refills checked: {format_count(total['radio_refills'])}; songs kept {format_count(kept)}, "
+                     f"skipped {format_count(skipped)} ({format_share(kept, kept + skipped)} kept)")
+    if total.get("radio_unchecked"):
+        reasons = ", ".join(f"{label} {format_count(total[f'radio_unchecked_{key}'])}"
+                            for key, label in (("slow", "AI too slow"), ("failed", "AI failed"),
+                                               ("dry", "about to run dry"), ("other", "other"))
+                            if total.get(f"radio_unchecked_{key}"))
+        lines.append(f"Refills added unchecked: {format_count(total['radio_unchecked'])} ({reasons})")
+    if total.get("radio_nothing_fitted"):
+        lines.append(f"Refills where nothing fitted: {format_count(total['radio_nothing_fitted'])}")
+    if total.get("radio_musicip_failed"):
+        lines.append(f"MusicIP outages: {format_count(total['radio_musicip_failed'])}")
+    return lines or ["No stations checked."]
+
+
+def statistics_periods(events: list, now: float) -> list[tuple[str, list]]:
+    midnight = time.mktime(time.localtime(now)[:3] + (0, 0, 0, 0, 0, -1))
+    return [("Today", [event for event in events if event[0] >= midnight]),
+            ("Last 7 days", [event for event in events if event[0] >= now - 7 * 86400]),
+            ("Last 30 days", [event for event in events if event[0] >= now - 30 * 86400]),
+            ("All time", events)]
+
+
+def statistics_tabs(events: list, now: float, charts: bool = True) -> list[dict]:
+    """AI | Rating cache | Mix Assist | Radio: each with today, the last 7 and 30 days and all time."""
+    periods = [(title, mix_assist_usage.summarise(chunk)) for title, chunk in statistics_periods(events, now)]
+
+    def text(lines_of, extra: list[str] = ()) -> str:
+        blocks = ["\n".join([info_heading(title)] + lines_of(total)) for title, total in periods]
+        return "\n\n".join(blocks + list(extra))
+
+    stored = []
+    try:
+        store = mix_assist_cache.RatingCache(mix_assist_cache_path())
+        stored = [f"Ratings stored: {format_count(store.count())} albums"]
+        store.close()
+    except Exception:
+        pass
+    ai = {"title": "AI requests", "text": text(ai_statistics_lines)}
+    if charts and any(event[1] == "ai_call" for event in events):
+        ai["image"] = chart_path("statistics")
+        render_statistics_chart(events, now, ai["image"], chart_font_path())
+    return [ai, {"title": "Rating cache", "text": text(cache_statistics_lines, stored)},
+            {"title": "Mix Assist", "text": text(mix_statistics_lines)},
+            {"title": "Radio", "text": text(radio_statistics_lines)}]
+
+
+STATISTICS_DAYS = 30
+STATISTICS_COLORS = {"rating": "#4C9BE8", "describing": "#F2C14E", "judging": "#E45756", "tokens": "#FFFFFF"}
+
+
+def render_statistics_chart(events: list, now: float, path: str, font: str) -> str:
+    """The AI requests per day of the last 30 days, by purpose (left), and the tokens (thousands, right)."""
+    keys = [f"requests_{purpose}" for purpose in mix_assist_usage.PURPOSES] + \
+        ["input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens"]
+    days = mix_assist_usage.daily(events, STATISTICS_DAYS, now, keys)
+    tokens = [sum(day[key] for key in keys[3:]) / 1000 for day in days]
+    series = [{"name": purpose.capitalize(), "color": STATISTICS_COLORS[purpose], "axis": "left",
+               "values": [day[f"requests_{purpose}"] for day in days]} for purpose in mix_assist_usage.PURPOSES]
+    series.append({"name": "Tokens, k", "color": STATISTICS_COLORS["tokens"], "axis": "right", "values": tokens})
+    left = (0, nice_ceiling(max([value for item in series[:-1] for value in item["values"]] + [10])))
+    right = (0, nice_ceiling(max(tokens + [10])))
+    data = {"series": series, "years": right}
+    legends = [f"{format_count(sum(item['values']))} in {STATISTICS_DAYS} days" for item in series[:-1]] + \
+        [f"{format_count(sum(tokens))} k in {STATISTICS_DAYS} days"]
+    first = time.strftime("%d %b", time.localtime(now - (STATISTICS_DAYS - 1) * 86400))
+    texts = line_chart_texts(data, first, "Today", legends, left_range=left)
+    chart_series = [mix_assist_chart.Series(item["name"], mix_assist_chart.hex_color(item["color"]), item["values"],
+                                            item["axis"]) for item in series]
+    return mix_assist_chart.render_chart(path, list(range(STATISTICS_DAYS)), chart_series, INFO_CHART_SIZE, DRIFT_PLOT,
+                                         left, right, texts=texts, font_path=font, opacity=CHART_LINE_OPACITY)
+
+
+def nice_ceiling(value: float) -> int:
+    """The next of 10, 20, 50, 100, 200, 500, ... at or above value: round numbers on a chart's axis."""
+    step = 10
+    while True:
+        for factor in (1, 2, 5):
+            if value <= step * factor:
+                return step * factor
+        step *= 10
+
+
+def show_mix_assist_statistics() -> None:
+    events = usage_log().events()
+    if not events:
+        xbmcgui.Dialog().ok("AI Mix Assist statistics", "Nothing counted yet. AI Mix Assist counts its requests and "
+                                                         "results from now on.")
+        return
+    now = time.time()
+    requests = sum(1 for event in events if event[1] == "ai_call")
+    facts = f"Counted since {format_calendar_date(events[0][0])} | {format_count(requests)} AI requests"
+    show_info_window("AI Mix Assist statistics", facts, statistics_tabs(events, now),
+                     lambda: show_text_page("AI Mix Assist statistics", "\n\n".join(
+                         f"{info_heading(tab['title'].upper())}\n\n{tab['text']}"
+                         for tab in statistics_tabs(events, now, charts=False))))
+
+
+def reset_mix_assist_statistics() -> None:
+    if xbmcgui.Dialog().yesno("AI Mix Assist statistics", "Delete all statistics counted so far?"):
+        usage_log().clear()
+        notify("Statistics deleted.")
 
 
 def show_info_window(heading: str, facts: str, tabs: list[dict], fallback) -> None:
@@ -7053,7 +7266,7 @@ def record_mix_assist_result(cache_path: str, original: list[str], plan: dict, a
     if named and mix_naming_enabled() and not own_mix_name(meta):
         record_mix_history(cache_path, "named", name=plan["name"])
     record_mix_history(
-        cache_path, "ai_tidy_up", automatic=automatic, intent=plan["intent"],
+        cache_path, "ai_tidy_up", automatic=automatic, intent=plan["intent"], judged=len(plan["rows"]),
         replaced=[{"old": change["old_label"], "new": change["new_label"], "reason": change["reason"]}
                   for change in plan["changes"]],
         removed=[{"track": row["unit"]["label"], "reason": row.get("reason") or row.get("why", "")} for row in removed],
@@ -7914,13 +8127,16 @@ def drift_chart_texts(data: dict) -> list:
                              for item in data["series"]])
 
 
-def line_chart_texts(data: dict, first: str, last: str, legends: list[str]) -> list:
-    """The axes (0-10 left, years right), the first and last point below, the legend right: per series its name
-    and a text; the sounding year's name says it has the right-hand scale."""
+def line_chart_texts(data: dict, first: str, last: str, legends: list[str],
+                     left_range: tuple[int, int] = (0, 10)) -> list:
+    """The axes (left_range on the left, years right), the first and last point below, the legend right: per series
+    its name and a text; the right-hand series' name says it has the right-hand scale."""
     left, top, right, bottom = DRIFT_PLOT
     Text = mix_assist_chart.Text
-    texts = [Text(left - 14, bottom - (bottom - top) * value / 10 - 13, str(value), align="right", size=20)
-             for value in (0, 5, 10)]
+    low_left, high_left = left_range
+    texts = [Text(left - 14, bottom - (bottom - top) * (value - low_left) / (high_left - low_left) - 13, str(value),
+                  align="right", size=20)
+             for value in (low_left, (low_left + high_left) // 2, high_left)]
     low, high = data["years"]
     texts += [Text(right + 12, bottom - (bottom - top) * (year - low) / (high - low) - 13, str(year), size=20)
               for year in (low, (low + high) // 2, high)]
@@ -8182,6 +8398,14 @@ def router() -> None:
 
         show_update_library_before_repair(cache_path)
         xbmc.executebuiltin("Container.Refresh")
+        return
+
+    if action == "mix_assist_statistics":
+        show_mix_assist_statistics()
+        return
+
+    if action == "mix_assist_statistics_reset":
+        reset_mix_assist_statistics()
         return
 
     if action in ("mix_assist_menu", "mix_assist_tidy_up", "mix_assist_undo", "mix_assist_edit_intent"):

@@ -6,6 +6,7 @@ import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
+from mixassist import usage
 from mixassist.cache import RatingCache
 from mixassist.claude import USAGE_LIMIT, ClaudeError
 from mixassist.dimensions import ALL_KEYS, ERA_KEY, SCALE_KEYS, build_system_prompt, output_schema
@@ -74,6 +75,8 @@ def rate_missing(units: Sequence[dict], cache: RatingCache, ask: Ask, model: str
     Stops early when the subscription's usage limit is reached and raises that ClaudeError afterwards, so what
     was rated is kept."""
     cached = cache.get_many(unit["key"] for unit in units)
+    keys = {unit["key"] for unit in units}
+    usage.emit("cache", hits=len(cached), misses=len(keys) - len(cached))
     work = batches(unit for unit in units if unit["key"] not in cached)
     if not work:
         return 0
@@ -105,6 +108,7 @@ def rate_missing(units: Sequence[dict], cache: RatingCache, ask: Ask, model: str
                     stored += 1
             if progress:
                 progress(done, len(work))
+    usage.emit("rated", count=stored)
     if limit_error:
         raise limit_error
     return stored
