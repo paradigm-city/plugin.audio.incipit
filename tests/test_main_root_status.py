@@ -2,6 +2,7 @@
 
 import time
 import unittest
+from unittest import mock
 
 from fake_kodi import kodi
 from support import KodiTestCase, main
@@ -21,6 +22,21 @@ class RootStatusTest(KodiTestCase):
         self.assertEqual(item.getMusicInfoTag().getArtist(), "Moby - Porcelain")  # where skins show it (plain here)
         self.assertIn(("addSortMethod", main.xbmcplugin.SORT_METHOD_UNSORTED, {"labelMask": "%L", "label2Mask": "%A"}),
                       kodi.directory_calls)
+
+    def test_album_and_year_follow_the_song(self):
+        albums = {"D:\air.mp3": {"album": "Moon Safari", "year": 1998}, "D:\moby.mp3": {"album": "Play", "year": 0}}
+        with mock.patch.object(main, "get_track_metadata", side_effect=lambda path, **_: albums.get(path, {})):
+            main.save_radio_state({"phase": "playing", "current_label": "Air – La femme d'argent",
+                                   "current_song": "D:\air.mp3"})
+            self.assertEqual(self.labels2()["Radio mode"], "Air – La femme d'argent · Moon Safari (1998)")
+            main.save_radio_state({})
+            main.save_discovery_state({"enabled": True, "current_label": "Moby – Porcelain",
+                                       "current_song": "D:\moby.mp3"})
+            self.assertEqual(self.labels2()["Discovery mode"], "Moby – Porcelain · Play")  # no year known
+            main.save_discovery_state({"enabled": True, "owner": "radio", "current_label": "Unknown",
+                                       "current_song": "D:\other.mp3"})
+            main.save_radio_state({"phase": "seeking"})
+            self.assertEqual(self.labels2()["Radio mode"], "Scanning: Unknown")  # nothing known: the song alone
 
     def test_nothing_runs(self):
         status = self.labels2()

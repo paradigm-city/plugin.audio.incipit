@@ -4767,11 +4767,27 @@ def radio_status() -> str:
     phase = radio_phase()
     state = get_radio_state()
     if phase == "seeking":
-        snippet = str(get_discovery_state().get("current_label") or "").strip()
-        return f"Scanning: {snippet}" if snippet else "Scanning"
+        discovery = get_discovery_state()
+        snippet = str(discovery.get("current_label") or "").strip()
+        return f"Scanning: {snippet}{album_suffix(discovery.get('current_song'))}" if snippet else "Scanning"
     if phase != "playing":
         return ""
-    return radio_station_label(state)
+    return radio_station_label(state) + album_suffix(state.get("current_song"))
+
+
+def album_suffix(path: object) -> str:
+    """" · Moon Safari (1998)": the album and year of a song, from the library (or what is known of it)."""
+    path = str(path or "").strip()
+    if not path:
+        return ""
+    try:
+        metadata = get_track_metadata(path, allow_live_lookup=True, include_player_metadata=False)
+    except Exception:
+        return ""
+    album = str(metadata.get("album") or "").strip()
+    year = parse_year(metadata.get("year"))
+    text = f"{album} ({year})" if album and year else album or (str(year) if year else "")
+    return f" · {text}" if text else ""
 
 
 def radio_station_label(state: dict) -> str:
@@ -4786,7 +4802,8 @@ def discovery_status() -> str:
     state = get_discovery_state()
     if not state.get("enabled") or state.get("owner") == "radio":
         return ""
-    return str(state.get("current_label") or "").strip() or "Playing snippets"
+    label = str(state.get("current_label") or "").strip()
+    return label + album_suffix(state.get("current_song")) if label else "Playing snippets"
 
 
 def add_current_mix_item(cache_path: str) -> None:
