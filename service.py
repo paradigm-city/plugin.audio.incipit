@@ -2316,9 +2316,10 @@ def run_mix_collage_tick() -> str:
         try:
             tracks = plugin.load_mix_by_cache_path(cache_path)
             wanted = plugin.mix_collage_path(cache_path, tracks)
+            wide = plugin.mix_collage_path(cache_path, tracks, "fanart")
         except Exception:
             continue
-        if os.path.isfile(wanted) or MIX_COLLAGE_STATE["tried"].get(cache_path) == wanted:
+        if os.path.isfile(wanted) and os.path.isfile(wide) or MIX_COLLAGE_STATE["tried"].get(cache_path) == wanted:
             continue
         MIX_COLLAGE_STATE["tried"][cache_path] = wanted
         path = plugin.make_mix_collage(cache_path)
