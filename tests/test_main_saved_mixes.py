@@ -138,6 +138,21 @@ class MoreAndLessLikeThisTest(MusicIPServerTestCase):
         self.assertEqual(self.read_mix(self.cache_path), [A, B, new1, new2, C])
         self.assertEqual(self.musicip.mix_requests()[0]["size"], "10")
 
+    def test_tracks_from_more_like_this_say_so(self):
+        new1, new2 = "E:\\new\\1.mp3", "E:\\new\\2.mp3"
+        self.musicip.set_mix(B, [new1, new2])
+        main.insert_more_like_this_into_mix(A, 3, 1, B, cache_path=self.cache_path)
+        for track in (A, B, C, new1, new2):
+            kodi.add_media(track)  # present: a missing file's second text says so instead
+        kodi.directory_items.clear()
+        self.run_plugin(action="browse_saved_mix", cache_path=self.cache_path)
+        items = [item for _url, item, _folder in kodi.directory_items]
+        self.assertEqual([item.getProperty("MusicIP.Origin") for item in items],
+                         ["seed", "", "more_like_this", "more_like_this", ""])  # A (seed), B, new1, new2, C
+        self.assertTrue(items[0].getLabel2().startswith("Seed"))
+        self.assertTrue(items[2].getLabel2().startswith("More like this"))
+        self.assertTrue(items[2].getMusicInfoTag().getComment().startswith("Added by More like this for "))
+
     def test_more_like_this_without_new_tracks(self):
         self.musicip.set_mix(B, [A, C])
         with self.assertRaisesRegex(main.MusicIPError, "No new tracks"):

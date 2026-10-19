@@ -195,6 +195,13 @@ class RepairHistoryTest(HistoryTestCase):
                                               "new": main.path_to_label(KING_BISCUIT_RETAGGED["file"])}])
         self.assertIn("Checking track 2 of 2", [call[1][2] for call in self.progress_calls() if call[0] == "progress.update"])
 
+    def test_a_repaired_track_says_so(self):
+        main.repair_saved_mix_automatic_only(self.cache_path)
+        meta = main.get_saved_mix_metadata(self.cache_path)
+        origin = main.track_origin(meta, KING_BISCUIT_RETAGGED["file"])
+        self.assertEqual(origin["origin"], "repaired")
+        self.assertEqual(origin["note"], f"Replaced the missing file of {main.path_to_label(MISSING_PATH)}")
+
     def test_automatic_repair_is_recorded(self):
         main.repair_saved_mix_automatic_only(self.cache_path)
         self.assertEqual(self.history(self.cache_path)[-1]["automatic"], True)
