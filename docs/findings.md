@@ -54,6 +54,12 @@ Found on 2026-10-11 while removing the Discovery command channel (F6). They are 
 
 ## Resolved
 
+### F26 · Drawing a mix's collage could delete another mix's collage
+
+Found on 2026-10-19 while adding the fanart collage: `make_mix_collage()` removed the mix's older collages by the beginning of their file name. Mix files can be named `mix_<id>.m3u` and `mix_<id>_<time>.m3u`, so the first mix's name begins the second's, and drawing its collage deleted the other's. The service then drew that one again, and so on.
+
+Fixed in c6d690b (2026-10-19), before it reached a user: older collages are matched by their exact name (`<mix>_<12 hex digits>[_fanart].jpg`). `test_main_mix_album.MixCollageTest.test_another_mixs_collages_are_left_alone` covers it.
+
 ### F25 · A redraw after "Refresh mix" asked for a new mix again
 
 Found on 2026-10-18 while changing new mixes to the current mix. "Refresh mix" opens the mix with a URL that has `refresh=1`, and that URL stays the folder's URL. Kodi runs it again whenever the folder is redrawn: `Container.Refresh` after "Check consistency", or the service's redraw once background metadata has been looked up (`Container.Update(<folder>,replace)`), which often follows right after a new mix. Each redraw showed the generate dialog again and, when confirmed, made yet another mix. With the current mix the redraw could also fail: refreshing a current mix that wasn't saved deletes it, and the redraw then opened the deleted mix ("No stored mix found").
