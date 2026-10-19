@@ -75,7 +75,9 @@ class MixCollageTest(MixAlbumTestCase):
         image = Image.open(path)
         self.assertEqual(image.size, (800, 800))
         cell = (800 - 3 * main.COLLAGE_GAP) // 4
-        self.assertEqual(image.getpixel((cell // 2, cell // 2))[0] // 10, 3)  # the seed's cover first (red = 30)
+        red, green, _blue = image.getpixel((cell // 2, cell // 2))
+        self.assertLess(abs(red - green), abs(30 - 80))  # softened: the colours of the seed's cover move together
+        self.assertLess(red, green)  # the seed's cover first (red 30, green 80)
         self.assertEqual(self.mix_item().getArt("thumb"), path)
 
     def test_a_wide_collage_becomes_the_mixs_fanart(self):
@@ -100,6 +102,15 @@ class MixCollageTest(MixAlbumTestCase):
         self.assertTrue(main.make_mix_collage(self.cache_path))  # 2 x 2 cover, too few for a fanart
         self.assertEqual(main.existing_mix_collage(self.cache_path, TRACKS[:19], "fanart"), "")
         self.assertEqual(self.mix_item().getArt("fanart"), "image://fanart3.jpg/")  # the seed's
+
+    def test_a_new_drawing_style_draws_the_collages_again(self):
+        first = main.mix_collage_path(self.cache_path, TRACKS)
+        original = main.COLLAGE_STYLE
+        try:
+            main.COLLAGE_STYLE = "next"
+            self.assertNotEqual(main.mix_collage_path(self.cache_path, TRACKS), first)
+        finally:
+            main.COLLAGE_STYLE = original
 
     def test_another_mixs_collages_are_left_alone(self):
         self.add_covers(20)
