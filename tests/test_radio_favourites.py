@@ -23,6 +23,8 @@ class FavouriteIconTest(RadioBase):
         self.run_plugin(action="radio_favourites")
         self.assertEqual([os.path.basename(item.getArt("icon")) for _url, item, _folder in kodi.directory_items],
                          ["icon-radio.png"])
+        (item,) = [item for _url, item, _folder in kodi.directory_items]
+        self.assertEqual(item.getMusicInfoTag().getArtist(), item.getLabel2())  # the second line Kodi keeps
 
 
 class FavouriteStationsTest(RadioBase):
