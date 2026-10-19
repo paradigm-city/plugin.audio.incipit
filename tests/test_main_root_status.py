@@ -28,11 +28,11 @@ class RootStatusTest(KodiTestCase):
         with mock.patch.object(main, "get_track_metadata", side_effect=lambda path, **_: albums.get(path, {})):
             main.save_radio_state({"phase": "playing", "current_label": "Air – La femme d'argent",
                                    "current_song": "D:\air.mp3"})
-            self.assertEqual(self.labels2()["Radio mode"], "Air – La femme d'argent · Moon Safari (1998)")
+            self.assertEqual(self.labels2()["Radio mode"], "Air - La femme d'argent | Moon Safari (1998)")  # plain here
             main.save_radio_state({})
             main.save_discovery_state({"enabled": True, "current_label": "Moby – Porcelain",
                                        "current_song": "D:\moby.mp3"})
-            self.assertEqual(self.labels2()["Discovery mode"], "Moby – Porcelain · Play")  # no year known
+            self.assertEqual(self.labels2()["Discovery mode"], "Moby - Porcelain | Play")  # no year known
             main.save_discovery_state({"enabled": True, "owner": "radio", "current_label": "Unknown",
                                        "current_song": "D:\other.mp3"})
             main.save_radio_state({"phase": "seeking"})
