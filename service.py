@@ -1787,6 +1787,14 @@ def notify_repair_waiting_for_library(labels: list[str], sources_blocked: bool =
         log(f"Could not show repair notification: {exc}", xbmc.LOGWARNING)
 
 
+def clear_current_mix_on_startup() -> None:
+    try:
+        removed = load_plugin_module().clear_current_mix_on_startup()
+        log_info(f"Current mix cleared at service start ({removed} unsaved mix(es) deleted).")
+    except Exception as exc:
+        log(f"Clearing the current mix at service start failed: {exc}", xbmc.LOGWARNING)
+
+
 def reset_discovery_mode_on_startup() -> None:
     state = load_discovery_state()
     now = int(time.time())
@@ -2618,6 +2626,7 @@ def main() -> None:
     )
 
     reset_discovery_mode_on_startup()
+    clear_current_mix_on_startup()
     reset_radio_mode_on_startup()
 
     while not monitor.abortRequested():

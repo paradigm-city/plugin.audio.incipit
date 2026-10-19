@@ -400,7 +400,10 @@ class KodiState:
             return self.library.get_song_details(params)
         if method == "Textures.GetTextures":  # kodi.textures: image URL -> cached file (relative to the cache)
             value = (params.get("filter") or {}).get("value")
-            return {"textures": [{"cachedurl": self.textures[value], "textureid": 1}] if value in self.textures else []}
+            return {"textures": [{"cachedurl": self.textures[value], "textureid": value}] if value in self.textures else []}
+        if method == "Textures.RemoveTexture":  # the fake's texture ids are the URLs
+            self.textures.pop(params.get("textureid"), None)
+            return "OK"
         if method == "AudioLibrary.GetProperties":
             return {key: self.library_properties.get(key, "") for key in params.get("properties") or []}
         if method in ("AudioLibrary.Scan", "AudioLibrary.Clean"):

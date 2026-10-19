@@ -1458,6 +1458,19 @@ def create_current_mix(seed: str, size: int, tracks: list[str], track_metadata_l
     return path
 
 
+def clear_current_mix_on_startup() -> int:
+    """When Kodi starts there is no current mix: an unsaved mix is deleted (the current one, and any left over
+    from before, e.g. when Kodi stopped without a new mix replacing it); a saved one stays under Saved mixes.
+    Returns how many unsaved mixes were deleted."""
+    save_json_file(current_mix_state_path(), {})
+    removed = 0
+    for path in glob.glob(os.path.join(get_profile_dir(), "mix_*.m3u")):
+        if not is_mix_saved(load_json_file(mix_meta_path_from_cache_path(path))):
+            delete_saved_mix_files(path)
+            removed += 1
+    return removed
+
+
 def refreshed_mix_cache_path(refresh_token: str) -> str:
     """The current mix if the "Refresh mix" URL with this nonce made it, else "". Kodi runs a folder's URL again
     when it redraws the folder (Container.Refresh, the service's metadata redraw): that must not mix again."""
@@ -2451,6 +2464,7 @@ def delete_saved_mix_files(cache_path: str) -> None:
         xbmcvfs.delete(meta_path)
     except Exception:
         pass
+    remove_old_mix_collages(cache_path, keep=[])  # and its cover collages
 
 
 def cleanup_saved_mixes_for_date(date_key: str, include_older: bool = False) -> int:
@@ -6512,11 +6526,24 @@ def remove_old_mix_collages(cache_path: str, keep: list[str]) -> None:
     name = re.escape(os.path.splitext(os.path.basename(cache_path))[0])
     pattern = re.compile(rf"{name}_[0-9a-f]{{12}}(_fanart)?\.jpg")
     for file_name in os.listdir(folder) if os.path.isdir(folder) else []:
-        if pattern.fullmatch(file_name) and os.path.join(folder, file_name) not in keep:
+        path = os.path.join(folder, file_name)
+        if pattern.fullmatch(file_name) and path not in keep:
             try:
-                os.remove(os.path.join(folder, file_name))
+                os.remove(path)
             except OSError:
-                pass
+                continue
+            forget_cached_image(path)
+
+
+def forget_cached_image(path: str) -> None:
+    """Remove Kodi's cached copy of an image file that is gone (Kodi caches every picture it shows, by path)."""
+    try:
+        result = execute_jsonrpc("Textures.GetTextures", {
+            "properties": [], "filter": {"field": "url", "operator": "is", "value": path}})
+        for texture in result.get("textures") or []:
+            execute_jsonrpc("Textures.RemoveTexture", {"textureid": texture["textureid"]})
+    except Exception as exc:
+        log(f"Could not remove Kodi's cached copy of {path!r}: {exc}", xbmc.LOGDEBUG)
 
 
 def cover_image_file(thumbnail: str) -> str:

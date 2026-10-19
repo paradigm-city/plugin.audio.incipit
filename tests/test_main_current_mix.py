@@ -4,7 +4,7 @@ import os
 import unittest
 
 from fake_kodi import kodi
-from support import KodiTestCase, MusicIPServerTestCase, main, plugin_query
+from support import KodiTestCase, MusicIPServerTestCase, main, plugin_query, service
 
 SEED = "D:\\music\\Motorhead\\Ace of Spades (1980)\\01 Ace of Spades.mp3"
 T1 = "D:\\music\\Motorhead\\Overkill (1979)\\01 Overkill.mp3"
@@ -229,3 +229,31 @@ class RefreshRedrawTest(MusicIPServerTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StartupTest(KodiTestCase):
+    def test_kodi_starts_without_a_current_mix(self):
+        saved = self.save_mix(["D:\\a.mp3", "D:\\b.mp3"], seed="D:\\a.mp3")  # saved, and current
+        self.assertEqual(main.get_current_mix_cache_path(), saved)
+        self.assertEqual(main.clear_current_mix_on_startup(), 0)
+        self.assertEqual(main.get_current_mix_cache_path(), "")
+        self.assertIn(saved, main.list_saved_mix_cache_paths())  # a saved mix stays
+
+    def test_unsaved_mixes_are_deleted_with_their_collages(self):
+        left_over = main.create_current_mix("D:\\x.mp3", 2, ["D:\\x.mp3", "D:\\y.mp3"])
+        main.save_json_file(main.current_mix_state_path(), {})  # e.g. Kodi stopped while another was current
+        current = main.create_current_mix("D:\\a.mp3", 2, ["D:\\a.mp3", "D:\\b.mp3"])
+        collage = main.mix_collage_path(current, ["D:\\a.mp3", "D:\\b.mp3"])
+        os.makedirs(os.path.dirname(collage), exist_ok=True)
+        open(collage, "wb").close()
+        kodi.textures[collage] = "x/cached.jpg"  # Kodi showed it, so it has a copy
+        self.assertEqual(main.clear_current_mix_on_startup(), 2)
+        for path in (left_over, current, collage):
+            self.assertFalse(os.path.exists(path), path)
+        self.assertNotIn(collage, kodi.textures)
+
+    def test_the_service_clears_it_when_it_starts(self):
+        self.save_mix(["D:\\a.mp3", "D:\\b.mp3"], seed="D:\\a.mp3", saved=False)
+        service.clear_current_mix_on_startup()
+        self.assertEqual(main.get_current_mix_cache_path(), "")
+
