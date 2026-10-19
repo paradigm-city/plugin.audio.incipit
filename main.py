@@ -4487,6 +4487,7 @@ def add_track_item(
         details = format_track_details(year=parse_year(metadata.get('year')), decade=str(metadata.get('decade') or ''),
                                        genres=metadata.get('genre'), duration=parse_duration_seconds(metadata.get('duration')))
         list_item.setLabel2(" · ".join(part for part in (TRACK_ORIGIN_LABELS[origin["origin"]], details) if part))
+        list_item.setLabel(origin_suffix(display_label, TRACK_ORIGIN_LABELS[origin["origin"]]))
         list_item.setProperty("MusicIP.Origin", origin["origin"])
         if origin.get("note"):
             try:
@@ -4616,7 +4617,7 @@ def add_saved_mix_item(cache_path: str) -> None:
     if inconsistent and repair_readiness and not is_repair_ready(repair_readiness):
         detail_parts.append(repair_readiness_action_label(repair_readiness))
     if detail_parts:
-        list_item.setLabel2(" · ".join(detail_parts))
+        set_second_line(list_item, " · ".join(detail_parts))
 
     add_directory_item(
         HANDLE,
@@ -4650,6 +4651,29 @@ def discovery_icon() -> str:
 def radio_icon() -> str:
     """Playing while a station plays, searching while the radio scans, else the radio."""
     return media_icon({"playing": "playing", "seeking": "searching"}.get(radio_phase(), "radio"))
+
+
+# --- Second lines ---------------------------------------------------------------------------------------------
+# Kodi rewrites an add-on entry's Label2 from the listing's label masks: by default folders get none and files
+# their duration, so setLabel2() alone never shows (skins then show e.g. "Folder"). A listing that wants its
+# second lines puts them in the entries' artist field as well, and asks Kodi for "%A" as the second label
+# (keep_second_lines); skins that show an entry's artist (Arctic Fuse) show it there, others as Label2.
+
+def keep_second_lines() -> None:
+    xbmcplugin.addSortMethod(HANDLE, xbmcplugin.SORT_METHOD_UNSORTED, labelMask="%L", label2Mask="%A")
+
+
+def set_second_line(item: xbmcgui.ListItem, text: str) -> None:
+    item.setLabel2(text)
+    try:
+        item.getMusicInfoTag().setArtist(text)
+    except Exception:
+        pass
+
+
+def origin_suffix(label: str, origin_label: str) -> str:
+    """A track's origin after its label, quieter than the label (a file entry's second line is its duration)."""
+    return f"{label}  [COLOR FF8C929C]{origin_label}[/COLOR]"
 
 
 # --- What runs, as the first screen's second texts -------------------------------------------------------------
@@ -4707,7 +4731,7 @@ def add_current_mix_item(cache_path: str) -> None:
     apply_saved_mix_info_metadata(item, cache_path)
     set_item_icon(item, CURRENT_MIX_ICON)
     item.setProperty("IsPlayable", "false")
-    item.setLabel2(current_mix_status(meta, tracks))
+    set_second_line(item, current_mix_status(meta, tracks))
     context_items = [] if saved else [("Save mix", build_save_mix_action(cache_path))]
     context_items += [
         ("Information", run_plugin_url(action="mix_info", cache_path=cache_path, nonce=new_nonce())),
@@ -4720,6 +4744,7 @@ def add_current_mix_item(cache_path: str) -> None:
 def show_root() -> None:
     xbmcplugin.setPluginCategory(HANDLE, "MusicIP")
     xbmcplugin.setContent(HANDLE, "files")
+    keep_second_lines()
 
     generate_label = "Generate mix from playing audio"
     generate_item = xbmcgui.ListItem(label=generate_label, offscreen=True)
@@ -4742,7 +4767,7 @@ def show_root() -> None:
     discovery_item = xbmcgui.ListItem(label="Discovery mode", offscreen=True)
     apply_music_metadata(discovery_item, "Discovery mode")
     set_item_icon(discovery_item, discovery_icon())
-    discovery_item.setLabel2(discovery_status())
+    set_second_line(discovery_item, discovery_status())
     add_directory_item(
         HANDLE,
         addon_url(action="discovery_mode"),
@@ -4753,7 +4778,7 @@ def show_root() -> None:
     radio_item = xbmcgui.ListItem(label="Radio mode", offscreen=True)
     apply_music_metadata(radio_item, "Radio mode")
     set_item_icon(radio_item, radio_icon())
-    radio_item.setLabel2(radio_status())
+    set_second_line(radio_item, radio_status())
     add_directory_item(
         HANDLE,
         addon_url(action="radio_mode"),
@@ -5423,6 +5448,7 @@ def show_saved_mixes() -> None:
 def show_saved_mixes_by_date(date_key: str) -> None:
     xbmcplugin.setPluginCategory(HANDLE, f"MusicIP saved mixes: {date_key}")
     xbmcplugin.setContent(HANDLE, "albums")  # mixes are shown as compilation albums
+    keep_second_lines()
 
     cache_paths = list_saved_mix_cache_paths()
     grouped = dict(group_saved_mixes_by_date(cache_paths))
@@ -5971,7 +5997,7 @@ def apply_mix_album_metadata(list_item: xbmcgui.ListItem, cache_path: str, track
         tag.setAlbum(saved_mix_name(meta))
         tag.setAlbumArtist(MIX_ALBUM_ARTIST)
         if fields["artists"]:
-            tag.setArtist(mix_artist_text(fields["artists"]))
+            tag.setArtist(mix_artist_text(fields["artists"]))  # the seed song replaces it as the second line
         if fields["genres"]:
             tag.setGenres(fields["genres"])
         if fields["year"]:
@@ -5982,8 +6008,11 @@ def apply_mix_album_metadata(list_item: xbmcgui.ListItem, cache_path: str, track
         log(f"Mix album fields for {cache_path!r}: {exc}", xbmc.LOGDEBUG)
     list_item.setProperty("Album_Type", "Mix")
     list_item.setProperty("Album_Label", MIX_ALBUM_ARTIST)
-    if fields["seed_label"]:
-        list_item.setProperty("Album_Description", f"From: {fields['seed_label']}")
+    description = [f"From: {fields['seed_label']}"] if fields["seed_label"] else []
+    if fields["artists"]:
+        description.append(f"Artists: {mix_artist_text(fields['artists'], shown=8)}")
+    if description:
+        list_item.setProperty("Album_Description", "\n".join(description))
     cover = existing_mix_collage(cache_path, tracks) or fields["seed_thumb"]
     art = {"thumb": cover, "icon": cover, "poster": cover} if cover else {}
     wide = existing_mix_collage(cache_path, tracks, "fanart")
