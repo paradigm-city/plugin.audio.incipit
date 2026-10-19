@@ -50,11 +50,15 @@ class MixAlbumTest(MixAlbumTestCase):
         self.assertIn(("setContent", "albums"), kodi.directory_calls)
         self.assertEqual((tag.getMediaType(), tag.getAlbumArtist()), ("album", "MusicIP"))
         self.assertEqual(tag.getAlbum(), main.saved_mix_name(main.get_saved_mix_metadata(self.cache_path)))
-        self.assertEqual(tag.getArtist(), "Artist 3, Artist 0, Artist 1 and 2 more")  # the seed's artist first
+        self.assertTrue(tag.getArtist().startswith("Artist 3 – Song 3 · "))  # the seed song: the second line
+        self.assertEqual(tag.getArtist(), item.getLabel2())
+        self.assertIn(("addSortMethod", main.xbmcplugin.SORT_METHOD_UNSORTED, {"labelMask": "%L", "label2Mask": "%A"}),
+                      kodi.directory_calls)  # Kodi keeps it as the second label
         self.assertEqual(tag.getGenres(), ["Rock", "Blues"])
         self.assertEqual((tag.getYear(), tag.getDuration()), (1980, 20 * 200))  # the middle release year
         self.assertTrue(item.getLabel2().startswith("Artist 3 – Song 3 · "))
-        self.assertEqual(item.getProperty("Album_Description"), "From: Artist 3 – Song 3")
+        self.assertEqual(item.getProperty("Album_Description"),
+                         "From: Artist 3 – Song 3\nArtists: Artist 3, Artist 0, Artist 1, Artist 2, Artist 4")
         self.assertEqual((item.getProperty("Album_Type"), item.getProperty("Album_Label")), ("Mix", "MusicIP"))
         self.assertEqual((item.getArt("thumb"), item.getArt("fanart")), ("image://cover3.jpg/", "image://fanart3.jpg/"))
 

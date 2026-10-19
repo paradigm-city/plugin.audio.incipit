@@ -13,6 +13,15 @@ class RootStatusTest(KodiTestCase):
         self.run_plugin()
         return {item.getLabel(): item.getLabel2() for _url, item, _folder in kodi.directory_items}
 
+    def test_kodi_keeps_the_second_lines(self):
+        main.save_discovery_state({"enabled": True, "current_label": "Moby – Porcelain"})
+        kodi.directory_items.clear()
+        self.run_plugin()
+        item = {item.getLabel(): item for _url, item, _folder in kodi.directory_items}["Discovery mode"]
+        self.assertEqual(item.getMusicInfoTag().getArtist(), "Moby – Porcelain")  # where skins show it
+        self.assertIn(("addSortMethod", main.xbmcplugin.SORT_METHOD_UNSORTED, {"labelMask": "%L", "label2Mask": "%A"}),
+                      kodi.directory_calls)
+
     def test_nothing_runs(self):
         status = self.labels2()
         self.assertEqual((status["Radio mode"], status["Discovery mode"]), ("", ""))

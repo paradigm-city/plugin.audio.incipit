@@ -38,7 +38,7 @@ class MetadataRefreshTickTest(KodiTestCase):
         main.enqueue_metadata_refresh_for_tracks([TRACK], cache_path=self.cache_path)
         service.run_metadata_refresh_tick()
         self.run_plugin(action="browse_saved_mix", cache_path=self.cache_path)
-        self.assertEqual(self.listed_labels()[0], "1. Motörhead - Ace of Spades")
+        self.assertEqual(self.listed_labels()[0], "1. Motörhead - Ace of Spades  [COLOR FF8C929C]Seed[/COLOR]")
 
     def test_unresolved_tracks_are_retried_then_dropped(self):
         kodi.settings["service_extended_logging"] = "true"

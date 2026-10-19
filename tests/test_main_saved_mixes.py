@@ -150,6 +150,7 @@ class MoreAndLessLikeThisTest(MusicIPServerTestCase):
                          ["seed", "", "more_like_this", "more_like_this", ""])  # A (seed), B, new1, new2, C
         self.assertTrue(items[0].getLabel2().startswith("Seed"))
         self.assertTrue(items[2].getLabel2().startswith("More like this"))
+        self.assertTrue(items[2].getLabel().endswith("  [COLOR FF8C929C]More like this[/COLOR]"))  # what shows
         self.assertTrue(items[2].getMusicInfoTag().getComment().startswith("Added by More like this for "))
 
     def test_more_like_this_without_new_tracks(self):
