@@ -1,0 +1,49 @@
+"""The first screen's second texts: what the current mix, the radio and Discovery are doing."""
+
+import time
+import unittest
+
+from fake_kodi import kodi
+from support import KodiTestCase, main
+
+
+class RootStatusTest(KodiTestCase):
+    def labels2(self):
+        kodi.directory_items.clear()
+        self.run_plugin()
+        return {item.getLabel(): item.getLabel2() for _url, item, _folder in kodi.directory_items}
+
+    def test_nothing_runs(self):
+        status = self.labels2()
+        self.assertEqual((status["Radio mode"], status["Discovery mode"]), ("", ""))
+
+    def test_the_current_mix_its_name_and_length(self):
+        tracks = ["D:\\a.mp3", "D:\\b.mp3"]
+        cache_path = self.save_mix(tracks, seed=tracks[0], saved=False)
+        meta = self.read_json(main.mix_meta_path_from_cache_path(cache_path))
+        meta["track_metadata_by_path"] = {main.canonical_audio_path(t): {"title": "x", "duration": 1900} for t in tracks}
+        self.write_json(main.mix_meta_path_from_cache_path(cache_path), meta)
+        name = main.saved_mix_name(main.get_saved_mix_metadata(cache_path))
+        self.assertEqual(self.labels2()["Current mix"], f"{name} · 1 h 03 min · not saved")
+        self.assertEqual(main.format_mix_length(59 * 60), "59 min")
+
+    def test_a_playing_station_and_since_when(self):
+        started = int(time.time())
+        main.save_radio_state({"phase": "playing", "current_label": "Air – La femme d'argent",
+                               "playing_started_ts": started})
+        self.assertEqual(self.labels2()["Radio mode"],
+                         f"Air – La femme d'argent · since {time.strftime('%H:%M', time.localtime(started))}")
+
+    def test_scanning_shows_the_snippet_on_the_radio_not_on_discovery(self):
+        main.save_radio_state({"phase": "seeking"})
+        main.save_discovery_state({"enabled": True, "owner": "radio", "current_label": "Moby – Porcelain"})
+        status = self.labels2()
+        self.assertEqual((status["Radio mode"], status["Discovery mode"]), ("Scanning: Moby – Porcelain", ""))
+
+    def test_discovery_shows_its_snippet(self):
+        main.save_discovery_state({"enabled": True, "current_label": "Moby – Porcelain"})
+        self.assertEqual(self.labels2()["Discovery mode"], "Moby – Porcelain")
+
+
+if __name__ == "__main__":
+    unittest.main()
