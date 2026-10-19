@@ -4588,6 +4588,7 @@ def add_saved_mix_item(cache_path: str) -> None:
     apply_music_metadata(list_item, display_label)
     apply_saved_mix_info_metadata(list_item, cache_path)
     album = apply_mix_album_metadata(list_item, cache_path, tracks, meta)
+    apply_mix_assist_album_metadata(list_item, meta, album)
     list_item.setProperty("IsPlayable", "false")
     if inconsistent:
         list_item.setProperty("MusicIP.Inconsistent", "true")
@@ -4619,7 +4620,7 @@ def add_saved_mix_item(cache_path: str) -> None:
     if inconsistent and repair_readiness and not is_repair_ready(repair_readiness):
         detail_parts.append(repair_readiness_action_label(repair_readiness))
     if detail_parts:
-        list_item.setLabel2(" | ".join(detail_parts))
+        list_item.setLabel2(plain(" | ".join(detail_parts)))
 
     add_directory_item(
         HANDLE,
@@ -6458,6 +6459,32 @@ def apply_mix_album_metadata(list_item: xbmcgui.ListItem, cache_path: str, track
     if art:
         list_item.setArt(art)
     return fields
+
+
+# AI Mix Assist adds what it knows of the mix: what it is about (the album description), and the sound of its
+# last check in words, as the album's moods and styles.
+ALBUM_MOOD_KEYS = ("energy", "mood", "danceability")
+ALBUM_STYLE_KEYS = ("exploration", "making", "production", "form")
+
+
+def dimension_word(key: str, value: float) -> str:
+    dimension = next(d for d in mix_assist_dimensions.DIMENSIONS if d.key == key)
+    return dimension.labels[max(0, min(4, int(round(value / 2.5))))]
+
+
+def apply_mix_assist_album_metadata(list_item: xbmcgui.ListItem, meta: dict, album: dict) -> None:
+    section = get_mix_assist_section(meta)
+    intent = str(section.get("listener_intent") or section.get("intent") or "").strip()
+    seed = f"From: {album['seed_label']}" if album.get("seed_label") else ""
+    description = "\n".join(part for part in (intent, seed) if part)
+    if description:
+        list_item.setProperty("Album_Description", plain(description))
+    profile = section.get("profile") if isinstance(section.get("profile"), dict) else {}
+    values = profile.get("values") if isinstance(profile.get("values"), dict) else {}
+    for prop, keys in (("Album_Mood", ALBUM_MOOD_KEYS), ("Album_Style", ALBUM_STYLE_KEYS)):
+        words = [dimension_word(key, values[key][0]) for key in keys if isinstance(values.get(key), list) and values[key]]
+        if words:
+            list_item.setProperty(prop, ", ".join(words))
 
 
 def mix_collage_path(cache_path: str, tracks: list[str]) -> str:
