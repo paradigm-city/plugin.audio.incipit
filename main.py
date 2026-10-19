@@ -5816,10 +5816,11 @@ def apply_saved_mix_info_metadata(list_item: xbmcgui.ListItem, cache_path: str) 
 
 MIX_ALBUM_ARTIST = "MusicIP"
 COLLAGE_GAP = 4
-COLLAGES = {  # kind -> size in pixels, grids (columns, rows) from the largest; with fewer covers the next one
-    "cover": ((800, 800), ((4, 4), (3, 3), (2, 2))),
-    "fanart": ((1920, 960), ((8, 4), (6, 3), (4, 2))),
+COLLAGES = {  # kind -> size in pixels, grids (columns, rows) from the largest (with fewer covers the next), contrast
+    "cover": ((800, 800), ((4, 4), (3, 3), (2, 2)), 0.8),
+    "fanart": ((1920, 960), ((8, 4), (6, 3), (4, 2)), 0.65),  # a calmer background
 }
+COLLAGE_STYLE = "2"  # part of the file names: a change of the drawing draws all collages again
 
 
 def mix_track_snapshot_list(meta: dict, tracks: list[str]) -> list[dict]:
@@ -5909,7 +5910,8 @@ def apply_mix_album_metadata(list_item: xbmcgui.ListItem, cache_path: str, track
 def mix_collage_path(cache_path: str, tracks: list[str], kind: str = "cover") -> str:
     """One file per mix, track list and kind (cover, fanart): a changed mix gets new collages (and Kodi, which
     caches images by path, shows them)."""
-    key = hashlib.sha1("\n".join(canonical_audio_path(track) for track in tracks).encode("utf-8")).hexdigest()[:12]
+    listing = "\n".join([COLLAGE_STYLE] + [canonical_audio_path(track) for track in tracks])
+    key = hashlib.sha1(listing.encode("utf-8")).hexdigest()[:12]
     name = os.path.splitext(os.path.basename(cache_path))[0]
     return os.path.join(get_profile_dir(), "covers", f"{name}_{key}{'' if kind == 'cover' else '_' + kind}.jpg")
 
@@ -5986,10 +5988,10 @@ def pick_spread(items: list[str], count: int) -> list[str]:
 def draw_collage(covers: list[str], kind: str, path: str) -> bool:
     """A grid of covers (square cells, the first cover top left); False with too few covers or without Pillow."""
     try:
-        from PIL import Image
+        from PIL import Image, ImageEnhance
     except Exception:
         return False
-    (width, height), grids = COLLAGES[kind]
+    (width, height), grids, contrast = COLLAGES[kind]
     columns, rows = next(((c, r) for c, r in grids if len(covers) >= c * r), (0, 0))
     if not columns:
         return False
@@ -6008,6 +6010,8 @@ def draw_collage(covers: list[str], kind: str, path: str) -> bool:
         image = image.crop((left, top, left + side, top + side)).resize((cell, cell), resample)
         collage.paste(image, (left0 + (index % columns) * (cell + COLLAGE_GAP),
                               top0 + (index // columns) * (cell + COLLAGE_GAP)))
+    if contrast != 1:  # softer: dozens of covers side by side are loud
+        collage = ImageEnhance.Contrast(collage).enhance(contrast)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     collage.save(path, "JPEG", quality=88)
     return True
