@@ -130,13 +130,13 @@ class SavedMixListingTest(KodiTestCase):
         self.run_plugin(action="saved_mixes_by_date", date="2026-10-05")
         ok_url, ok_item, _ = item_by_label("01 Ace of Spades (2 tracks)")
         self.assertEqual(plugin_query(ok_url)["cache_path"], self.ok_mix)
-        self.assertEqual(ok_item.getLabel2(), "2026-10-05 18:30")
+        self.assertEqual(ok_item.getLabel2(), "01 Ace of Spades · 18:30")  # the seed song, the time
         self.assertEqual(ok_item.getProperty("MusicIP.CachePath"), self.ok_mix)
         self.assertIn("Seed: " + SEED, ok_item.getProperty("Plot"))
 
         _url, broken, _ = item_by_label("[B][COLOR red]![/COLOR][/B] 01 Overkill (2 tracks)")
         self.assertEqual(broken.getProperty("MusicIP.Inconsistent"), "true")
-        self.assertEqual(broken.getLabel2(), "2026-10-05 18:29 · Inconsistent: 1 missing · Update library before repair")
+        self.assertEqual(broken.getLabel2(), "01 Overkill · 18:29 · Inconsistent: 1 missing · Update library before repair")
         labels = [label for label, _action in broken.context_menu]
         self.assertEqual(labels, ["Information", "Check consistency", "Update library before repair", "Cleanup this mix"])
 
