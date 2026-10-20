@@ -60,6 +60,12 @@ Found on 2026-10-11 while removing the Discovery command channel (F6). They are 
 
 ## Resolved
 
+### F28 · Saved mixes had "Information" twice in the context menu
+
+Found by the user on 2026-10-20: since saved mixes are listed as albums (2026-10-19), their context menu showed "Information" twice. The add-on's own entry opens the mix information; the other one was Kodi's, which Kodi adds to every entry whose music tag has the media type "album" (its album information dialog).
+
+Fixed in d8c68e0 (2026-10-20): mix entries no longer set the media type; the lists stay album lists through their content type ("albums").
+
 ### F27 · The add-on's second texts (Label2) were never shown
 
 Found by the user on 2026-10-19: the first screen's Discovery and Radio entries showed "Folder" under their names instead of what they were doing. Kodi rewrites the Label2 of every add-on entry from the listing's label masks; without a sort method of the add-on's own, folders get none and files their duration. So every `setLabel2()` of the add-on was lost: the first screen's status texts, the saved mixes' seed song, a missing track's "Missing file", the tracks' origins. Arctic Fuse then shows a fallback ("Folder"). Checked in the running Kodi with a test listing: the Label2 stayed empty with the default masks and with `%h`.
