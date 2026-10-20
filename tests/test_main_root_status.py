@@ -38,6 +38,12 @@ class RootStatusTest(KodiTestCase):
             main.save_radio_state({"phase": "seeking"})
             self.assertEqual(self.labels2()["Radio mode"], "Scanning: Unknown")  # nothing known: the song alone
 
+    def test_menu_entries_are_not_songs(self):
+        kodi.directory_items.clear()
+        self.run_plugin()
+        for _url, item, _folder in kodi.directory_items:
+            self.assertEqual(item.getMusicInfoTag().getMediaType(), "music", item.getLabel())
+
     def test_nothing_runs(self):
         status = self.labels2()
         self.assertEqual((status["Radio mode"], status["Discovery mode"]), ("", ""))

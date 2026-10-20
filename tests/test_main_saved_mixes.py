@@ -149,6 +149,7 @@ class MoreAndLessLikeThisTest(MusicIPServerTestCase):
         self.assertEqual([item.getProperty("MusicIP.Origin") for item in items],
                          ["seed", "", "more_like_this", "more_like_this", ""])  # A (seed), B, new1, new2, C
         self.assertTrue(items[0].getLabel2().startswith("Seed"))
+        self.assertNotEqual(items[0].getMusicInfoTag().getMediaType(), "music")  # a track stays a song
         self.assertTrue(items[2].getLabel2().startswith("More like this"))
         self.assertTrue(items[2].getLabel().endswith("  [COLOR FF8C929C]More like this[/COLOR]"))  # what shows
         self.assertTrue(items[2].getMusicInfoTag().getComment().startswith("Added by More like this for "))
