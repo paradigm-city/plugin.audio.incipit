@@ -52,6 +52,12 @@ These plugin functions are never called:
 
 Found on 2026-10-11 while removing the Discovery command channel (F6). They are unrelated to that change.
 
+### F29 · "Settings" on the first screen has "Play" in its context menu
+
+Found by the user on 2026-10-21: the context menu of "Settings" shows Play, Play using..., Play next, Queue item, Information and Add to favourites, like a song; the other entries of the first screen (folders) show only "Add to favourites". Kodi gives every entry that is not a folder its play entries, and an add-on can't remove Kodi's entries (only add its own).
+
+"Settings" is an action, not a folder, since dd92060 (2026-10-10): as a folder Kodi expected a listing from it, logged an error, and the Back key could open the settings again. Options looked at on 2026-10-21: a folder again (brings those problems back), or taking "Settings" off the first screen (the add-on's settings stay reachable through Kodi's add-on menu). Kept as it is for now.
+
 ## Resolved
 
 ### F28 · Saved mixes had "Information" twice in the context menu
