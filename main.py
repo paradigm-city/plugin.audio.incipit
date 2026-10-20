@@ -4640,8 +4640,8 @@ def add_saved_mix_date_item(date_key: str, cache_paths: list[str]) -> None:
     apply_music_metadata(list_item, label)
     list_item.setProperty("IsPlayable", "false")
     list_item.addContextMenuItems([
-        ("Cleanup mixes from this date", build_cleanup_date_action(date_key, include_older=False)),
-        ("Cleanup mixes from this date and older", build_cleanup_date_action(date_key, include_older=True)),
+        ("Delete mixes from this date", build_cleanup_date_action(date_key, include_older=False)),
+        ("Delete mixes from this date and older", build_cleanup_date_action(date_key, include_older=True)),
     ])
     add_directory_item(
         HANDLE,
@@ -4683,7 +4683,7 @@ def add_saved_mix_item(cache_path: str) -> None:
                 build_update_library_before_repair_action(cache_path),
             ))
     context_items.append(("AI Mix Assist...", build_mix_assist_action("mix_assist_menu", cache_path)))
-    context_items.append(("Cleanup this mix", build_cleanup_saved_mix_action(cache_path)))
+    context_items.append(("Delete this mix", build_cleanup_saved_mix_action(cache_path)))
     list_item.addContextMenuItems(context_items)
 
     updated_ts = int(meta.get("updated_ts") or 0)

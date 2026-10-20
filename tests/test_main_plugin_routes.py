@@ -119,7 +119,7 @@ class SavedMixListingTest(KodiTestCase):
         self.assertEqual(item.getLabel(), "[B][COLOR red]![/COLOR][/B] 2026-10-05 (2 mixes) | 1 warning")
         self.assertTrue(is_folder)
         self.assertEqual(plugin_query(url), {"action": "saved_mixes_by_date", "date": "2026-10-05", "nonce": plugin_query(url)["nonce"]})
-        older = plugin_query(item.context_action("Cleanup mixes from this date and older"))
+        older = plugin_query(item.context_action("Delete mixes from this date and older"))
         self.assertEqual((older["action"], older["older"]), ("cleanup_saved_mixes", "1"))
 
     def library_still_lists_missing_file(self):
@@ -139,7 +139,7 @@ class SavedMixListingTest(KodiTestCase):
         self.assertEqual(broken.getLabel2(), "01 Overkill | 18:29 | Inconsistent: 1 missing | Update library before repair")
         labels = [label for label, _action in broken.context_menu]
         self.assertEqual(labels, ["Information", "Check consistency", "Update library before repair",
-                                  "AI Mix Assist...", "Cleanup this mix"])
+                                  "AI Mix Assist...", "Delete this mix"])
 
     def test_repair_offered_once_library_no_longer_lists_missing_file(self):
         self.run_plugin(action="saved_mixes_by_date", date="2026-10-05")
