@@ -6006,7 +6006,8 @@ def apply_mix_album_metadata(list_item: xbmcgui.ListItem, cache_path: str, track
     fields = mix_album_fields(meta, tracks)
     try:
         tag = list_item.getMusicInfoTag()
-        tag.setMediaType("album")
+        # No media type "album": Kodi would add its own "Information" (its album dialog) to the context menu, next
+        # to the add-on's. The list is an album list anyway (setContent "albums").
         tag.setAlbum(saved_mix_name(meta))
         tag.setAlbumArtist(MIX_ALBUM_ARTIST)
         if fields["artists"]:
