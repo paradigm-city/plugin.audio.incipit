@@ -4321,6 +4321,11 @@ def apply_music_metadata(
     try:
         music_tag = list_item.getMusicInfoTag()
         music_tag.setTitle(title)
+        if not (artist or album or track_number or duration):
+            # A menu entry, a folder of the add-on, a saved mix: not a song. Kodi takes a music tag without a media
+            # type for a song and adds "Information" (song information) and the song context items (also this
+            # add-on's "Create MusicIP mix") to its context menu.
+            music_tag.setMediaType("music")
         if artist:
             music_tag.setArtist(artist)
         if album:

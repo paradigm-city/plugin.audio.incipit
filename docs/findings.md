@@ -62,9 +62,9 @@ Found on 2026-10-11 while removing the Discovery command channel (F6). They are 
 
 ### F28 · Saved mixes had "Information" twice in the context menu
 
-Found by the user on 2026-10-20: since saved mixes are listed as albums (2026-10-19), their context menu showed "Information" twice. The add-on's own entry opens the mix information; the other one was Kodi's, which Kodi adds to every entry whose music tag has the media type "album" (its album information dialog).
+Found by the user on 2026-10-20: since saved mixes are listed as albums (2026-10-19), their context menu showed "Information" twice. The add-on's own entry opens the mix information; the other one was Kodi's: Kodi adds "Information" to entries whose music tag is a song or an album, and it takes a music tag without a media type for a song (Kodi showed `ListItem.DBType` "song"). So every menu entry of the add-on and every saved mix also got the song context items, this add-on's "Create MusicIP mix" and "Start MusicIP radio" among them.
 
-Fixed in d8c68e0 (2026-10-20): mix entries no longer set the media type; the lists stay album lists through their content type ("albums").
+Fixed in 3cbf077 (2026-10-20): entries without track data (menu entries, folders, saved mixes) have the media type "music", which Kodi gives no song or album items. The first attempt, d8c68e0, only dropped the media type "album" and was not enough.
 
 ### F27 · The add-on's second texts (Label2) were never shown
 
