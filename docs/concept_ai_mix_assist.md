@@ -235,7 +235,7 @@ New songs (replacements, "More like this", Radio refills) must pass both signals
 
 ### Per mix (2026-10-17)
 
-The global settings are defaults; each mix can have its own. The "Generate MusicIP mix" dialog has two more lines: **AI Mix Assist** (Off or an openness level) and **What this mix is about** (the listener's words, used instead of the AI's statement). The mix keeps them in its sidecar (`mix_assist.openness`, `mix_assist.listener_intent`); its tidy-ups and "More like this" use its openness; Off means no automatic checks (a tidy-up started from the menu then uses the default level). The saved mix's context menu has one entry, **AI Mix Assist…**: what the mix is about, openness, tidy up now, undo. Choices and changes are in the mix history. Radio keeps its global "Station openness": picking a station has no dialog.
+The global settings are defaults; each mix can have its own. The "Generate MusicIP mix" dialog has two more lines: **AI Mix Assist** (Off or an openness level) and **What this mix is about** (the listener's words, used instead of the AI's statement). The mix keeps them in its sidecar (`mix_assist.openness`, `mix_assist.listener_intent`); its tidy-ups and "More like this" use its openness; Off means no automatic checks (a tidy-up started from the menu then uses the default level). The saved mix's context menu has one entry, **AI Mix Assist…**: what the mix is about, openness, run AI Mix Assist (a tidy-up), undo. Choices and changes are in the mix history. Radio keeps its global "Station openness": picking a station has no dialog.
 
 ### Names and favourite stations (2026-10-17)
 

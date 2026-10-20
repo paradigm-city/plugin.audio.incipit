@@ -8,7 +8,7 @@ Terms used in [concept_ai_mix_assist.md](concept_ai_mix_assist.md) and in the pi
 |---|---|
 | **AI Mix Assist** | the feature as a whole; developed as *style consistency* |
 | "Keep … on track" (automatic) | refinement |
-| "AI Mix Assist..." > "Tidy up now" (context menu) | tidy-up (on demand) |
+| "AI Mix Assist..." > "Run AI Mix Assist" (context menu) | tidy-up (on demand) |
 | "What this mix is about" | seed intent |
 | "didn't fit" | clearly inconsistent |
 
@@ -95,7 +95,7 @@ Terms used in [concept_ai_mix_assist.md](concept_ai_mix_assist.md) and in the pi
 | Term | Meaning | Retired or ambiguous words |
 |---|---|---|
 | **Refinement** | A style-based change made **while a mix is being created**: in the background for new mixes and Radio's first refill, before queueing for later refills. Patches the playlist and the saved mix, notifies, and can be undone. | "style repair", "filter" |
-| **Style check** | Planned on-demand check of a saved mix that would show flagged tracks for the listener to decide. Not built: the on-demand action is the tidy-up ("Tidy up now"), with Undo and the history. | "repair" |
+| **Style check** | Planned on-demand check of a saved mix that would show flagged tracks for the listener to decide. Not built: the on-demand action is the tidy-up ("Run AI Mix Assist"), with Undo and the history. | "repair" |
 | **Repair** | **Only** the existing recovery of moved or deleted files. | |
 | **Over-fetch** | Requesting more tracks from MusicIP than the mix needs (e.g. 3×), so there is a choice. | |
 | **Submix** | A small MusicIP mix created to replace an outlier, as in "More like this". It goes through the same consistency mechanisms as the master mix, measured against the master seed. | |
