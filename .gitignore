@@ -2,3 +2,4 @@ __pycache__/
 *.pyc
 tools/style_pilot/data/
 tools/style_pilot/.venv/
+profile/addon_data/plugin.audio.musicip/mixassist/usage.db
