@@ -19,8 +19,8 @@ class RootStatusTest(KodiTestCase):
         kodi.directory_items.clear()
         self.run_plugin()
         item = {item.getLabel(): item for _url, item, _folder in kodi.directory_items}["Discovery mode"]
-        self.assertEqual(item.getMusicInfoTag().getArtist(), "Moby - Porcelain")  # where skins show it (plain here)
-        self.assertIn(("addSortMethod", main.xbmcplugin.SORT_METHOD_UNSORTED, {"labelMask": "%L", "label2Mask": "%A"}),
+        self.assertEqual(item.getMusicInfoTag().getAlbum(), "Moby - Porcelain")  # Kodi's second label from it (plain here)
+        self.assertIn(("addSortMethod", main.xbmcplugin.SORT_METHOD_UNSORTED, {"labelMask": "%L", "label2Mask": "%B"}),
                       kodi.directory_calls)
 
     def test_album_and_year_follow_the_song(self):
@@ -39,10 +39,12 @@ class RootStatusTest(KodiTestCase):
             self.assertEqual(self.labels2()["Radio mode"], "Scanning: Unknown")  # nothing known: the song alone
 
     def test_menu_entries_are_not_songs(self):
+        main.save_discovery_state({"enabled": True, "current_label": "Moby – Porcelain"})
         kodi.directory_items.clear()
         self.run_plugin()
-        for _url, item, _folder in kodi.directory_items:
-            self.assertEqual(item.getMusicInfoTag().getMediaType(), "music", item.getLabel())
+        for _url, item, _folder in kodi.directory_items:  # no artist, no media type: Kodi adds no "Information"
+            tag = item.getMusicInfoTag()
+            self.assertEqual((tag.getMediaType(), tag.getArtist()), ("", ""), item.getLabel())
 
     def test_nothing_runs(self):
         status = self.labels2()
