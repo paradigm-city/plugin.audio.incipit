@@ -4260,11 +4260,6 @@ def apply_music_metadata(
     try:
         music_tag = list_item.getMusicInfoTag()
         music_tag.setTitle(title)
-        if not (artist or album or track_number or duration):
-            # A menu entry, a folder of the add-on, a saved mix: not a song. Kodi takes a music tag without a media
-            # type for a song and adds "Information" (song information) and the song context items (also this
-            # add-on's "Create MusicIP mix") to its context menu.
-            music_tag.setMediaType("music")
         if artist:
             music_tag.setArtist(artist)
         if album:
@@ -4661,17 +4656,19 @@ def radio_icon() -> str:
 # --- Second lines ---------------------------------------------------------------------------------------------
 # Kodi rewrites an add-on entry's Label2 from the listing's label masks: by default folders get none and files
 # their duration, so setLabel2() alone never shows (skins then show e.g. "Folder"). A listing that wants its
-# second lines puts them in the entries' artist field as well, and asks Kodi for "%A" as the second label
-# (keep_second_lines); skins that show an entry's artist (Arctic Fuse) show it there, others as Label2.
+# second lines puts them in the entries' album field as well, and asks Kodi for "%B" as the second label
+# (keep_second_lines). Not the artist field: an entry with an artist is a song to Kodi (ListItem.DBType "song"),
+# and Kodi adds its own "Information" and the song context items to it; an entry with the media type "music"
+# gets Kodi's "Information" too. Only entries without artist and media type get none (findings F28).
 
 def keep_second_lines() -> None:
-    xbmcplugin.addSortMethod(HANDLE, xbmcplugin.SORT_METHOD_UNSORTED, labelMask="%L", label2Mask="%A")
+    xbmcplugin.addSortMethod(HANDLE, xbmcplugin.SORT_METHOD_UNSORTED, labelMask="%L", label2Mask="%B")
 
 
 def set_second_line(item: xbmcgui.ListItem, text: str) -> None:
     item.setLabel2(text)
     try:
-        item.getMusicInfoTag().setArtist(text)
+        item.getMusicInfoTag().setAlbum(text)
     except Exception:
         pass
 
@@ -6013,10 +6010,7 @@ def apply_mix_album_metadata(list_item: xbmcgui.ListItem, cache_path: str, track
         tag = list_item.getMusicInfoTag()
         # No media type "album": Kodi would add its own "Information" (its album dialog) to the context menu, next
         # to the add-on's. The list is an album list anyway (setContent "albums").
-        tag.setAlbum(saved_mix_name(meta))
         tag.setAlbumArtist(MIX_ALBUM_ARTIST)
-        if fields["artists"]:
-            tag.setArtist(mix_artist_text(fields["artists"]))  # the seed song replaces it as the second line
         if fields["genres"]:
             tag.setGenres(fields["genres"])
         if fields["year"]:
