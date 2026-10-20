@@ -56,9 +56,9 @@ Found on 2026-10-11 while removing the Discovery command channel (F6). They are 
 
 ### F28 · Saved mixes had "Information" twice in the context menu
 
-Found by the user on 2026-10-20: since saved mixes are listed as albums (2026-10-19), their context menu showed "Information" twice. The add-on's own entry opens the mix information; the other one was Kodi's: Kodi adds "Information" to entries whose music tag is a song or an album, and it takes a music tag without a media type for a song (Kodi showed `ListItem.DBType` "song"). So every menu entry of the add-on and every saved mix also got the song context items, this add-on's "Create MusicIP mix" and "Start MusicIP radio" among them.
+Found by the user on 2026-10-20: since saved mixes are listed as albums (2026-10-19), their context menu showed "Information" twice: the add-on's own (the mix information) and Kodi's. Kodi adds its "Information" to every entry whose music tag is a song, an album, an artist or "music" (`CMusicInfoBase`), and it takes an entry with an artist for a song (`ListItem.DBType` "song"), whatever the add-on sets. With the song type came the song context items too, this add-on's "Create MusicIP mix" and "Start MusicIP radio" among them, on every menu entry and saved mix. Checked in the running Kodi with test entries: only entries without artist and without media type have an empty type, and get none.
 
-Fixed in 3cbf077 (2026-10-20): entries without track data (menu entries, folders, saved mixes) have the media type "music", which Kodi gives no song or album items. The first attempt, d8c68e0, only dropped the media type "album" and was not enough.
+Fixed in 3939672 (2026-10-20): menu entries and saved mixes have no artist and no media type; their second lines come from the album field (label2 mask `%B`, see F27). Two earlier attempts did not work: d8c68e0 dropped the media type "album" (Kodi then saw a song), 3cbf077 set the media type "music" (which has its own "Information").
 
 ### F27 · The add-on's second texts (Label2) were never shown
 
