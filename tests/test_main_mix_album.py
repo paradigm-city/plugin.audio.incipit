@@ -48,7 +48,8 @@ class MixAlbumTest(MixAlbumTestCase):
         item = self.mix_item()
         tag = item.getMusicInfoTag()
         self.assertIn(("setContent", "albums"), kodi.directory_calls)
-        self.assertEqual((tag.getMediaType(), tag.getAlbumArtist()), ("album", "MusicIP"))
+        self.assertEqual((tag.getMediaType(), tag.getAlbumArtist()), ("", "MusicIP"))  # no second "Information"
+        self.assertEqual([label for label, _action in item.context_menu].count("Information"), 1)
         self.assertEqual(tag.getAlbum(), main.saved_mix_name(main.get_saved_mix_metadata(self.cache_path)))
         self.assertTrue(tag.getArtist().startswith("Artist 3 – Song 3 · "))  # the seed song: the second line
         self.assertEqual(tag.getArtist(), item.getLabel2())
