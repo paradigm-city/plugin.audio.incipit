@@ -216,10 +216,10 @@ class SavedMixMenuTest(MixAssistTestCase):
 
     def test_the_menu_offers_undo_only_after_a_change(self):
         self.assertEqual(self.menu(), ["What this mix is about: <not worked out yet>", "Openness: Balanced",
-                                       "Name: <given at the first check>", "Tidy up now"])
+                                       "Name: <given at the first check>", "Run AI Mix Assist"])
         self.tidy_up(plan(changes=[REPLACE_DISCO]))
         self.assertEqual(self.menu(), ["What this mix is about: dark, abstract, instrumental", "Openness: Balanced",
-                                       "Name: <given at the first check>", "Tidy up now", "Undo the AI Mix Assist changes"])
+                                       "Name: <given at the first check>", "Run AI Mix Assist", "Undo the AI Mix Assist changes"])
 
     def test_tidy_up_now_from_the_menu(self):
         kodi.respond("select", 3)
