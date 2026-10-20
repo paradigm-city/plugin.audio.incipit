@@ -7500,7 +7500,7 @@ def choose_from_mix_assist_menu(cache_path: str) -> str:
         (f"Openness: {mix_openness_label(mix_openness_index(meta))}", "mix_assist_openness"),
     ] + ([(f"Name: {mix_name(meta) or '<given at the first check>'}", "mix_assist_rename")]
          if mix_naming_enabled() and is_mix_saved(meta) else []) + [
-        ("Tidy up now", "mix_assist_tidy_up"),
+        ("Run AI Mix Assist", "mix_assist_tidy_up"),
     ]
     if section.get("previous_tracks"):
         entries.append(("Undo the AI Mix Assist changes", "mix_assist_undo"))
