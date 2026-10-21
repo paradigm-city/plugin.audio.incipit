@@ -496,6 +496,59 @@ class StationTest(RadioTestCase):
         self.assertEqual(radio["current_position"], kodi.player.position)
 
 
+class StationArtworkTest(RadioTestCase):
+    def setUp(self):
+        super().setUp()
+        from PIL import Image
+        folder = os.path.join(kodi.root, "art")
+        os.makedirs(folder, exist_ok=True)
+        self.covers = []
+        for index in range(20):
+            path = os.path.join(folder, f"{index}.jpg")
+            Image.new("RGB", (60, 60), (index * 10, 50, 90)).save(path)
+            self.covers.append(path)
+        patcher = mock.patch.object(main, "cover_files_for_tracks", return_value=self.covers)
+        self.cover_files = patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_a_playing_station_gets_collages_and_the_radio_screen_its_background(self):
+        self.start()
+        radio = self.tick()
+        self.assertTrue(os.path.isfile(radio["station_fanart"]) and os.path.isfile(radio["station_cover"]))
+        self.assertTrue(radio["ui_refresh_requested"])
+        self.assertEqual(self.cover_files.call_args[0][0][0], radio["seed"])  # the picked song's cover first
+        kodi.directory_calls.clear()
+        self.menu()
+        self.assertIn(("setPluginFanart", {"image": radio["station_fanart"]}), kodi.directory_calls)
+        for _url, item, _folder in kodi.directory_items:
+            self.assertEqual(item.getArt("fanart"), radio["station_fanart"])
+
+    def test_the_collages_follow_the_playlist_every_few_minutes(self):
+        self.start()
+        first = self.tick()["station_fanart"]
+        self.assertEqual(self.cover_files.call_count, 1)
+        self.tick()
+        self.assertEqual(self.cover_files.call_count, 1)  # the playlist is the same
+        kodi.go_to(3)
+        self.tick()  # the playlist has changed (a refill), but it is too soon
+        self.assertEqual(self.cover_files.call_count, 1)
+        radio = self.tick(service.STATION_ARTWORK_INTERVAL_SECONDS)
+        self.assertEqual(self.cover_files.call_count, 2)
+        self.assertNotEqual(radio["station_fanart"], first)
+        self.assertFalse(os.path.exists(first))  # the older one is gone
+
+    def test_without_covers_the_playing_songs_fanart(self):
+        self.cover_files.return_value = []
+        self.start()
+        radio = self.tick()
+        self.assertEqual(radio["station_fanart"], "")
+        with mock.patch.object(main, "get_track_metadata", return_value={"fanart": "image://fanart.jpg/"}):
+            self.assertEqual(main.station_fanart(radio), "image://fanart.jpg/")
+        self.assertEqual(self.cover_files.call_count, 1)
+        self.tick()
+        self.assertEqual(self.cover_files.call_count, 1)  # tried once for this playlist
+
+
 class RadioServiceIntegrationTest(RadioTestCase):
     def test_the_visible_root_follows_the_radio(self):
         for folder in ("plugin://plugin.audio.musicip/", "plugin://plugin.audio.musicip", "plugin://plugin.audio.musicip/?"):

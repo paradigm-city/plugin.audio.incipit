@@ -757,6 +757,7 @@ def install():
     xbmcplugin.setResolvedUrl = _setResolvedUrl
     xbmcplugin.setPluginCategory = _record("setPluginCategory")
     xbmcplugin.setContent = _record("setContent")
+    xbmcplugin.setPluginFanart = _record("setPluginFanart")
     xbmcplugin.addSortMethod = _record("addSortMethod")
 
     xbmcvfs = types.ModuleType("xbmcvfs")
