@@ -241,6 +241,7 @@ class RadioMixAssistTest(RadioBase):
                                          "name": "Bombastic Heroic Metal"}
         radio = self.started_station()
         self.assertEqual(radio["name"], "Bombastic Heroic Metal")
+        self.assertTrue(radio["ui_refresh_requested"])  # the visible Radio screen is redrawn with the name
         self.assertIn(("setPluginCategory", "Radio: Bombastic Heroic Metal"), self.menu_calls())
         self.assertTrue(dict(main.radio_info_pages(radio))["Overview"].startswith("Station: Bombastic Heroic Metal"))
 
