@@ -5002,8 +5002,17 @@ def radio_mode_url() -> str:
 
 
 def replace_with_radio_mode_menu() -> None:
+    """Show the Radio screen after an action. On the Radio screen itself a refresh, which keeps the focused entry
+    (Skip station, pressed again and again while scanning); elsewhere the Radio screen in place of the list."""
     try:
-        xbmc.executebuiltin(f"Container.Update({radio_mode_url()},replace)")
+        folder = xbmc.getInfoLabel("Container.FolderPath") or ""
+    except Exception:
+        folder = ""
+    try:
+        if folder.startswith(f"plugin://{ADDON_ID}/") and "action=radio_mode" in folder:
+            xbmc.executebuiltin("Container.Refresh")
+        else:
+            xbmc.executebuiltin(f"Container.Update({radio_mode_url()},replace)")
     except Exception as exc:
         log(f"Radio mode: could not show the Radio screen: {exc}", xbmc.LOGWARNING)
 
