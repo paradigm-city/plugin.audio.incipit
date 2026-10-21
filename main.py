@@ -6255,17 +6255,18 @@ def make_station_collages(state: dict) -> dict:
 
 
 def station_fanart(state: dict) -> str:
-    """The playing station's background: its wide collage, else the playing song's fanart."""
-    path = str(state.get("station_fanart") or "")
-    if path and os.path.isfile(path):
-        return path
+    """The playing station's background: the playing song's fanart (its artist's), so it changes with the song;
+    else the station's wide collage."""
     song = str(state.get("current_song") or "")
-    if not song:
-        return ""
-    try:
-        return str(get_track_metadata(song, allow_live_lookup=False, include_player_metadata=False).get("fanart") or "")
-    except Exception:
-        return ""
+    if song:
+        try:
+            fanart = str(get_track_metadata(song, allow_live_lookup=False, include_player_metadata=False).get("fanart") or "")
+        except Exception:
+            fanart = ""
+        if fanart:
+            return fanart
+    path = str(state.get("station_fanart") or "")
+    return path if path and os.path.isfile(path) else ""
 
 
 def make_mix_collage(cache_path: str) -> str:
