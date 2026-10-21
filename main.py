@@ -4905,6 +4905,7 @@ def show_root() -> None:
     apply_music_metadata(radio_item, "Radio mode")
     set_item_icon(radio_item, radio_icon())
     set_second_line(radio_item, plain(radio_status()))
+    set_station_info_action(radio_item)
     add_directory_item(
         HANDLE,
         addon_url(action="radio_mode"),
@@ -5104,7 +5105,14 @@ def add_radio_action_item(label: str, action: str) -> None:
     if action in RADIO_ACTION_ICONS:
         set_item_icon(item, media_icon(RADIO_ACTION_ICONS[action]))
     item.setProperty("IsPlayable", "false")
+    set_station_info_action(item)
     add_directory_item(HANDLE, addon_url(action=action), item, isFolder=False)
+
+
+def set_station_info_action(item: xbmcgui.ListItem) -> None:
+    """While a station plays, the Info key on the Radio entries opens its information."""
+    if radio_phase() == "playing":
+        item.setProperty("MusicIP.InfoAction", addon_url(action="radio_info"))
 
 
 def show_radio_mode_menu() -> None:
@@ -7914,6 +7922,7 @@ def show_radio_favourites() -> None:
             ("Remove from favourites",
              f"RunPlugin({addon_url(action='radio_remove_favourite', id=station['id'], nonce=new_nonce())})"),
         ])
+        item.setProperty("MusicIP.InfoAction", addon_url(action="radio_favourite_info", id=station["id"]))
         url = addon_url(action="radio_play_favourite", id=station["id"], nonce=new_nonce())
         add_directory_item(HANDLE, url, item, isFolder=False)
     end_directory(HANDLE, cacheToDisc=False)
