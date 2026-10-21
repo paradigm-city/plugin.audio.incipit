@@ -4,7 +4,7 @@ import os
 import unittest
 
 from fake_kodi import kodi
-from support import main
+from support import main, plugin_query
 from test_radio_mode import SONGS, RadioTestCase as RadioBase
 
 SONGS_FIRST = SONGS[0]
@@ -42,6 +42,31 @@ class FavouriteInfoTest(RadioBase):
         self.assertTrue(window.properties["text"].startswith("Picked song: Air - La femme"))
         window.onFocus(202)
         self.assertEqual(window.properties["text"], "dreamy downtempo")
+
+    def test_the_info_key_opens_the_favourites_information(self):
+        main.save_radio_favourites([{"id": "f1", "name": "Night Drive", "seed": "D:\\air.mp3"}])
+        self.run_plugin(action="radio_favourites")
+        (item,) = [item for _url, item, _folder in kodi.directory_items]
+        kodi.info_labels["ListItem.Property(MusicIP.InfoAction)"] = item.getProperty("MusicIP.InfoAction")
+        self.run_plugin(action="keyboard_info")
+        self.assertEqual(kodi.windows[-1].properties["heading"], "Night Drive")
+
+    def test_the_info_key_on_the_radio_entries_opens_the_playing_stations_information(self):
+        self.start()
+        kodi.directory_items.clear()
+        self.run_plugin()  # the first screen
+        radio = {item.getLabel(): item for _url, item, _folder in kodi.directory_items}["Radio mode"]
+        self.assertEqual(plugin_query(radio.getProperty("MusicIP.InfoAction"))["action"], "radio_info")
+        for _url, item, _folder in self.listed("radio_mode"):
+            self.assertEqual(plugin_query(item.getProperty("MusicIP.InfoAction"))["action"], "radio_info")
+        kodi.info_labels["ListItem.Property(MusicIP.InfoAction)"] = radio.getProperty("MusicIP.InfoAction")
+        self.run_plugin(action="keyboard_info")
+        self.assertEqual(kodi.windows[-1].properties["tab1"], "Overview")
+
+    def listed(self, action):
+        kodi.directory_items.clear()
+        self.run_plugin(action=action)
+        return list(kodi.directory_items)
 
     def test_a_removed_favourite(self):
         self.run_plugin(action="radio_favourite_info", id="gone")
