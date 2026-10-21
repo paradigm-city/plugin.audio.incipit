@@ -106,7 +106,8 @@ class KeymapTest(unittest.TestCase):
         root = ET.fromstring(main.MUSICIP_KEYMAP_CONTENT)
         commands = {node.text for node in root.iter() if node.text and node.text.startswith("RunPlugin(")}
         actions = {re.search(r"action=([a-z_]+)", command).group(1) for command in commands}
-        self.assertEqual(actions, {"keyboard_remove_from_mix", "keyboard_more_like_this", "keyboard_less_like_this"})
+        self.assertEqual(actions, {"keyboard_remove_from_mix", "keyboard_more_like_this", "keyboard_less_like_this",
+                                   "keyboard_info"})
         router_source = read("main.py")
         for action in actions:
             self.assertIn(f'action == "{action}"', router_source)
