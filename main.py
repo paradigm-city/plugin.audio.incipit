@@ -7962,6 +7962,8 @@ def add_radio_favourites_folder() -> None:
     item = xbmcgui.ListItem(label=label, offscreen=True)
     apply_music_metadata(item, label)
     set_item_icon(item, SKIN_FOLDER_ICON)  # a folder of stations, like Recent mixes
+    if RADIO_SCREEN_ART.get("fanart"):  # on the Radio screen: its background, like its other entries
+        item.setArt({"fanart": RADIO_SCREEN_ART["fanart"]})
     add_directory_item(HANDLE, addon_url(action="radio_favourites"), item, isFolder=True)
 
 
