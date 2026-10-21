@@ -96,7 +96,11 @@ MUSICIP_KEYMAP_CONTENT = r"""<?xml version="1.0" encoding="UTF-8"?>
       <del>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_remove_from_mix)</del>
       <m>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_more_like_this)</m>
       <l>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_less_like_this)</l>
+      <i>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_info)</i>
     </keyboard>
+    <remote>
+      <info>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_info)</info>
+    </remote>
   </MyMusicNav>
 
   <window10502>
@@ -105,7 +109,11 @@ MUSICIP_KEYMAP_CONTENT = r"""<?xml version="1.0" encoding="UTF-8"?>
       <del>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_remove_from_mix)</del>
       <m>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_more_like_this)</m>
       <l>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_less_like_this)</l>
+      <i>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_info)</i>
     </keyboard>
+    <remote>
+      <info>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_info)</info>
+    </remote>
   </window10502>
 
   <MusicPlaylist>
@@ -114,7 +122,11 @@ MUSICIP_KEYMAP_CONTENT = r"""<?xml version="1.0" encoding="UTF-8"?>
       <del>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_remove_from_mix)</del>
       <m>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_more_like_this)</m>
       <l>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_less_like_this)</l>
+      <i>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_info)</i>
     </keyboard>
+    <remote>
+      <info>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_info)</info>
+    </remote>
   </MusicPlaylist>
 
   <MusicFiles>
@@ -123,7 +135,11 @@ MUSICIP_KEYMAP_CONTENT = r"""<?xml version="1.0" encoding="UTF-8"?>
       <del>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_remove_from_mix)</del>
       <m>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_more_like_this)</m>
       <l>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_less_like_this)</l>
+      <i>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_info)</i>
     </keyboard>
+    <remote>
+      <info>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_info)</info>
+    </remote>
   </MusicFiles>
 </keymap>
 """
@@ -4456,6 +4472,21 @@ def add_error_item(label: str) -> None:
     add_directory_item(HANDLE, "", item, isFolder=False)
 
 
+# --- The Info key ("i", a remote's info button) in the music windows: for an entry of this add-on with an
+# information of its own (MusicIP.InfoAction: a mix, a favourite station, the playing station) that one, for
+# everything else Kodi's (songs, albums, also the tracks of a mix), as if the key had gone to Kodi.
+
+def run_selected_info_action() -> None:
+    try:
+        url = (xbmc.getInfoLabel("ListItem.Property(MusicIP.InfoAction)") or "").strip()
+    except Exception:
+        url = ""
+    if not url.startswith(f"plugin://{ADDON_ID}/"):
+        xbmc.executebuiltin("Action(Info)")
+        return
+    router(dict(parse_qsl(url.split("?", 1)[1] if "?" in url else "")))
+
+
 def run_selected_mix_keyboard_action(property_name: str, action_label: str) -> None:
     try:
         command = (xbmc.getInfoLabel(f"ListItem.Property({property_name})") or "").strip()
@@ -8231,10 +8262,11 @@ def build_radio_history(events: list[dict]) -> str:
     return "\n\n".join(blocks)
 
 
-def router() -> None:
+def router(params: dict[str, str] | None = None) -> None:
+    """Run the action of the add-on's URL (params: one given here instead, e.g. by the Info key)."""
     PENDING_DIRECTORY_ITEMS.clear()  # each call builds its own listing
     ensure_musicip_keymap_installed()
-    params = parse_args()
+    params = parse_args() if params is None else params
     action = params.get("action", "")
 
     if not action:
@@ -8247,6 +8279,10 @@ def router() -> None:
             show_mix_info(cache_path)
         else:
             show_selected_mix_info()
+        return
+
+    if action == "keyboard_info":
+        run_selected_info_action()
         return
 
     if action == "mix_info_selected":

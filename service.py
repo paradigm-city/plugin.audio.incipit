@@ -63,7 +63,11 @@ MUSICIP_KEYMAP_CONTENT = r"""<?xml version="1.0" encoding="UTF-8"?>
       <del>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_remove_from_mix)</del>
       <m>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_more_like_this)</m>
       <l>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_less_like_this)</l>
+      <i>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_info)</i>
     </keyboard>
+    <remote>
+      <info>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_info)</info>
+    </remote>
   </MyMusicNav>
 
   <window10502>
@@ -72,7 +76,11 @@ MUSICIP_KEYMAP_CONTENT = r"""<?xml version="1.0" encoding="UTF-8"?>
       <del>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_remove_from_mix)</del>
       <m>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_more_like_this)</m>
       <l>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_less_like_this)</l>
+      <i>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_info)</i>
     </keyboard>
+    <remote>
+      <info>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_info)</info>
+    </remote>
   </window10502>
 
   <MusicPlaylist>
@@ -81,7 +89,11 @@ MUSICIP_KEYMAP_CONTENT = r"""<?xml version="1.0" encoding="UTF-8"?>
       <del>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_remove_from_mix)</del>
       <m>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_more_like_this)</m>
       <l>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_less_like_this)</l>
+      <i>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_info)</i>
     </keyboard>
+    <remote>
+      <info>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_info)</info>
+    </remote>
   </MusicPlaylist>
 
   <MusicFiles>
@@ -90,7 +102,11 @@ MUSICIP_KEYMAP_CONTENT = r"""<?xml version="1.0" encoding="UTF-8"?>
       <del>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_remove_from_mix)</del>
       <m>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_more_like_this)</m>
       <l>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_less_like_this)</l>
+      <i>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_info)</i>
     </keyboard>
+    <remote>
+      <info>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_info)</info>
+    </remote>
   </MusicFiles>
 </keymap>
 """

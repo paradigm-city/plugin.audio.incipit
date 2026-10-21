@@ -313,6 +313,25 @@ class MixInfoTest(KodiTestCase):
         first_tab = next(control for control in tree.iter("control") if control.get("id") == "201")
         self.assertIsNone(first_tab.find("visible"))  # focusable as the window opens
 
+    def test_the_info_key_opens_the_mix_information(self):
+        item = main.xbmcgui.ListItem("mix")
+        main.apply_saved_mix_info_metadata(item, self.cache_path)  # what a mix entry carries
+        kodi.info_labels["ListItem.Property(MusicIP.InfoAction)"] = item.getProperty("MusicIP.InfoAction")
+        self.run_plugin(action="keyboard_info")
+        self.assertEqual(len(kodi.windows), 1)  # the add-on's information window
+        self.assertNotIn("Action(Info)", kodi.builtins)
+
+    def test_the_info_key_on_anything_else_is_kodis(self):
+        self.run_plugin(action="keyboard_info")  # a song, an album: no information of the add-on's own
+        self.assertEqual([command for command in kodi.builtins if command != "ReloadKeymaps"], ["Action(Info)"])
+        self.assertEqual(kodi.dialogs("textviewer"), [])
+
+    def test_the_info_key_is_in_the_keymap(self):
+        for section in ("MyMusicNav", "window10502", "MusicPlaylist", "MusicFiles"):
+            block = main.MUSICIP_KEYMAP_CONTENT.split(f"<{section}>")[1].split(f"</{section}>")[0]
+            self.assertIn("<i>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_info)</i>", block)
+            self.assertIn("<info>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_info)</info>", block)
+
     def test_info_for_selected_item(self):
         kodi.info_labels["ListItem.Property(MusicIP.CachePath)"] = self.cache_path
         self.run_plugin(action="mix_info_selected")
