@@ -114,6 +114,8 @@ Found on 2026-10-17 while building the information window: text drawn into the c
 
 Avoided in e566303 (2026-10-17), before it reached a user: the charts use `special://xbmc/media/Fonts/arial.ttf`.
 
+Not enough, found by the user on 2026-10-21: the Radio screen's own actions (Skip station, Pick this station, ...) still redrew it with `Container.Update` and a new URL, so after every skip the focus was back on the first entry. Fixed in b353f8e (2026-10-21): on the Radio screen itself they refresh it (`replace_with_radio_mode_menu()`). The Discovery screen's actions are folders (F8) and still jump to the first entry.
+
 ### F20 · The Radio screen kept the first snippet's title while scanning
 
 Found by the user on 2026-10-17: while scanning, the Radio screen's title ("Radio: scanning - <song>") showed the first snippet correctly but was not updated when the next snippet started. The screen was only rebuilt after an action on it.

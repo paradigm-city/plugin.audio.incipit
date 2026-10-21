@@ -85,6 +85,18 @@ class RadioMenuTest(RadioTestCase):
         playing = icons()
         self.assertEqual((playing["Scan again"], playing["Stop radio"]), ("icon-searching.png", "icon-stop.png"))
 
+    def test_skipping_on_the_radio_screen_keeps_the_focus(self):
+        self.turn_on()
+        kodi.info_labels["Container.FolderPath"] = "plugin://plugin.audio.musicip/?action=radio_mode&nonce=1"
+        kodi.builtins.clear()
+        self.run_plugin(action="radio_tune")  # Skip station
+        self.assertEqual([command for command in kodi.builtins if command.startswith("Container.")], ["Container.Refresh"])
+        kodi.info_labels["Container.FolderPath"] = "plugin://plugin.audio.musicip/"  # from elsewhere: the Radio screen
+        kodi.builtins.clear()
+        self.run_plugin(action="radio_tune")
+        (command,) = [command for command in kodi.builtins if command.startswith("Container.")]
+        self.assertTrue(command.startswith("Container.Update(plugin://plugin.audio.musicip/?action=radio_mode"))
+
     def test_tuning_and_playing(self):
         self.turn_on()
         self.assertEqual(self.menu(), ["Pick this station", "Skip station", "Stop radio"])
