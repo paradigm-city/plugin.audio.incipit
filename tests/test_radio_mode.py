@@ -537,6 +537,20 @@ class StationArtworkTest(RadioTestCase):
         self.assertNotEqual(radio["station_fanart"], first)
         self.assertFalse(os.path.exists(first))  # the older one is gone
 
+    def test_the_background_follows_the_song(self):
+        self.start()
+        radio = self.tick()
+        fanarts = {radio["queue"][1]["file"]: "image://artist-of-song-2.jpg/"}
+        lookup = lambda path, **_: {"fanart": fanarts.get(path, "")}  # noqa: E731
+        with mock.patch.object(main, "get_track_metadata", side_effect=lookup):
+            self.assertEqual(main.station_fanart(radio), radio["station_fanart"])  # no artist image: the collage
+            radio["ui_refresh_requested"] = False
+            main.save_radio_state(radio)
+            kodi.go_to(1)
+            radio = self.tick()
+            self.assertTrue(radio["ui_refresh_requested"])  # a new song: the Radio screen is redrawn
+            self.assertEqual(main.station_fanart(radio), "image://artist-of-song-2.jpg/")
+
     def test_without_covers_the_playing_songs_fanart(self):
         self.cover_files.return_value = []
         self.start()
