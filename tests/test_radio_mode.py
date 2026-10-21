@@ -551,6 +551,15 @@ class StationArtworkTest(RadioTestCase):
             self.assertTrue(radio["ui_refresh_requested"])  # a new song: the Radio screen is redrawn
             self.assertEqual(main.station_fanart(radio), "image://artist-of-song-2.jpg/")
 
+    def test_the_players_fanart_first(self):
+        self.start()
+        radio = self.tick()
+        kodi.info_labels["Player.Filenameandpath"] = radio["current_song"]
+        kodi.info_labels["Player.Art(fanart)"] = "https://assets.fanart.tv/fanart/artist.jpg"
+        self.assertEqual(main.station_fanart(radio), "https://assets.fanart.tv/fanart/artist.jpg")
+        kodi.info_labels["Player.Filenameandpath"] = "D:\other.mp3"  # the player plays something else
+        self.assertNotEqual(main.station_fanart(radio), "https://assets.fanart.tv/fanart/artist.jpg")
+
     def test_without_covers_the_playing_songs_fanart(self):
         self.cover_files.return_value = []
         self.start()
