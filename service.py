@@ -1292,6 +1292,7 @@ def run_radio_tick() -> None:
             state["current_song"] = entry["file"]
             state["current_label"] = entry.get("label") or path_to_label(entry["file"])
             state["played"] = int(state.get("played") or 0) + (1 if position > 0 else 0)
+            state["ui_refresh_requested"] = True  # the Radio screen shows the song and its artwork
             log_info(f"Radio mode: now playing {state['current_label']!r} (position {position}).")
 
     position = prune_radio_backlog(state, position)
