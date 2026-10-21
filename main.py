@@ -4320,7 +4320,11 @@ def apply_music_metadata(
 ) -> None:
     try:
         music_tag = list_item.getMusicInfoTag()
-        music_tag.setTitle(title)
+        if artist or album or track_number or duration:
+            music_tag.setTitle(title)
+        # else: a menu entry (an action, a folder of the add-on, a saved mix), shown by its label. Without a title
+        # (and without an artist, see F28) Kodi doesn't take an action entry for a music file and adds no
+        # "Information" of its own (song information) to its context menu.
         if artist:
             music_tag.setArtist(artist)
         if album:

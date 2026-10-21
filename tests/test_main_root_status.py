@@ -44,7 +44,8 @@ class RootStatusTest(KodiTestCase):
         self.run_plugin()
         for _url, item, _folder in kodi.directory_items:  # no artist, no media type: Kodi adds no "Information"
             tag = item.getMusicInfoTag()
-            self.assertEqual((tag.getMediaType(), tag.getArtist()), ("", ""), item.getLabel())
+            self.assertEqual((tag.getMediaType(), tag.getArtist(), tag.getTitle()), ("", "", ""), item.getLabel())
+            # no title either: an action entry with one is a music file to Kodi, with Kodi's "Information"
 
     def test_nothing_runs(self):
         status = self.labels2()
