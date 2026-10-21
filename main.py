@@ -6256,13 +6256,22 @@ def make_station_collages(state: dict) -> dict:
 
 def station_fanart(state: dict) -> str:
     """The playing station's background: the playing song's fanart (its artist's), so it changes with the song;
-    else the station's wide collage."""
+    else the station's wide collage. The song's fanart is the player's (what the fullscreen player shows), else the
+    library's."""
     song = str(state.get("current_song") or "")
     if song:
+        fanart = ""
         try:
-            fanart = str(get_track_metadata(song, allow_live_lookup=False, include_player_metadata=False).get("fanart") or "")
+            if canonical_audio_path(xbmc.getInfoLabel("Player.Filenameandpath") or "") == canonical_audio_path(song):
+                fanart = str(xbmc.getInfoLabel("Player.Art(fanart)") or "")
         except Exception:
-            fanart = ""
+            pass
+        if not fanart:
+            try:
+                fanart = str(get_track_metadata(song, allow_live_lookup=True, include_player_metadata=False).get("fanart")
+                             or "")
+            except Exception:
+                fanart = ""
         if fanart:
             return fanart
     path = str(state.get("station_fanart") or "")
