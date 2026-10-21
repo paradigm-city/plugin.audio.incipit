@@ -1447,6 +1447,7 @@ def apply_radio_check(state: dict, plugin, position: int) -> None:
         state["reference"] = result.get("reference")
         if result.get("name") and not state.get("favourite_id"):
             state["name"] = result["name"]
+            state["ui_refresh_requested"] = True  # the Radio screen (and the first screen) show the name
         add_radio_event(state, "start_check", removed=removed_songs, intent=state["intent"], profile=state["reference"],
                         name=result.get("name") or "")
         log_info(f"Radio mode: AI Mix Assist took out {removed} song(s) that didn't fit the station.")
