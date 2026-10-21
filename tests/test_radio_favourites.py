@@ -2,6 +2,7 @@
 
 import os
 import unittest
+from unittest import mock
 
 from fake_kodi import kodi
 from support import main, plugin_query
@@ -19,6 +20,10 @@ class FavouriteIconTest(RadioBase):
         self.assertEqual(icons["Station information"], "icon-info.png")
         self.assertEqual(icons["Save as favourite station"], "icon-favourite.png")
         self.assertEqual(icons["Favourite stations (1)"], "DefaultFolder.png")
+        with mock.patch.object(main, "station_fanart", return_value="image://artist.jpg/"):
+            self.menu()
+        fanarts = {item.getLabel(): item.getArt("fanart") for _url, item, _folder in kodi.directory_items}
+        self.assertEqual(set(fanarts.values()), {"image://artist.jpg/"})  # every entry, the folder too
         kodi.directory_items.clear()
         self.run_plugin(action="radio_favourites")
         self.assertEqual([os.path.basename(item.getArt("icon")) for _url, item, _folder in kodi.directory_items],
