@@ -7874,6 +7874,7 @@ def show_radio_favourites() -> None:
         set_second_line(item, plain(f"{station.get('seed_label') or ''} | {openness} | {drift}"))
         item.setProperty("IsPlayable", "false")
         item.addContextMenuItems([
+            ("Information", f"RunPlugin({addon_url(action='radio_favourite_info', id=station['id'], nonce=new_nonce())})"),
             (f"Openness: {openness}",
              f"RunPlugin({addon_url(action='radio_favourite_setting', id=station['id'], setting='openness', nonce=new_nonce())})"),
             (f"Drift: {drift}",
@@ -7885,6 +7886,30 @@ def show_radio_favourites() -> None:
         url = addon_url(action="radio_play_favourite", id=station["id"], nonce=new_nonce())
         add_directory_item(HANDLE, url, item, isFolder=False)
     end_directory(HANDLE, cacheToDisc=False)
+
+
+def show_radio_favourite_info(favourite_id: str) -> None:
+    """A favourite station's information: what it starts from, its settings, what it is about."""
+    station = find_radio_favourite(favourite_id=favourite_id)
+    if not station:
+        notify("This favourite station no longer exists.", xbmcgui.NOTIFICATION_WARNING)
+        return
+    name = str(station.get("name") or station.get("seed_label") or path_to_label(str(station["seed"])))
+    picked = str(station.get("seed_label") or path_to_label(str(station["seed"])))
+    openness, drift = favourite_setting_labels(station)
+    overview = "\n".join([
+        f"Picked song: {picked}{album_suffix(station.get('seed'))}",
+        f"Station openness: {openness}",
+        f"Station drift: {drift}",
+        f"Saved: {format_sidecar_ts(station.get('saved_ts'))}",
+        "",
+        "A favourite always starts fresh from its picked song; its name and settings stay.",
+    ])
+    about = str(station.get("intent") or "").strip() or \
+        "Not described yet. AI Mix Assist describes a station when it checks its first songs."
+    tabs = [{"title": "Overview", "text": overview}, {"title": "What it is about", "text": about}]
+    show_info_window(name, f"Favourite station | {openness} | {drift}", tabs,
+                     lambda: show_info_pages(name, [(tab["title"], plain(tab["text"])) for tab in tabs]))
 
 
 def favourite_settings(favourite: dict | None) -> dict:
@@ -8299,6 +8324,10 @@ def router() -> None:
 
     if action == "radio_favourite_setting":
         change_favourite_setting(params.get("id", ""), params.get("setting", ""))
+        return
+
+    if action == "radio_favourite_info":
+        show_radio_favourite_info(params.get("id", ""))
         return
 
     if action == "radio_rename_favourite":
