@@ -4904,6 +4904,8 @@ def show_root() -> None:
     radio_item = xbmcgui.ListItem(label="Radio mode", offscreen=True)
     apply_music_metadata(radio_item, "Radio mode")
     set_item_icon(radio_item, radio_icon())
+    if radio_phase() == "playing" and station_fanart(get_radio_state()):
+        radio_item.setArt({"fanart": station_fanart(get_radio_state())})
     set_second_line(radio_item, plain(radio_status()))
     set_station_info_action(radio_item)
     add_directory_item(
@@ -5106,6 +5108,9 @@ RADIO_ACTION_ICONS = {
 }
 
 
+RADIO_SCREEN_ART = {"fanart": ""}  # the background of the Radio screen being listed
+
+
 def add_radio_action_item(label: str, action: str) -> None:
     # Actions, not folders: Kodi runs them without expecting a directory listing. The same URL every time (no
     # nonce): when the screen is redrawn (while scanning, with every snippet), Kodi keeps the focus on the item.
@@ -5113,6 +5118,8 @@ def add_radio_action_item(label: str, action: str) -> None:
     apply_music_metadata(item, label)
     if action in RADIO_ACTION_ICONS:
         set_item_icon(item, media_icon(RADIO_ACTION_ICONS[action]))
+    if RADIO_SCREEN_ART.get("fanart"):
+        item.setArt({"fanart": RADIO_SCREEN_ART["fanart"]})
     item.setProperty("IsPlayable", "false")
     set_station_info_action(item)
     add_directory_item(HANDLE, addon_url(action=action), item, isFolder=False)
@@ -5140,6 +5147,10 @@ def show_radio_mode_menu() -> None:
 
     xbmcplugin.setPluginCategory(HANDLE, title)
     xbmcplugin.setContent(HANDLE, "files")
+    background = station_fanart(state) if phase == "playing" else ""
+    if background:
+        xbmcplugin.setPluginFanart(HANDLE, image=background)
+    RADIO_SCREEN_ART["fanart"] = background
 
     if phase == "seeking":
         add_radio_action_item("Pick this station", "radio_play")
@@ -7025,6 +7036,71 @@ def draw_collage(covers: list[str], kind: str, path: str) -> bool:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     collage.save(path, "JPEG", quality=88)
     return True
+
+
+def cover_files_for_tracks(tracks: list[str]) -> list[str]:
+    """The readable covers of songs (from the library), each once, in order."""
+    thumbnails = []
+    for track in tracks:
+        try:
+            metadata = get_track_metadata(track, allow_live_lookup=True, include_player_metadata=False)
+        except Exception:
+            continue
+        thumbnails.append(str(metadata.get("thumbnail") or ""))
+    files = []
+    for thumbnail in dict.fromkeys(thumbnail for thumbnail in thumbnails if thumbnail):
+        path = cover_image_file(thumbnail)
+        if path and path not in files:
+            files.append(path)
+    return files
+
+
+# A playing station's artwork: collages of the covers around the song that plays (the station's playlist, the
+# picked song's first), drawn by the service now and then (service.py, refresh_station_artwork), so they follow
+# the station as it drifts. The Radio screen shows the wide one as its background.
+
+def station_collage_paths(state: dict) -> tuple[str, str]:
+    """(cover, fanart) for the station's playlist as it is now."""
+    files = [str(entry.get("file") or "") for entry in state.get("queue") or []]
+    key = hashlib.sha1("\n".join([COLLAGE_STYLE] + files).encode("utf-8")).hexdigest()[:12]
+    name = f"station_{int(state.get('playing_started_ts') or 0)}_{key}"
+    folder = os.path.join(get_profile_dir(), "covers")
+    return os.path.join(folder, f"{name}.jpg"), os.path.join(folder, f"{name}_fanart.jpg")
+
+
+def make_station_collages(state: dict) -> dict:
+    """Draw the station's collages and remove the older ones (of any station). Returns {"cover", "fanart"}
+    (each "" when there were too few covers)."""
+    seed = str(state.get("seed") or "")
+    files = [str(entry.get("file") or "") for entry in state.get("queue") or []]
+    covers = cover_files_for_tracks(([seed] if seed else []) + files)
+    cover, fanart = station_collage_paths(state)
+    made = {"cover": cover if draw_collage(covers, "cover", cover) else "",
+            "fanart": fanart if draw_collage(covers, "fanart", fanart) else ""}
+    folder = os.path.dirname(cover)
+    for name in os.listdir(folder) if os.path.isdir(folder) else []:
+        path = os.path.join(folder, name)
+        if re.fullmatch(r"station_\d+_[0-9a-f]{12}(_fanart)?\.jpg", name) and path not in made.values():
+            try:
+                os.remove(path)
+            except OSError:
+                continue
+            forget_cached_image(path)
+    return made
+
+
+def station_fanart(state: dict) -> str:
+    """The playing station's background: its wide collage, else the playing song's fanart."""
+    path = str(state.get("station_fanart") or "")
+    if path and os.path.isfile(path):
+        return path
+    song = str(state.get("current_song") or "")
+    if not song:
+        return ""
+    try:
+        return str(get_track_metadata(song, allow_live_lookup=False, include_player_metadata=False).get("fanart") or "")
+    except Exception:
+        return ""
 
 
 def make_mix_collage(cache_path: str) -> str:
