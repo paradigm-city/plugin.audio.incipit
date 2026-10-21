@@ -27,6 +27,27 @@ class FavouriteIconTest(RadioBase):
         self.assertEqual(item.getMusicInfoTag().getAlbum(), item.getLabel2())  # the second line Kodi keeps
 
 
+class FavouriteInfoTest(RadioBase):
+    def test_information_shows_the_station_not_a_music_file(self):
+        main.save_radio_favourites([{"id": "f1", "name": "Night Drive", "seed": "D:\\air.mp3", "seed_label": "Air - La femme",
+                                     "intent": "dreamy downtempo", "saved_ts": 1792000000, "openness": 3, "drift": 2}])
+        self.run_plugin(action="radio_favourites")
+        (item,) = [item for _url, item, _folder in kodi.directory_items]
+        self.assertEqual(item.context_menu[0][0], "Information")
+        self.assertEqual(item.getMusicInfoTag().getTitle(), "")  # no title: Kodi adds no "Information" for a music file
+        self.run_plugin(action="radio_favourite_info", id="f1")
+        window = kodi.windows[-1]
+        self.assertEqual((window.properties["heading"], window.properties["facts"]),
+                         ("Night Drive", "Favourite station | Open | Wander freely"))
+        self.assertTrue(window.properties["text"].startswith("Picked song: Air - La femme"))
+        window.onFocus(202)
+        self.assertEqual(window.properties["text"], "dreamy downtempo")
+
+    def test_a_removed_favourite(self):
+        self.run_plugin(action="radio_favourite_info", id="gone")
+        self.assertNotified("This favourite station no longer exists.")
+
+
 class FavouriteStationsTest(RadioBase):
     def favourites(self):
         return main.load_radio_favourites()
@@ -105,7 +126,7 @@ class FavouriteStationsTest(RadioBase):
         self.assertEqual(item.getLabel(), self.favourites()[0]["name"])
         self.assertFalse(is_folder)
         self.assertEqual([label for label, _action in item.context_menu],
-                         ["Openness: Balanced", "Drift: Drift slowly", "Rename", "Remove from favourites"])
+                         ["Information", "Openness: Balanced", "Drift: Drift slowly", "Rename", "Remove from favourites"])
         self.assertTrue(item.getLabel2().endswith("| Balanced | Drift slowly"))
 
     def test_a_favourite_keeps_the_settings_it_was_saved_with(self):
