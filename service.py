@@ -1290,6 +1290,7 @@ def run_radio_tick() -> None:
     if remaining < RADIO_REFILL_THRESHOLD and now >= int(state.get("next_refill_ts") or 0):
         refill_radio_queue(state)
 
+    refresh_station_artwork(state)
     save_radio_state(state)
 
 
@@ -1310,6 +1311,30 @@ def prune_radio_backlog(state: dict, position: int) -> int:
         state["current_position"] = max(0, position - removed)
         log_info(f"Radio mode: removed {removed} old song(s) from the playlist.")
     return position - removed
+
+
+STATION_ARTWORK_INTERVAL_SECONDS = 300  # the collages follow the playlist, but not with every song
+
+
+def refresh_station_artwork(state: dict) -> bool:
+    """Draw the playing station's collages when its playlist has changed, at most every few minutes; the Radio
+    screen is then redrawn with them. Returns whether new ones were drawn."""
+    plugin = load_plugin_module()
+    cover, fanart = plugin.station_collage_paths(state)
+    if state.get("station_fanart") == fanart or state.get("station_artwork_tried") == fanart:
+        return False
+    first = not state.get("station_artwork_ts") or int(state.get("station_artwork_station") or 0) != \
+        int(state.get("playing_started_ts") or 0)
+    if not first and time.time() - int(state.get("station_artwork_ts") or 0) < STATION_ARTWORK_INTERVAL_SECONDS:
+        return False
+    made = plugin.make_station_collages(state)
+    state.update(station_cover=made["cover"], station_fanart=made["fanart"], station_artwork_tried=fanart,
+                 station_artwork_ts=int(time.time()), station_artwork_station=int(state.get("playing_started_ts") or 0))
+    if made["fanart"] or made["cover"]:
+        state["ui_refresh_requested"] = True
+        log_info(f"Radio mode: new station artwork ({os.path.basename(made['fanart'] or made['cover'])}).")
+        return True
+    return False
 
 
 def refill_radio_queue(state: dict) -> int:
