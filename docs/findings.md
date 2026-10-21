@@ -90,6 +90,8 @@ Found by the user on 2026-10-18: while scanning, the Radio screen is redrawn wit
 
 Fixed in af61f96 (2026-10-18): the entries of both screens have the same URL on every redraw, and the service redraws with `Container.Refresh`, which keeps the focused entry. `test_radio_mode.RadioMenuTest` and `test_main_discovery.DiscoveryMenuFocusTest` check the stable URLs; that Kodi then keeps the focus is Kodi's behaviour and needs a look in Kodi.
 
+Not enough, found by the user on 2026-10-21: the Radio screen's own actions (Skip station, Pick this station, ...) still redrew it with `Container.Update` and a new URL, so after every skip the focus was back on the first entry. Fixed in b353f8e (2026-10-21): on the Radio screen itself they refresh it (`replace_with_radio_mode_menu()`). The Discovery screen's actions are folders (F8) and still jump to the first entry.
+
 ### F20 · The Radio screen kept the first snippet's title while scanning
 
 Found by the user on 2026-10-17: while scanning, the Radio screen's title ("Radio: scanning - <song>") showed the first snippet correctly but was not updated when the next snippet started. The screen was only rebuilt after an action on it.
