@@ -27,7 +27,7 @@ The add-on can't check whether Kodi still waits for a listing. The 2026-10-17 cr
 
 ### F17 · A Radio test failed once
 
-`test_radio_mode.StartFromAnySongTest.test_new_station_is_not_mistaken_for_other_playback` failed once on 2026-10-15 during a full test run (`stop_reason` was `''` instead of `external_playback`) and passed in the next 10 runs, alone and in the full suite. It failed once more later the same day (1 of about 20 full runs). On 2026-10-17 another Radio test, `test_radio_mode.TuningTest.test_no_redraw_while_kodi_is_loading_a_list`, failed once in a full run (no redraw where one was expected) and passed alone, in its module and in the next two full runs; likely the same cause. On 2026-10-19 the first test failed once more (1 of 2 full runs after a merge), again with `stop_reason` `''`. On 2026-10-21 two more Radio tests failed once each in full runs, `test_radio_mode.TuningTest.test_no_redraw_while_kodi_is_loading_a_list` (on `main`) and `test_radio_mode.TuningTest.test_the_radio_screen_follows_the_snippets`; both passed alone and in the next runs. The flaky failures are getting more frequent and all sit in the Radio tests. The test uses the fake clock, so the cause is probably state left behind by another test (a background thread or the fake MusicIP server) rather than real time. Not reproduced yet.
+`test_radio_mode.StartFromAnySongTest.test_new_station_is_not_mistaken_for_other_playback` failed once on 2026-10-15 during a full test run (`stop_reason` was `''` instead of `external_playback`) and passed in the next 10 runs, alone and in the full suite. It failed once more later the same day (1 of about 20 full runs). On 2026-10-17 another Radio test, `test_radio_mode.TuningTest.test_no_redraw_while_kodi_is_loading_a_list`, failed once in a full run (no redraw where one was expected) and passed alone, in its module and in the next two full runs; likely the same cause. On 2026-10-19 the first test failed once more (1 of 2 full runs after a merge), again with `stop_reason` `''`. On 2026-10-21 two more Radio tests failed once each in full runs, `test_radio_mode.TuningTest.test_no_redraw_while_kodi_is_loading_a_list` (on `main`) and `test_radio_mode.TuningTest.test_the_radio_screen_follows_the_snippets`; both passed alone and in the next runs. On 2026-10-22 `test_no_redraw_while_kodi_is_loading_a_list` failed once more (no redraw, 0 builtins instead of 1) and passed in the next full run. The flaky failures are getting more frequent and all sit in the Radio tests. The test uses the fake clock, so the cause is probably state left behind by another test (a background thread or the fake MusicIP server) rather than real time. Not reproduced yet.
 
 Mitigated in 6f6ba14 (2026-10-17), not fixed (the fault is in Kodi): listings are handed to Kodi in one call (`addDirectoryItems`), and screen redraws from the background (the service, AI Mix Assist's tidy-up) wait while Kodi is loading a list (`Container.IsUpdating`, busy dialog). If it happens again, the next step is the one above: generate mixes outside a listing.
 
@@ -65,6 +65,12 @@ Found by the user on 2026-10-21: the context menu of "Settings" shows Play, Play
 "Settings" is an action, not a folder, since dd92060 (2026-10-10): as a folder Kodi expected a listing from it, logged an error, and the Back key could open the settings again. Options looked at on 2026-10-21: a folder again (brings those problems back), or taking "Settings" off the first screen (the add-on's settings stay reachable through Kodi's add-on menu). Kept as it is for now.
 
 ## Resolved
+
+### F30 · Tests wrote a usage.db into the working directory
+
+Found on 2026-10-22: after a full test run from `tests/`, an untracked `tests/profile/addon_data/plugin.audio.musicip/mixassist/usage.db` appeared (from the repository root it lands in `profile/`, which `.gitignore` had been hiding). The mixassist tests report usage events (`mixassist.usage.emit`) while no test Kodi is set up; importing `main.py` had registered its sink, and the fake Kodi then translated `special://profile` with an empty root, into a relative path.
+
+Fixed in the test fakes: `fake_kodi` refuses `special://` paths outside a test's Kodi, so such events are dropped (`emit` never fails the work it reports).
 
 ### F28 · Saved mixes had "Information" twice in the context menu
 
