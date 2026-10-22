@@ -282,4 +282,4 @@ Mixes no longer ask MusicIP to reload its library first (that made every mix slo
 - about three times a day (every 8 hours; the time of the last reload is kept across Kodi restarts, and Kodi's first two minutes are left alone)
 - right after Kodi has finished a music library scan, so songs new to Kodi's library reach the mixes too
 
-The reload runs in its own thread, so Radio and Discovery keep going meanwhile. A failed reload (MusicIP not running) is logged and tried again after 30 minutes.
+A reload scans MusicIP's music folders and takes in new songs, one at a time and minutes each, and MusicIP mixes little else meanwhile. So it waits while Radio or Discovery plays (they need MusicIP's mixes) and starts once they stop. When MusicIP doesn't answer within two minutes, it is still taking in songs and goes on by itself; this is logged, not treated as a failure. The reload runs in its own thread, so the service keeps going meanwhile. A failed reload (MusicIP not running) is logged and tried again after 30 minutes.
