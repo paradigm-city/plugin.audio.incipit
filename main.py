@@ -4817,6 +4817,8 @@ def show_root() -> None:
     discovery_item = xbmcgui.ListItem(label="Discovery mode", offscreen=True)
     apply_music_metadata(discovery_item, "Discovery mode")
     set_item_icon(discovery_item, discovery_icon())
+    if discovery_fanart():
+        discovery_item.setArt({"fanart": discovery_fanart()})
     set_second_line(discovery_item, discovery_status())
     add_directory_item(
         HANDLE,
@@ -4875,13 +4877,16 @@ def add_discovery_run_action_item(label: str, action: str) -> None:
     )
 
 
-def add_discovery_action_item(label: str, action: str, is_folder: bool = True, icon: str = "") -> None:
+def add_discovery_action_item(label: str, action: str, is_folder: bool = True, icon: str = "",
+                              fanart: str = "") -> None:
     # The same URL every time (no nonce): when the screen is redrawn, Kodi finds the focused item by its URL and
     # keeps the focus on it.
     item = xbmcgui.ListItem(label=label, offscreen=True)
     apply_music_metadata(item, label)
     if icon:
         set_item_icon(item, media_icon(icon))
+    if fanart:  # every entry: skins show the focused entry's
+        item.setArt({"fanart": fanart})
     if not is_folder:
         item.setProperty("IsPlayable", "false")
     add_directory_item(
@@ -4906,12 +4911,16 @@ def show_discovery_mode_menu() -> None:
 
     xbmcplugin.setPluginCategory(HANDLE, title)
     xbmcplugin.setContent(HANDLE, "files")
+    fanart = discovery_fanart() if active else ""
+    if fanart:
+        xbmcplugin.setPluginFanart(HANDLE, image=fanart)
 
     if active:
         add_discovery_action_item("Create mix from current discovery song", "discovery_mix_current", is_folder=True,
-                                  icon="generate")
-        add_discovery_action_item("Skip to next discovery song", "discovery_next", is_folder=True, icon="skip")
-        add_discovery_action_item("Stop discovery mode", "discovery_stop", is_folder=True, icon="stop")
+                                  icon="generate", fanart=fanart)
+        add_discovery_action_item("Skip to next discovery song", "discovery_next", is_folder=True, icon="skip",
+                                  fanart=fanart)
+        add_discovery_action_item("Stop discovery mode", "discovery_stop", is_folder=True, icon="stop", fanart=fanart)
     else:  # it scans through snippets, like the radio: the same icon
         add_discovery_action_item("Start discovery mode", "discovery_start", is_folder=True, icon="searching")
 
@@ -6254,28 +6263,40 @@ def make_station_collages(state: dict) -> dict:
     return made
 
 
+def song_fanart(song: str) -> str:
+    """A song's fanart (its artist's): the player's while it plays the song (what the fullscreen player shows),
+    else the library's; "" without one."""
+    if not song:
+        return ""
+    try:
+        if canonical_audio_path(xbmc.getInfoLabel("Player.Filenameandpath") or "") == canonical_audio_path(song):
+            fanart = str(xbmc.getInfoLabel("Player.Art(fanart)") or "")
+            if fanart:
+                return fanart
+    except Exception:
+        pass
+    try:
+        return str(get_track_metadata(song, allow_live_lookup=True, include_player_metadata=False).get("fanart") or "")
+    except Exception:
+        return ""
+
+
 def station_fanart(state: dict) -> str:
-    """The playing station's background: the playing song's fanart (its artist's), so it changes with the song;
-    else the station's wide collage. The song's fanart is the player's (what the fullscreen player shows), else the
-    library's."""
-    song = str(state.get("current_song") or "")
-    if song:
-        fanart = ""
-        try:
-            if canonical_audio_path(xbmc.getInfoLabel("Player.Filenameandpath") or "") == canonical_audio_path(song):
-                fanart = str(xbmc.getInfoLabel("Player.Art(fanart)") or "")
-        except Exception:
-            pass
-        if not fanart:
-            try:
-                fanart = str(get_track_metadata(song, allow_live_lookup=True, include_player_metadata=False).get("fanart")
-                             or "")
-            except Exception:
-                fanart = ""
-        if fanart:
-            return fanart
+    """The playing station's background: the playing song's fanart, so it changes with the song; else the
+    station's wide collage."""
+    fanart = song_fanart(str(state.get("current_song") or ""))
+    if fanart:
+        return fanart
     path = str(state.get("station_fanart") or "")
     return path if path and os.path.isfile(path) else ""
+
+
+def discovery_fanart() -> str:
+    """Discovery mode's background while it plays its snippets (not the radio's scan): the snippet's fanart."""
+    state = get_discovery_state()
+    if not state.get("enabled") or state.get("owner") == "radio":
+        return ""
+    return song_fanart(str(state.get("current_song") or ""))
 
 
 def make_mix_collage(cache_path: str) -> str:
