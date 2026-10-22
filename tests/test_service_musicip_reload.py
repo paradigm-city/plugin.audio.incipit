@@ -1,6 +1,7 @@
 """MusicIP's library, reloaded by the service now and then and after Kodi's music library scan (not before mixes)."""
 
 import unittest
+from unittest import mock
 
 from fake_kodi import kodi
 from support import MusicIPServerTestCase, main, service
@@ -63,6 +64,30 @@ class MusicIPReloadTest(MusicIPServerTestCase):
         self.assertTrue(self.tick(1))
         self.assertEqual(self.musicip.reload_count(), 2)
         self.assertEqual(self.record(), {"last_ts": int(self.clock.now)})
+
+    def test_a_long_reload_is_taking_in_songs_not_a_failure(self):
+        self.musicip.reload_seconds = 1.5
+        kodi.settings["timeout"] = "1"
+        with mock.patch.object(service, "MUSICIP_RELOAD_MIN_TIMEOUT_SECONDS", 1):
+            self.tick()
+            self.assertTrue(self.tick(service.MUSICIP_RELOAD_STARTUP_DELAY_SECONDS))
+        self.assertIn("MusicIP is taking in new songs", kodi.log_text())
+        self.assertNotIn("failed", kodi.log_text())
+        self.assertEqual(self.record(), {"last_ts": int(self.clock.now)})  # not again in 30 minutes
+        self.assertFalse(self.tick(service.MUSICIP_RELOAD_RETRY_SECONDS))
+
+    def test_not_while_radio_or_discovery_plays(self):
+        self.tick()
+        main.save_radio_state({"phase": "playing"})
+        self.assertFalse(self.tick(service.MUSICIP_RELOAD_STARTUP_DELAY_SECONDS))
+        service.ServiceMonitor().onScanFinished("music")
+        self.assertFalse(self.tick(1))
+        main.save_radio_state({"phase": "off"})
+        main.save_discovery_state({"enabled": True})
+        self.assertFalse(self.tick(1))
+        main.save_discovery_state({"enabled": False})
+        self.assertTrue(self.tick(1))  # once they stop
+        self.assertIn("(after Kodi's library scan)", kodi.log_text())
 
     def test_mixes_do_not_reload(self):
         self.musicip.set_mix("D:\\music\\a.mp3", ["D:\\music\\b.mp3"])
