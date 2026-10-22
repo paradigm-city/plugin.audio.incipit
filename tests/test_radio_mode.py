@@ -248,6 +248,32 @@ class StartRadioTest(RadioTestCase):
         self.assertEqual(self.musicip.mix_requests(), [])
         self.assertEqual(self.radio().get("phase", "off"), "off")
 
+    def test_the_log_has_the_stations_parameters(self):
+        kodi.settings.update({"playlist_size": "10", "mix_style_preference": "5", "mix_variety": "3"})
+        self.start()
+        (line,) = [message for message, _level in kodi.logs if "Radio mode: station parameters:" in message]
+        self.assertIn("new station | mix: size 10, variety 3, style 5/10", line)
+        self.assertIn("AI Mix Assist: off", line)
+
+
+class StationStartDescriptionTest(RadioTestCase):
+    def params(self):
+        return main.get_effective_mix_parameters(size_override=6)
+
+    def test_with_ai_mix_assist_its_settings(self):
+        text = main.describe_station_start(self.params(), None, True)
+        self.assertIn("new station | mix: size 6, ", text)
+        self.assertIn(f"AI Mix Assist: on, model {main.mix_assist_claude.DEFAULT_MODEL}, effort ", text)
+        self.assertIn("openness Balanced (setting; limit 1.2, borderline rejected)", text)
+        self.assertIn("drift Drift slowly (setting; half-life 60 songs)", text)
+
+    def test_a_favourites_own_settings(self):
+        favourite = {"id": "abc", "name": "Night Drive", "openness": 4, "drift": 0}
+        text = main.describe_station_start(self.params(), favourite, True)
+        self.assertIn("favourite 'Night Drive' (abc) | mix:", text)
+        self.assertIn("openness Adventurous (favourite's own; limit 1.5, borderline accepted)", text)
+        self.assertIn("drift Stay close to the picked song (favourite's own; no drift)", text)
+
 
 class StartFromAnySongTest(RadioTestCase):
     """"Start MusicIP radio" from the library context menu: plugin action radio_start_seed."""
