@@ -5277,10 +5277,29 @@ def radio_seed_label(seed: str) -> str:
     return f"{artist} - {title}" if artist and title else title or path_to_label(seed)
 
 
+def describe_station_start(params: dict, favourite: dict | None, assisted: bool) -> str:
+    """A starting station's mix parameters and AI settings, for the log."""
+    station = f"favourite {favourite.get('name', '')!r} ({favourite.get('id', '')})" if favourite else "new station"
+    mix = f"size {params.get('size')}, {describe_mix_parameters(compact_mix_generation_parameters(params))}"
+    if not assisted:
+        return f"{station} | mix: {mix} | AI Mix Assist: off"
+    settings = favourite_settings(favourite)
+    source = {key: "favourite's own" if key in settings else "setting" for key in ("openness", "drift")}
+    openness = max(0, min(4, station_setting_index(settings, "openness")))
+    limit, borderline = get_station_strictness(settings)
+    drift = max(0, min(2, station_setting_index(settings, "drift")))
+    half_life = get_radio_drift_half_life(settings)
+    return (f"{station} | mix: {mix} | AI Mix Assist: on, model {mix_assist_claude.DEFAULT_MODEL}, effort "
+            f"{mix_assist_claude.DEFAULT_EFFORT} | openness {MIX_OPENNESS_LABELS[openness]} ({source['openness']}; "
+            f"limit {limit}, borderline {'accepted' if borderline else 'rejected'}) | drift {RADIO_DRIFT_LABELS[drift]} "
+            f"({source['drift']}; {f'half-life {half_life} songs' if half_life else 'no drift'})")
+
+
 def open_radio_station(seed: str, favourite: dict | None, progress) -> bool:
     size = RADIO_ASSISTED_START_SIZE if mix_assist_for_radio() else get_playlist_size()
+    params = get_effective_mix_parameters(size_override=size)
     try:
-        tracks = fetch_mix(seed, size, get_effective_mix_parameters(size_override=size), progress=progress)
+        tracks = fetch_mix(seed, size, params, progress=progress)
     except Exception as exc:
         notify(f"Radio could not start: {exc}", xbmcgui.NOTIFICATION_ERROR)
         log(f"Radio mode: start failed for seed {seed!r}: {exc}", xbmc.LOGERROR)
@@ -5351,6 +5370,7 @@ def open_radio_station(seed: str, favourite: dict | None, progress) -> bool:
         return False
 
     log(f"Radio mode: started from {seed!r} with {len(tracks)} song(s).", xbmc.LOGINFO)
+    log(f"Radio mode: station parameters: {describe_station_start(params, favourite, assisted)}", xbmc.LOGINFO)
     notify(f"Playing {favourite['name']}." if favourite else "Station picked.")
     return True
 
