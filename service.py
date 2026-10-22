@@ -1294,6 +1294,7 @@ def run_radio_tick() -> None:
             state["current_label"] = entry.get("label") or path_to_label(entry["file"])
             state["played"] = int(state.get("played") or 0) + (1 if position > 0 else 0)
             state["ui_refresh_requested"] = True  # the Radio screen shows the song and its artwork
+            add_to_station_history(state, entry["file"])
             log_info(f"Radio mode: now playing {state['current_label']!r} (position {position}).")
 
     position = prune_radio_backlog(state, position)
@@ -1502,19 +1503,31 @@ def prune_radio_backlog(state: dict, position: int) -> int:
     return position - removed
 
 
-STATION_ARTWORK_INTERVAL_SECONDS = 300  # the collages follow the playlist, but not with every song
+STATION_ARTWORK_INTERVAL_SECONDS = 120  # once the station has a collage: a new one at most this often
+
+
+def add_to_station_history(state: dict, path: str) -> None:
+    """The station's playback history: each song it played, once in a row, the most recent last."""
+    history = [str(entry) for entry in state.get("history") or [] if entry]
+    if path and (not history or history[-1] != path):
+        history.append(path)
+    plugin = load_plugin_module()
+    state["history"] = history[-plugin.STATION_HISTORY_SIZE:]
 
 
 def refresh_station_artwork(state: dict) -> bool:
-    """Draw the playing station's collages when its playlist has changed, at most every few minutes; the Radio
-    screen is then redrawn with them. Returns whether new ones were drawn."""
+    """Draw the playing station's collages from its playback history when it has grown: until the station has a
+    collage with every song, then at most every few minutes; the Radio screen is then redrawn with them. Returns
+    whether new ones were drawn."""
     plugin = load_plugin_module()
+    if not state.get("history") and state.get("current_song"):
+        add_to_station_history(state, str(state["current_song"]))  # the station's first song
     cover, fanart = plugin.station_collage_paths(state)
     if state.get("station_fanart") == fanart or state.get("station_artwork_tried") == fanart:
         return False
-    first = not state.get("station_artwork_ts") or int(state.get("station_artwork_station") or 0) != \
+    has_one = bool(state.get("station_fanart")) and int(state.get("station_artwork_station") or 0) == \
         int(state.get("playing_started_ts") or 0)
-    if not first and time.time() - int(state.get("station_artwork_ts") or 0) < STATION_ARTWORK_INTERVAL_SECONDS:
+    if has_one and time.time() - int(state.get("station_artwork_ts") or 0) < STATION_ARTWORK_INTERVAL_SECONDS:
         return False
     made = plugin.make_station_collages(state)
     state.update(station_cover=made["cover"], station_fanart=made["fanart"], station_artwork_tried=fanart,
