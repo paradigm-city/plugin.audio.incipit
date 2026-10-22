@@ -1534,6 +1534,8 @@ def refresh_station_artwork(state: dict) -> bool:
                  station_artwork_ts=int(time.time()), station_artwork_station=int(state.get("playing_started_ts") or 0))
     if made["fanart"] or made["cover"]:
         state["ui_refresh_requested"] = True
+        if state.get("favourite_id"):  # a favourite keeps its station's most recent artwork
+            plugin.save_favourite_artwork(str(state["favourite_id"]), made["cover"], made["fanart"])
         log_info(f"Radio mode: new station artwork ({os.path.basename(made['fanart'] or made['cover'])}).")
         return True
     return False

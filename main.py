@@ -12,6 +12,7 @@ import os
 import random
 import sqlite3
 import re
+import shutil
 import sys
 import threading
 import time
@@ -7131,7 +7132,8 @@ def station_fanart(state: dict) -> str:
     path = str(state.get("station_fanart") or "")
     if path and os.path.isfile(path):
         return path
-    return song_fanart(str(state.get("current_song") or ""))
+    favourite = find_radio_favourite(favourite_id=str(state.get("favourite_id") or "")) if state.get("favourite_id") else None
+    return favourite_artwork(favourite, "fanart") or song_fanart(str(state.get("current_song") or ""))
 
 
 def discovery_fanart() -> str:
@@ -8053,6 +8055,50 @@ def add_radio_favourites_folder() -> None:
     add_directory_item(HANDLE, addon_url(action="radio_favourites"), item, isFolder=True)
 
 
+def save_favourite_artwork(favourite_id: str, cover: str, fanart: str) -> bool:
+    """Keep a station's most recent collages as the favourite's artwork (copies, a new file each time: Kodi caches
+    pictures by path); its earlier ones are removed. Returns whether it was saved."""
+    stations = load_radio_favourites()
+    station = next((entry for entry in stations if entry.get("id") == favourite_id), None)
+    if not station or not (cover or fanart):
+        return False
+    folder = os.path.join(get_profile_dir(), "covers")
+    os.makedirs(folder, exist_ok=True)
+    stamp = int(time.time() * 1000)
+    while any(os.path.exists(os.path.join(folder, f"favourite_{favourite_id}_{stamp}{suffix}.jpg")) for suffix in ("", "_fanart")):
+        stamp += 1  # a new name every time
+    kept = {}
+    for kind, source in (("cover", cover), ("fanart", fanart)):
+        if source and os.path.isfile(source):
+            target = os.path.join(folder, f"favourite_{favourite_id}_{stamp}{'' if kind == 'cover' else '_fanart'}.jpg")
+            shutil.copyfile(source, target)
+            kept[kind] = target
+    if not kept:
+        return False
+    remove_favourite_artwork(favourite_id, keep=list(kept.values()))
+    station.update(kept)
+    save_radio_favourites(stations)
+    return True
+
+
+def remove_favourite_artwork(favourite_id: str, keep: list[str] = ()) -> None:
+    folder = os.path.join(get_profile_dir(), "covers")
+    pattern = re.compile(rf"favourite_{re.escape(favourite_id)}_\d+(_fanart)?\.jpg")
+    for name in os.listdir(folder) if os.path.isdir(folder) else []:
+        path = os.path.join(folder, name)
+        if pattern.fullmatch(name) and path not in keep:
+            try:
+                os.remove(path)
+            except OSError:
+                continue
+            forget_cached_image(path)
+
+
+def favourite_artwork(favourite: dict, kind: str) -> str:
+    path = str((favourite or {}).get(kind) or "")
+    return path if path and os.path.isfile(path) else ""
+
+
 def save_station_as_favourite() -> None:
     state = get_radio_state()
     seed = str(state.get("seed") or "")
@@ -8076,6 +8122,7 @@ def save_station_as_favourite() -> None:
         "saved_ts": int(time.time()),
     }
     save_radio_favourites(load_radio_favourites() + [favourite])
+    save_favourite_artwork(favourite["id"], str(state.get("station_cover") or ""), str(state.get("station_fanart") or ""))
     state.update(favourite_id=favourite["id"], name=favourite["name"], settings=favourite_settings(favourite),
                  ui_refresh_requested=True)
     save_radio_state(state)
@@ -8092,6 +8139,10 @@ def show_radio_favourites() -> None:
         item = xbmcgui.ListItem(label=label, offscreen=True)
         apply_music_metadata(item, label)
         set_item_icon(item, media_icon("radio"))
+        artwork = {key: path for key, path in (("thumb", favourite_artwork(station, "cover")),
+                                                 ("fanart", favourite_artwork(station, "fanart"))) if path}
+        if artwork:  # its most recent collage
+            item.setArt(artwork)
         openness, drift = favourite_setting_labels(station)
         set_second_line(item, plain(f"{station.get('seed_label') or ''} | {openness} | {drift}"))
         item.setProperty("IsPlayable", "false")
@@ -8130,7 +8181,8 @@ def show_radio_favourite_info(favourite_id: str) -> None:
     ])
     about = str(station.get("intent") or "").strip() or \
         "Not described yet. AI Mix Assist describes a station when it checks its first songs."
-    tabs = [{"title": "Overview", "text": overview}, {"title": "What it is about", "text": about}]
+    tabs = [{"title": "Overview", "text": overview, "image": favourite_artwork(station, "fanart")},
+            {"title": "What it is about", "text": about}]
     show_info_window(name, f"Favourite station | {openness} | {drift}", tabs,
                      lambda: show_info_pages(name, [(tab["title"], plain(tab["text"])) for tab in tabs]))
 
@@ -8203,6 +8255,7 @@ def remove_radio_favourite(favourite_id: str) -> None:
     if not station or not xbmcgui.Dialog().yesno("Favourite stations", plain(f"Remove \"{station.get('name')}\" from the favourites?")):
         return
     save_radio_favourites([entry for entry in stations if entry.get("id") != favourite_id])
+    remove_favourite_artwork(favourite_id)
     state = get_radio_state()
     if state.get("favourite_id") == favourite_id:
         state["favourite_id"] = ""
