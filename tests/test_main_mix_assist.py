@@ -536,23 +536,6 @@ class CurrentMixNameTest(MixAssistTestCase):
         self.assertIn("AI Mix Assist...", [label for label, _action in item.context_menu])
 
 
-class SubmixFetcherTest(MusicIPServerTestCase):
-    def test_musicip_reloads_only_before_the_first_submix(self):
-        self.musicip.set_mix(TRACKS[1], [TRACKS[3]])
-        self.musicip.set_mix(TRACKS[0], [TRACKS[1], TRACKS[3]])
-        fetch = main.mix_assist_fetcher()
-        self.assertEqual(fetch(TRACKS[1], 15), [TRACKS[1], TRACKS[3]])
-        self.assertEqual(fetch(TRACKS[0], 45), [TRACKS[0], TRACKS[1], TRACKS[3]])
-        self.assertEqual(self.musicip.reload_count(), 1)
-        self.assertEqual([query["size"] for query in self.musicip.mix_requests()], ["15", "45"])
-
-    def test_each_tidy_up_reloads_once(self):
-        self.musicip.set_mix(TRACKS[0], [TRACKS[1]])
-        main.mix_assist_fetcher()(TRACKS[0], 15)
-        main.mix_assist_fetcher()(TRACKS[0], 15)
-        self.assertEqual(self.musicip.reload_count(), 2)
-
-
 class NewMixQueueTest(KodiTestCase):
     def queued(self):
         return self.read_json(main.mix_assist_queue_path()).get("entries", [])

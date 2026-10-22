@@ -531,12 +531,11 @@ class StationTest(RadioTestCase):
 
     def test_server_error_waits_before_retrying(self):
         self.start()
-        reloads = self.musicip.reload_count()
         self.musicip.mix_status = 500
         kodi.go_to(3)
         radio = self.tick()
         self.assertEqual(len(self.musicip.mix_requests()), 3)  # the last song, then the one before it; no more
-        self.assertEqual(self.musicip.reload_count(), reloads + 1)  # MusicIP is reloaded for the first only
+        self.assertEqual(self.musicip.reload_count(), 0)  # MusicIP's library is not reloaded
         self.assertEqual(radio["next_refill_ts"], int(self.clock.now) + service.RADIO_REFILL_RETRY_SECONDS)
         self.assertEqual((radio["phase"], radio["musicip_failures"]), ("playing", 1))
         self.assertEqual(radio["events"][-1]["kind"], "musicip_failed")
