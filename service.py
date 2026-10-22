@@ -1503,7 +1503,8 @@ def prune_radio_backlog(state: dict, position: int) -> int:
     return position - removed
 
 
-STATION_ARTWORK_INTERVAL_SECONDS = 120  # once the station has a collage: a new one at most this often
+STATION_ARTWORK_INTERVAL_SECONDS = 20  # a new collage with every song (the playing one top left); not more often
+# than this while songs are skipped quickly
 
 
 def add_to_station_history(state: dict, path: str) -> None:
