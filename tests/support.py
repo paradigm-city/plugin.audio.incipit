@@ -79,6 +79,7 @@ class KodiTestCase(unittest.TestCase):
         service.METADATA_REFRESH_PENDING_VIEW_REFRESH = False
         service.METADATA_REFRESH_LAST_SELECTION_TOKEN = ""
         service.METADATA_REFRESH_LAST_REFRESH_TS = 0
+        service.MUSICIP_RELOAD.update(thread=None, scan_finished=False, first_tick_ts=0.0)
 
         # Keep tests independent of the user's locale settings in Kodi.
         kodi.kodi_settings["musicfiles.trackformat"] = "[%N. ]%A - %T"
