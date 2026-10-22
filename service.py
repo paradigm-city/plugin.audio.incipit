@@ -2363,7 +2363,10 @@ def run_mix_collage_tick() -> str:
         return ""
     MIX_COLLAGE_STATE["last_ts"] = now
     plugin = load_plugin_module()
-    for cache_path in plugin.list_saved_mix_cache_paths():
+    for cache_path in [plugin.get_current_mix_cache_path()] + plugin.list_saved_mix_cache_paths():  # the current
+        # mix too: it can play before it is saved
+        if not cache_path:
+            continue
         try:
             tracks = plugin.load_mix_by_cache_path(cache_path)
             wanted = plugin.mix_collage_path(cache_path, tracks)

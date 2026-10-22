@@ -279,6 +279,7 @@ def end_directory(handle: int, succeeded: bool = True, updateListing: bool = Fal
     items = list(PENDING_DIRECTORY_ITEMS)
     PENDING_DIRECTORY_ITEMS.clear()
     if succeeded and items:
+        apply_playing_background(handle, items)
         xbmcplugin.addDirectoryItems(handle, items, len(items))
     xbmcplugin.endOfDirectory(handle, succeeded=succeeded, updateListing=updateListing, cacheToDisc=cacheToDisc)
 
@@ -6297,6 +6298,63 @@ def discovery_fanart() -> str:
     if not state.get("enabled") or state.get("owner") == "radio":
         return ""
     return song_fanart(str(state.get("current_song") or ""))
+
+
+# --- What plays, as the background of the add-on's screens ------------------------------------------------------
+# While a mix, a station or Discovery plays, entries without a background of their own get one: the collage of
+# the playing mix or station (Discovery: the snippet's artist image). Skins show the focused entry's.
+
+def playing_mix_cache_path() -> str:
+    """The mix that plays: the current mix or a saved mix whose tracks are Kodi's music playlist; "" otherwise."""
+    try:
+        if not xbmc.Player().isPlayingAudio():
+            return ""
+        items = execute_jsonrpc("Playlist.GetItems", {"playlistid": xbmc.PLAYLIST_MUSIC, "properties": ["file"]})
+    except Exception:
+        return ""
+    files = [canonical_audio_path(str(item.get("file") or "")) for item in (items or {}).get("items") or []]
+    if not files:
+        return ""
+    for cache_path in [get_current_mix_cache_path()] + list_saved_mix_cache_paths():
+        try:
+            if cache_path and [canonical_audio_path(track) for track in load_mix_by_cache_path(cache_path)] == files:
+                return cache_path
+        except Exception:
+            continue
+    return ""
+
+
+def playing_background() -> str:
+    """The background for what plays: Discovery's snippet, the station's collage (else its song's artist image),
+    the playing mix's collage; "" when nothing of the add-on's plays."""
+    fanart = discovery_fanart()
+    if fanart:
+        return fanart
+    if radio_phase() == "playing":
+        state = get_radio_state()
+        collage = str(state.get("station_fanart") or "")
+        return collage if collage and os.path.isfile(collage) else song_fanart(str(state.get("current_song") or ""))
+    cache_path = playing_mix_cache_path()
+    if cache_path:
+        return existing_mix_collage(cache_path, load_mix_by_cache_path(cache_path), "fanart")
+    return ""
+
+
+def apply_playing_background(handle: int, items: list) -> None:
+    try:
+        background = playing_background()
+    except Exception as exc:
+        log(f"No background for what plays: {exc}", xbmc.LOGDEBUG)
+        return
+    if not background:
+        return
+    xbmcplugin.setPluginFanart(handle, image=background)
+    for _url, item, _folder in items:
+        try:
+            if not item.getArt("fanart"):
+                item.setArt({"fanart": background})
+        except Exception:
+            pass
 
 
 def make_mix_collage(cache_path: str) -> str:
