@@ -502,74 +502,76 @@ class StationArtworkTest(RadioTestCase):
         from PIL import Image
         folder = os.path.join(kodi.root, "art")
         os.makedirs(folder, exist_ok=True)
-        self.covers = []
-        for index in range(20):
-            path = os.path.join(folder, f"{index}.jpg")
-            Image.new("RGB", (60, 60), (index * 10, 50, 90)).save(path)
-            self.covers.append(path)
-        patcher = mock.patch.object(main, "cover_files_for_tracks", return_value=self.covers)
+        self.cover_count = None  # None: one cover per song; a number: that many covers, whatever played
+
+        def covers(tracks):
+            files = []
+            for index in range(len(tracks) if self.cover_count is None else self.cover_count):
+                path = os.path.join(folder, f"{index}.jpg")
+                if not os.path.exists(path):
+                    Image.new("RGB", (60, 60), (index * 10, 50, 90)).save(path)
+                files.append(path)
+            return files
+
+        patcher = mock.patch.object(main, "cover_files_for_tracks", side_effect=covers)
         self.cover_files = patcher.start()
         self.addCleanup(patcher.stop)
 
-    def test_a_playing_station_gets_collages_and_the_radio_screen_its_background(self):
+    def play_through(self, count):
+        for position in range(1, count + 1):
+            kodi.go_to(min(position, len(kodi.playlist) - 1))
+            radio = self.tick()
+        return radio
+
+    def test_the_playback_history_grows_with_every_song(self):
         self.start()
         radio = self.tick()
-        self.assertTrue(os.path.isfile(radio["station_fanart"]) and os.path.isfile(radio["station_cover"]))
-        self.assertTrue(radio["ui_refresh_requested"])
-        self.assertEqual(self.cover_files.call_args[0][0][0], radio["seed"])  # the picked song's cover first
+        self.assertEqual(radio["history"], [radio["current_song"]])  # the first song
+        radio = self.play_through(3)
+        self.assertEqual(len(radio["history"]), 4)
+        self.assertEqual(main.station_history_files(radio)[0], radio["current_song"])  # the most recent first
+
+    def test_a_collage_once_enough_songs_have_played_then_now_and_then(self):
+        self.start()
+        radio = self.tick()
+        self.assertEqual(self.cover_files.call_args[0][0], [radio["current_song"]])
+        self.assertEqual(radio["station_fanart"], "")  # one song: too few covers
+        radio = self.play_through(3)  # 4 songs: a 2 x 2 cover, still no wide one (needs 8)
+        self.assertTrue(os.path.isfile(radio["station_cover"]))
+        calls = self.cover_files.call_count
+        radio = self.play_through(1)
+        self.assertEqual(self.cover_files.call_count, calls + 1)  # no wide one yet: tried with every song
+
+    def test_the_most_recent_collage_is_the_background(self):
+        self.cover_count = 20
+        self.start()
+        radio = self.tick()
+        first = radio["station_fanart"]
+        self.assertTrue(os.path.isfile(first))
         kodi.directory_calls.clear()
         self.menu()
-        self.assertIn(("setPluginFanart", {"image": radio["station_fanart"]}), kodi.directory_calls)
-        for _url, item, _folder in kodi.directory_items:
-            self.assertEqual(item.getArt("fanart"), radio["station_fanart"])
-
-    def test_the_collages_follow_the_playlist_every_few_minutes(self):
-        self.start()
-        first = self.tick()["station_fanart"]
-        self.assertEqual(self.cover_files.call_count, 1)
-        self.tick()
-        self.assertEqual(self.cover_files.call_count, 1)  # the playlist is the same
-        kodi.go_to(3)
-        self.tick()  # the playlist has changed (a refill), but it is too soon
-        self.assertEqual(self.cover_files.call_count, 1)
+        self.assertIn(("setPluginFanart", {"image": first}), kodi.directory_calls)
+        radio = self.play_through(1)
+        self.assertEqual(radio["station_fanart"], first)  # it has one: the next only after a while
         radio = self.tick(service.STATION_ARTWORK_INTERVAL_SECONDS)
-        self.assertEqual(self.cover_files.call_count, 2)
         self.assertNotEqual(radio["station_fanart"], first)
         self.assertFalse(os.path.exists(first))  # the older one is gone
+        self.assertTrue(radio["ui_refresh_requested"])
 
-    def test_the_background_follows_the_song(self):
+    def test_without_a_collage_the_playing_songs_artist_image(self):
+        self.cover_count = 0
         self.start()
         radio = self.tick()
-        fanarts = {radio["queue"][1]["file"]: "image://artist-of-song-2.jpg/"}
-        lookup = lambda path, **_: {"fanart": fanarts.get(path, "")}  # noqa: E731
-        with mock.patch.object(main, "get_track_metadata", side_effect=lookup):
-            self.assertEqual(main.station_fanart(radio), radio["station_fanart"])  # no artist image: the collage
-            radio["ui_refresh_requested"] = False
-            main.save_radio_state(radio)
-            kodi.go_to(1)
-            radio = self.tick()
-            self.assertTrue(radio["ui_refresh_requested"])  # a new song: the Radio screen is redrawn
-            self.assertEqual(main.station_fanart(radio), "image://artist-of-song-2.jpg/")
+        with mock.patch.object(main, "get_track_metadata", return_value={"fanart": "image://fanart.jpg/"}):
+            self.assertEqual(main.station_fanart(radio), "image://fanart.jpg/")
 
     def test_the_players_fanart_first(self):
+        self.cover_count = 0
         self.start()
         radio = self.tick()
         kodi.info_labels["Player.Filenameandpath"] = radio["current_song"]
         kodi.info_labels["Player.Art(fanart)"] = "https://assets.fanart.tv/fanart/artist.jpg"
         self.assertEqual(main.station_fanart(radio), "https://assets.fanart.tv/fanart/artist.jpg")
-        kodi.info_labels["Player.Filenameandpath"] = "D:\other.mp3"  # the player plays something else
-        self.assertNotEqual(main.station_fanart(radio), "https://assets.fanart.tv/fanart/artist.jpg")
-
-    def test_without_covers_the_playing_songs_fanart(self):
-        self.cover_files.return_value = []
-        self.start()
-        radio = self.tick()
-        self.assertEqual(radio["station_fanart"], "")
-        with mock.patch.object(main, "get_track_metadata", return_value={"fanart": "image://fanart.jpg/"}):
-            self.assertEqual(main.station_fanart(radio), "image://fanart.jpg/")
-        self.assertEqual(self.cover_files.call_count, 1)
-        self.tick()
-        self.assertEqual(self.cover_files.call_count, 1)  # tried once for this playlist
 
 
 class RadioServiceIntegrationTest(RadioTestCase):
