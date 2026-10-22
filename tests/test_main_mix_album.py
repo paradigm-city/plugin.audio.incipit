@@ -155,5 +155,45 @@ class MixCollageTest(MixAlbumTestCase):
         self.assertIn(self.cache_path, service.MIX_COLLAGE_STATE["tried"])
 
 
+
+class PlayingBackgroundTest(MixAlbumTestCase):
+    def play(self, tracks):
+        kodi.playlist[:] = [(track, main.xbmcgui.ListItem(track)) for track in tracks]
+        kodi.go_to(0)
+
+    def first_screen(self):
+        kodi.directory_items.clear()
+        kodi.directory_calls.clear()
+        self.run_plugin()
+        return [item.getArt("fanart") for _url, item, _folder in kodi.directory_items]
+
+    def test_a_playing_mix_shows_its_collage_behind_the_add_ons_screens(self):
+        self.add_covers(20)
+        main.make_mix_collage(self.cache_path)
+        wide = main.mix_collage_path(self.cache_path, TRACKS, "fanart")
+        self.assertEqual(set(self.first_screen()), {""})  # nothing plays
+        self.play(TRACKS)
+        self.assertEqual(set(self.first_screen()), {wide})
+        self.assertIn(("setPluginFanart", {"image": wide}), kodi.directory_calls)
+        self.play(TRACKS[:3])  # something else plays (not this mix)
+        self.assertEqual(set(self.first_screen()), {""})
+
+    def test_a_playing_station_shows_its_collage(self):
+        collage = os.path.join(kodi.root, "station_fanart.jpg")
+        open(collage, "wb").close()
+        main.save_radio_state({"phase": "playing", "station_fanart": collage, "current_song": TRACKS[0]})
+        fanarts = self.first_screen()
+        self.assertIn(collage, fanarts)  # the entries without a background of their own
+
+    def test_entries_keep_their_own_background(self):
+        self.add_covers(20)
+        main.make_mix_collage(self.cache_path)
+        self.play(TRACKS)
+        kodi.directory_items.clear()
+        self.run_plugin(action="saved_mixes_by_date", date=main.format_calendar_date(1791300000))
+        (item,) = [item for _url, item, _folder in kodi.directory_items]
+        self.assertEqual(item.getArt("fanart"), main.mix_collage_path(self.cache_path, TRACKS, "fanart"))
+
+
 if __name__ == "__main__":
     unittest.main()
