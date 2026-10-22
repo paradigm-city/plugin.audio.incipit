@@ -274,3 +274,12 @@ Flow:
 4. when the user moves the selection, the service rebuilds the container once
 
 This presents updated metadata without requiring manual navigation out and back into the mix, while avoiding sudden list rebuilds during passive viewing.
+
+## MusicIP library reload in the background
+
+Mixes no longer ask MusicIP to reload its library first (that made every mix slower). Instead the background service asks MusicIP to reload (`/server/reload`):
+
+- about three times a day (every 8 hours; the time of the last reload is kept across Kodi restarts, and Kodi's first two minutes are left alone)
+- right after Kodi has finished a music library scan, so songs new to Kodi's library reach the mixes too
+
+The reload runs in its own thread, so Radio and Discovery keep going meanwhile. A failed reload (MusicIP not running) is logged and tried again after 30 minutes.
