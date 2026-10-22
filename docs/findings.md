@@ -8,7 +8,7 @@ How this file is kept up to date:
 - A fixed finding moves to **Resolved**, keeping its number, with the commit that fixed it.
 - A finding reproduced by a test lists that test under **Test**. Such tests are marked `@unittest.expectedFailure`. `tests/test_findings.py` checks that every one of these tests is listed under **Open**, and that every test listed under **Open** still fails. When a fix makes such a test pass, CI fails until the decorator is removed and the finding is moved to **Resolved**.
 
-Last reviewed: 2026-10-18
+Last reviewed: 2026-10-22
 
 ## Open
 
@@ -57,6 +57,14 @@ Found on 2026-10-11 while removing the Discovery command channel (F6). They are 
 Found by the user on 2026-10-21: the context menu of "Settings" shows Play, Play using..., Play next, Queue item, Information and Add to favourites, like a song; the other entries of the first screen (folders) show only "Add to favourites". Kodi gives every entry that is not a folder its play entries, and an add-on can't remove Kodi's entries (only add its own).
 
 "Settings" is an action, not a folder, since dd92060 (2026-10-10): as a folder Kodi expected a listing from it, logged an error, and the Back key could open the settings again. Options looked at on 2026-10-21: a folder again (brings those problems back), or taking "Settings" off the first screen (the add-on's settings stay reachable through Kodi's add-on menu). Kept as it is for now.
+
+### F31 · MusicIP doesn't notice changed tags
+
+Reported by the user on 2026-10-22: MusicIP's library reload (`/server/reload`, run by the service every 8 hours and after Kodi's music library scan) takes in new files, but it doesn't notice changed tags in files it already knows, even when the file's date has changed. MusicIP then keeps a song's old artist, album, title and genre while Kodi's library has the new ones.
+
+Why it matters: good tags make good mixes. MusicIP uses its own copy of the tags, for example for "no artist repeat within N tracks" and for its filters, while the add-on and AI Mix Assist read Kodi's tags (labels, genre hints for the AI's ratings). Songs whose tags were corrected stay wrong on MusicIP's side, and the two libraries drift apart.
+
+Not solved. Still to find out: whether MusicIP can be made to read a file's tags again (an API call, a setting, or removing the song from its library and taking it in again), and how the add-on could find the songs whose tags changed (for example Kodi's library dates against the time of the last reload). Taking in a song takes MusicIP minutes, one song at a time, so any fix has to touch only the changed songs and wait while Radio or Discovery plays.
 
 ## Resolved
 
