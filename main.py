@@ -4908,8 +4908,9 @@ def show_root() -> None:
     radio_item = xbmcgui.ListItem(label="Radio mode", offscreen=True)
     apply_music_metadata(radio_item, "Radio mode")
     set_item_icon(radio_item, radio_icon())
-    if radio_phase() == "playing" and station_fanart(get_radio_state()):
-        radio_item.setArt({"fanart": station_fanart(get_radio_state())})
+    radio_background_image = radio_background(get_radio_state(), radio_phase())
+    if radio_background_image:
+        radio_item.setArt({"fanart": radio_background_image})
     set_second_line(radio_item, plain(radio_status()))
     set_station_info_action(radio_item)
     add_directory_item(
@@ -5158,7 +5159,7 @@ def show_radio_mode_menu() -> None:
 
     xbmcplugin.setPluginCategory(HANDLE, title)
     xbmcplugin.setContent(HANDLE, "files")
-    background = station_fanart(state) if phase == "playing" else ""
+    background = radio_background(state, phase)
     if background:
         xbmcplugin.setPluginFanart(HANDLE, image=background)
     RADIO_SCREEN_ART["fanart"] = background
@@ -7136,6 +7137,14 @@ def station_fanart(state: dict) -> str:
     return favourite_artwork(favourite, "fanart") or song_fanart(str(state.get("current_song") or ""))
 
 
+def radio_background(state: dict, phase: str) -> str:
+    """The Radio screen's background: while it scans, the snippet's artist image; while a station plays, the
+    station's (station_fanart)."""
+    if phase == "seeking":
+        return song_fanart(str(get_discovery_state().get("current_song") or ""))
+    return station_fanart(state) if phase == "playing" else ""
+
+
 def discovery_fanart() -> str:
     """Discovery mode's background while it plays its snippets (not the radio's scan): the snippet's fanart."""
     state = get_discovery_state()
@@ -7174,6 +7183,8 @@ def playing_background() -> str:
     fanart = discovery_fanart()
     if fanart:
         return fanart
+    if radio_phase() == "seeking":
+        return radio_background(get_radio_state(), "seeking")
     if radio_phase() == "playing":
         state = get_radio_state()
         collage = str(state.get("station_fanart") or "")
