@@ -16,6 +16,7 @@ import threading
 import time
 import urllib.parse
 import unicodedata
+from urllib.request import urlopen
 
 import xbmc
 import xbmcaddon
@@ -2685,8 +2686,79 @@ def run_mix_collage_tick() -> str:
     return ""
 
 
+# --- MusicIP's library: reloaded now and then in the background (not before every mix, which only made mixes
+# slower), and after Kodi's music library scan, so songs new to Kodi's library also reach the mixes. In a thread:
+# a large library takes a while, and the service loop (radio, Discovery) must not wait for it.
+
+MUSICIP_RELOAD_INTERVAL_SECONDS = 8 * 3600  # about three times a day
+MUSICIP_RELOAD_RETRY_SECONDS = 30 * 60      # after a failed reload (MusicIP not running)
+MUSICIP_RELOAD_STARTUP_DELAY_SECONDS = 120  # not while Kodi is still starting
+MUSICIP_RELOAD_MIN_TIMEOUT_SECONDS = 120
+MUSICIP_RELOAD = {"thread": None, "scan_finished": False, "first_tick_ts": 0.0}
+
+
+def musicip_reload_state_path() -> str:
+    return os.path.join(get_profile_dir(), "musicip_reload.json")
+
+
+def reload_musicip_library(reason: str) -> bool:
+    """Ask MusicIP to reload its library (/server/reload). The time is kept, so a Kodi restart doesn't reload
+    again; a failure is retried later."""
+    plugin = load_plugin_module()
+    url = f"http://{plugin.get_server_host()}:{plugin.get_server_port()}/server/reload"
+    started = time.time()
+    record = load_json_file(musicip_reload_state_path())
+    try:
+        with urlopen(url, timeout=max(MUSICIP_RELOAD_MIN_TIMEOUT_SECONDS, plugin.get_timeout())) as response:
+            response.read()
+    except Exception as exc:
+        log(f"MusicIP library reload ({reason}) failed for {url!r}: {exc}", xbmc.LOGWARNING, always=True)
+        save_json_file(musicip_reload_state_path(), dict(record, failed_ts=int(time.time())))
+        return False
+    save_json_file(musicip_reload_state_path(), {"last_ts": int(time.time())})
+    log(f"MusicIP library reloaded ({reason}) in {time.time() - started:.1f} s.", always=True)
+    return True
+
+
+def musicip_reload_due(now: float) -> str:
+    """Why MusicIP's library should be reloaded now ("" if not): Kodi's music library scan has finished, or the
+    last reload is MUSICIP_RELOAD_INTERVAL_SECONDS ago."""
+    if MUSICIP_RELOAD["scan_finished"]:
+        return "after Kodi's library scan"
+    if now - MUSICIP_RELOAD["first_tick_ts"] < MUSICIP_RELOAD_STARTUP_DELAY_SECONDS:
+        return ""
+    record = load_json_file(musicip_reload_state_path())
+    if now - int(record.get("failed_ts") or 0) < MUSICIP_RELOAD_RETRY_SECONDS:
+        return ""
+    return "scheduled" if now - int(record.get("last_ts") or 0) >= MUSICIP_RELOAD_INTERVAL_SECONDS else ""
+
+
+def run_musicip_reload_tick() -> threading.Thread | None:
+    """Start a background reload of MusicIP's library when one is due (not while one runs). Returns its thread."""
+    now = time.time()
+    if not MUSICIP_RELOAD["first_tick_ts"]:
+        MUSICIP_RELOAD["first_tick_ts"] = now
+    thread = MUSICIP_RELOAD["thread"]
+    if thread is not None and thread.is_alive():
+        return None
+    reason = musicip_reload_due(now)
+    if not reason:
+        return None
+    MUSICIP_RELOAD["scan_finished"] = False
+    thread = threading.Thread(target=reload_musicip_library, args=(reason,), name="MusicIP reload", daemon=True)
+    MUSICIP_RELOAD["thread"] = thread
+    thread.start()
+    return thread
+
+
+class ServiceMonitor(xbmc.Monitor):
+    def onScanFinished(self, library: str) -> None:
+        if library == "music":  # new songs in Kodi's library: MusicIP should know them too
+            MUSICIP_RELOAD["scan_finished"] = True
+
+
 def main() -> None:
-    monitor = xbmc.Monitor()
+    monitor = ServiceMonitor()
     playback_monitor = DiscoveryPlaybackMonitor()
     last_run_ts = 0
     last_metadata_refresh_ts = 0
@@ -2733,6 +2805,11 @@ def main() -> None:
             run_mix_collage_tick()
         except Exception as exc:
             log(f"Mix cover collage tick failed: {exc}", xbmc.LOGERROR)
+
+        try:
+            run_musicip_reload_tick()
+        except Exception as exc:
+            log(f"MusicIP reload tick failed: {exc}", xbmc.LOGERROR)
 
         now_for_metadata = int(time.time())
         if last_metadata_refresh_ts <= 0 or now_for_metadata - last_metadata_refresh_ts >= METADATA_REFRESH_INTERVAL_SECONDS:
