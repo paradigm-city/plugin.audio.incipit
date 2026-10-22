@@ -6230,13 +6230,23 @@ def cover_files_for_tracks(tracks: list[str]) -> list[str]:
     return files
 
 
-# A playing station's artwork: collages of the covers around the song that plays (the station's playlist, the
-# picked song's first), drawn by the service now and then (service.py, refresh_station_artwork), so they follow
-# the station as it drifts. The Radio screen shows the wide one as its background.
+# A playing station's artwork: collages of the covers of the songs it has played (its playback history, the most
+# recent first), drawn by the service as the history grows (service.py, refresh_station_artwork), so they follow the
+# station as it drifts. The most recent one is the background of the Radio screen and of the add-on's screens.
+
+STATION_HISTORY_SIZE = 100  # songs of a station's playback history kept
+STATION_COLLAGE_SONGS = 48  # the most recent of them in its collages
+
+
+def station_history_files(state: dict) -> list[str]:
+    """The songs the station has played, the most recent first (at most STATION_COLLAGE_SONGS)."""
+    history = [str(path) for path in state.get("history") or [] if path]
+    return list(reversed(history))[:STATION_COLLAGE_SONGS]
+
 
 def station_collage_paths(state: dict) -> tuple[str, str]:
-    """(cover, fanart) for the station's playlist as it is now."""
-    files = [str(entry.get("file") or "") for entry in state.get("queue") or []]
+    """(cover, fanart) for the station's playback history as it is now."""
+    files = station_history_files(state)
     key = hashlib.sha1("\n".join([COLLAGE_STYLE] + files).encode("utf-8")).hexdigest()[:12]
     name = f"station_{int(state.get('playing_started_ts') or 0)}_{key}"
     folder = os.path.join(get_profile_dir(), "covers")
@@ -6246,9 +6256,7 @@ def station_collage_paths(state: dict) -> tuple[str, str]:
 def make_station_collages(state: dict) -> dict:
     """Draw the station's collages and remove the older ones (of any station). Returns {"cover", "fanart"}
     (each "" when there were too few covers)."""
-    seed = str(state.get("seed") or "")
-    files = [str(entry.get("file") or "") for entry in state.get("queue") or []]
-    covers = cover_files_for_tracks(([seed] if seed else []) + files)
+    covers = cover_files_for_tracks(station_history_files(state))
     cover, fanart = station_collage_paths(state)
     made = {"cover": cover if draw_collage(covers, "cover", cover) else "",
             "fanart": fanart if draw_collage(covers, "fanart", fanart) else ""}
@@ -6283,13 +6291,12 @@ def song_fanart(song: str) -> str:
 
 
 def station_fanart(state: dict) -> str:
-    """The playing station's background: the playing song's fanart, so it changes with the song; else the
-    station's wide collage."""
-    fanart = song_fanart(str(state.get("current_song") or ""))
-    if fanart:
-        return fanart
+    """The playing station's background: its most recent collage; until it has one (too few songs played yet),
+    the playing song's artist image."""
     path = str(state.get("station_fanart") or "")
-    return path if path and os.path.isfile(path) else ""
+    if path and os.path.isfile(path):
+        return path
+    return song_fanart(str(state.get("current_song") or ""))
 
 
 def discovery_fanart() -> str:
