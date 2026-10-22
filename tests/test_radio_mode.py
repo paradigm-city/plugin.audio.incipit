@@ -523,6 +523,17 @@ class StationArtworkTest(RadioTestCase):
             radio = self.tick()
         return radio
 
+    def test_scanning_shows_the_snippets_artist_image(self):
+        self.turn_on()
+        snippet = main.get_discovery_state()["current_song"]
+        kodi.info_labels["Player.Filenameandpath"] = snippet
+        kodi.info_labels["Player.Art(fanart)"] = "https://assets.fanart.tv/fanart/snippet.jpg"
+        kodi.directory_calls.clear()
+        self.menu()
+        self.assertIn(("setPluginFanart", {"image": "https://assets.fanart.tv/fanart/snippet.jpg"}), kodi.directory_calls)
+        self.assertEqual({item.getArt("fanart") for _url, item, _folder in kodi.directory_items},
+                         {"https://assets.fanart.tv/fanart/snippet.jpg"})
+
     def test_the_playback_history_grows_with_every_song(self):
         self.start()
         radio = self.tick()
