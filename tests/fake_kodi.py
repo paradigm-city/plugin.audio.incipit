@@ -273,6 +273,9 @@ class KodiState:
     # --- paths -------------------------------------------------------------------------
     def translate_path(self, path):
         path = str(path or "")
+        if path.startswith("special://") and not self.root:  # outside a test's Kodi (e.g. the mixassist tests'
+            # usage events): nothing may land in the working directory
+            raise RuntimeError(f"No fake Kodi for {path}")
         if path.startswith("special://skin"):  # the skin's folder (tests put colour files there)
             rest = path[len("special://skin"):].lstrip("/")
             return os.path.join(self.root, "skin", *[part for part in rest.split("/") if part])
