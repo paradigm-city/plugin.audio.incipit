@@ -101,7 +101,7 @@ class EditingHistoryAndProgressTest(MusicIPServerTestCase, HistoryTestCase):
         self.assertEqual(event["added"], [main.path_to_label(NEW1), main.path_to_label(NEW2)])
         calls = self.progress_calls()
         self.assertEqual(calls[0], ("progress.create", ("More like this", ""), {}))
-        self.assertIn(("progress.update", (55, "More like this", "MusicIP is mixing"), {}), calls)
+        self.assertIn(("progress.update", (15, "More like this", "MusicIP is mixing"), {}), calls)
         self.assertEqual(calls[-1][0], "progress.close")
 
     def test_less_like_this(self):
@@ -124,7 +124,7 @@ class EditingHistoryAndProgressTest(MusicIPServerTestCase, HistoryTestCase):
         self.run_plugin(action="browse_mix", seed=C, size="3")
         calls = self.progress_calls()
         self.assertEqual(calls[0], ("progress.create", ("Creating a MusicIP mix", ""), {}))
-        self.assertIn(("progress.update", (15, "Creating a MusicIP mix", "Updating MusicIP's library"), {}), calls)
+        self.assertIn(("progress.update", (15, "Creating a MusicIP mix", "MusicIP is mixing"), {}), calls)
         self.assertEqual(calls[-1][0], "progress.close")
 
 

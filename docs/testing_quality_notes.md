@@ -13,7 +13,7 @@ GitHub Actions runs them on every push and pull request (`.github/workflows/test
 ### Test environment
 
 - `tests/fake_kodi.py` replaces Kodi's `xbmc`, `xbmcaddon`, `xbmcgui`, `xbmcplugin` and `xbmcvfs` modules. It provides add-on settings (defaults read from `resources/settings.xml`), a temporary `special://profile` folder, a music library that answers `AudioLibrary.GetSongs` filters like Kodi, the player and music playlist, dialogs with scripted answers, and plugin directory listings. A music file only "exists" if the test adds it, so the real disk is never consulted.
-- `tests/fake_musicip.py` runs a local HTTP server for `/server/reload` and `/api/mix`.
+- `tests/fake_musicip.py` runs a local HTTP server for `/api/mix`.
 - `tests/support.py` loads the add-on modules and provides `KodiTestCase` (fresh Kodi state per test, `run_plugin(...)` to call the router, a controllable clock) and `MusicIPServerTestCase`.
 
 ### Test files
@@ -22,7 +22,7 @@ GitHub Actions runs them on every push and pull request (`.github/workflows/test
 | --- | --- |
 | `test_packaging.py` | addon.xml, settings.xml vs. setting IDs used in code, keymap, Python 3.8 syntax |
 | `test_main_mix_parameters.py` | settings, mix parameters, the generate-mix dialog, MusicIP query building |
-| `test_main_musicip_client.py` | server reload, mix requests, HTTP and connection errors, response decoding |
+| `test_main_musicip_client.py` | mix requests, HTTP and connection errors, response decoding |
 | `test_main_saved_mixes.py` | saved mix files and sidecars, ordering, date groups, cleanup, remove/more/less like this, consistency, repair readiness, keymap install |
 | `test_main_metadata.py` | library lookups, SQLite metadata cache, sidecar snapshots, refresh queue, track labels |
 | `test_main_plugin_routes.py` | every `router()` action: listings, context menus, playback, error handling, script entry point |
