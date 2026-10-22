@@ -398,6 +398,8 @@ class KodiState:
             return self.library.get_songs(params)
         if method == "AudioLibrary.GetSongDetails":
             return self.library.get_song_details(params)
+        if method == "Playlist.GetItems":
+            return {"items": [{"file": url, "label": item.getLabel()} for url, item in self.playlist]}
         if method == "Textures.GetTextures":  # kodi.textures: image URL -> cached file (relative to the cache)
             value = (params.get("filter") or {}).get("value")
             return {"textures": [{"cachedurl": self.textures[value], "textureid": value}] if value in self.textures else []}
