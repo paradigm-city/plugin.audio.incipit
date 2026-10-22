@@ -2687,8 +2687,10 @@ def run_mix_collage_tick() -> str:
 
 
 # --- MusicIP's library: reloaded now and then in the background (not before every mix, which only made mixes
-# slower), and after Kodi's music library scan, so songs new to Kodi's library also reach the mixes. In a thread:
-# a large library takes a while, and the service loop (radio, Discovery) must not wait for it.
+# slower), and after Kodi's music library scan, so songs new to Kodi's library also reach the mixes. A reload scans
+# the music folders and takes in new songs, one at a time, minutes each, and MusicIP mixes little else meanwhile:
+# so not while Radio or Discovery plays (they need its mixes; the reload waits until they stop), and a reload that
+# doesn't answer in time is taking in songs (it goes on), not a failure. In a thread: the service loop must not wait.
 
 MUSICIP_RELOAD_INTERVAL_SECONDS = 8 * 3600  # about three times a day
 MUSICIP_RELOAD_RETRY_SECONDS = 30 * 60      # after a failed reload (MusicIP not running)
@@ -2711,6 +2713,11 @@ def reload_musicip_library(reason: str) -> bool:
     try:
         with urlopen(url, timeout=max(MUSICIP_RELOAD_MIN_TIMEOUT_SECONDS, plugin.get_timeout())) as response:
             response.read()
+    except TimeoutError:  # connected, no answer yet: MusicIP is taking in new songs
+        save_json_file(musicip_reload_state_path(), {"last_ts": int(time.time())})
+        log(f"MusicIP library reload ({reason}): MusicIP is taking in new songs (no answer after "
+            f"{time.time() - started:.0f} s); it goes on by itself.", always=True)
+        return True
     except Exception as exc:
         log(f"MusicIP library reload ({reason}) failed for {url!r}: {exc}", xbmc.LOGWARNING, always=True)
         save_json_file(musicip_reload_state_path(), dict(record, failed_ts=int(time.time())))
@@ -2722,7 +2729,9 @@ def reload_musicip_library(reason: str) -> bool:
 
 def musicip_reload_due(now: float) -> str:
     """Why MusicIP's library should be reloaded now ("" if not): Kodi's music library scan has finished, or the
-    last reload is MUSICIP_RELOAD_INTERVAL_SECONDS ago."""
+    last reload is MUSICIP_RELOAD_INTERVAL_SECONDS ago; never while Radio or Discovery plays."""
+    if radio_is_active() or load_discovery_state().get("enabled"):
+        return ""
     if MUSICIP_RELOAD["scan_finished"]:
         return "after Kodi's library scan"
     if now - MUSICIP_RELOAD["first_tick_ts"] < MUSICIP_RELOAD_STARTUP_DELAY_SECONDS:

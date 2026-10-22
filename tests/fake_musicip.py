@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
@@ -18,6 +19,7 @@ class FakeMusicIP:
         self.requests = []
         self.mixes = {}
         self.reload_status = 200
+        self.reload_seconds = 0  # how long a reload takes (taking in new songs)
         self.mix_status = 200
         self.failing_seeds = set()  # seeds MusicIP answers with HTTP 500
         self.mix_body = None
@@ -51,6 +53,7 @@ class FakeMusicIP:
                 fake.requests.append((parts.path, query))
 
                 if parts.path == "/server/reload":
+                    time.sleep(fake.reload_seconds)
                     self.reply(fake.reload_status, b"")
                 elif parts.path == "/api/mix":
                     if fake.mix_body is not None:

@@ -32,7 +32,7 @@ GitHub Actions runs them on every push and pull request (`.github/workflows/test
 | `test_radio_mode.py` | Radio mode: menu, tuning, starting the station without a dialog, top-ups from the last queued song, backlog, stopping on Stop or other playback, service integration |
 | `test_service_discovery.py` | Discovery mode in the service: commands, playlist buffer, auto-skip, player events, main loop |
 | `test_service_metadata.py` | background consistency check and automatic repair, background metadata refresh, delayed view refresh, service repair readiness |
-| `test_service_musicip_reload.py` | MusicIP library reload in the background: schedule, after Kodi's library scan, retry after a failure, none before mixes |
+| `test_service_musicip_reload.py` | MusicIP library reload in the background: schedule, after Kodi's library scan, not while Radio or Discovery plays, a long reload is not a failure, retry after a failure, none before mixes |
 | `test_shared_helpers.py` | helpers duplicated in `main.py` and `service.py` behave the same |
 | `test_context_mix.py` | the "Create MusicIP mix" library context menu entry |
 | `test_context_radio.py` | the "Start MusicIP radio" library context menu entry |
