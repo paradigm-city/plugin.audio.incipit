@@ -129,7 +129,6 @@ class ParameterQueryTest(KodiTestCase):
 
     def test_server_urls(self):
         kodi.settings.update({"host": "musicip.local", "port": "1234"})
-        self.assertEqual(main.build_musicip_reload_url(), "http://musicip.local:1234/server/reload")
         self.assertTrue(main.build_musicip_url("a.mp3", 5).startswith("http://musicip.local:1234/api/mix?song=a.mp3&size=5&"))
 
 

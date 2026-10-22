@@ -274,23 +274,3 @@ Flow:
 4. when the user moves the selection, the service rebuilds the container once
 
 This presents updated metadata without requiring manual navigation out and back into the mix, while avoiding sudden list rebuilds during passive viewing.
-
-## MusicIP server reload before mix generation – 1.0.102
-
-Before every MusicIP mix generation request, the add-on now calls:
-
-```text
-/server/reload
-```
-
-The reload is implemented in the central `fetch_mix()` path, so it applies to all mix generation routes:
-
-- Generate mix from playing audio
-- Refresh mix
-- More like this
-- Less like this
-- Discovery mode: generate mix from current discovery song
-- keyboard/context-menu actions that trigger a new MusicIP mix request
-
-If the reload API call fails, mix generation is aborted with a user-facing MusicIP error instead of silently generating against an unreloaded server state.
-

@@ -1,4 +1,4 @@
-"""Requests to the MusicIP server: reload before every mix, mix fetching, errors and response decoding."""
+"""Requests to the MusicIP server: mix fetching, errors and response decoding."""
 
 import socket
 import unittest
@@ -14,12 +14,12 @@ TRACKS = [
 
 
 class FetchMixTest(MusicIPServerTestCase):
-    def test_reloads_server_then_fetches_mix_with_seed_first(self):
+    def test_fetches_mix_with_seed_first_without_a_reload(self):
         self.musicip.set_mix(SEED, TRACKS)
         tracks = main.fetch_mix(SEED, 20)
 
         self.assertEqual(tracks, [SEED] + TRACKS)
-        self.assertEqual([path for path, _query in self.musicip.requests], ["/server/reload", "/api/mix"])
+        self.assertEqual([path for path, _query in self.musicip.requests], ["/api/mix"])
         query = self.musicip.mix_requests()[0]
         self.assertEqual(query["song"], SEED)
         self.assertEqual(query["size"], "20")
@@ -48,12 +48,6 @@ class FetchMixTest(MusicIPServerTestCase):
             main.fetch_mix(SEED, 20)
         self.assertIn("MusicIP error body: b'server error'", kodi.log_text())
 
-    def test_failed_reload_aborts_mix_generation(self):
-        self.musicip.reload_status = 503
-        with self.assertRaisesRegex(main.MusicIPError, "reload returned HTTP 503"):
-            main.fetch_mix(SEED, 20)
-        self.assertEqual(self.musicip.mix_requests(), [])
-
     def test_fetch_with_defaults_remembers_parameters(self):
         self.musicip.set_mix(SEED, TRACKS)
         main.fetch_mix_with_defaults(SEED, 15)
@@ -80,7 +74,7 @@ class UnreachableServerTest(KodiTestCase):
             probe.bind(("127.0.0.1", 0))
             free_port = probe.getsockname()[1]
         kodi.settings.update({"host": "127.0.0.1", "port": str(free_port), "timeout": "2"})
-        with self.assertRaisesRegex(main.MusicIPError, f"Could not reload MusicIP server at 127.0.0.1:{free_port}"):
+        with self.assertRaisesRegex(main.MusicIPError, f"Could not reach MusicIP server at 127.0.0.1:{free_port}"):
             main.fetch_mix(SEED, 20)
 
 

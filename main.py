@@ -234,7 +234,7 @@ def notify(message: str, level=xbmcgui.NOTIFICATION_INFO) -> None:
 class BackgroundProgress:
     """A small progress bar in the corner of the screen (Kodi's DialogProgressBG), closed even when the work fails.
     While one step takes longer than a few seconds, a running clock is added to its text, so a long step (a large
-    MusicIP reload, an AI call) visibly keeps going.
+    MusicIP mix, an AI call) visibly keeps going.
 
         with BackgroundProgress("More like this") as progress:
             progress(30, "Asking MusicIP")
@@ -2563,52 +2563,11 @@ def prepend_seed_track(seed_song: str, tracks: list[str]) -> list[str]:
     return result
 
 
-def build_musicip_reload_url() -> str:
-    host = get_server_host()
-    port = get_server_port()
-    return f"http://{host}:{port}/server/reload"
-
-
-def reload_musicip_server_before_mix_generation() -> None:
-    url = build_musicip_reload_url()
-    timeout = get_timeout()
-
-    log(f"Requesting MusicIP server reload before mix generation: {url!r}")
-
-    try:
-        with urlopen(url, timeout=timeout) as response:
-            try:
-                response.read()
-            except Exception:
-                pass
-    except HTTPError as exc:
-        try:
-            error_body = exc.read()
-        except Exception:
-            error_body = b""
-
-        log(f"MusicIP server reload HTTP error {exc.code}", xbmc.LOGERROR)
-        log(f"MusicIP server reload URL: {url!r}", xbmc.LOGERROR)
-        log(f"MusicIP server reload error body: {error_body!r}", xbmc.LOGERROR)
-        raise MusicIPError(f"MusicIP server reload returned HTTP {exc.code}.") from exc
-    except URLError as exc:
-        log(f"MusicIP server reload URL error for {url!r}: {exc}", xbmc.LOGERROR)
-        raise MusicIPError(f"Could not reload MusicIP server at {get_server_host()}:{get_server_port()}.") from exc
-    except Exception as exc:
-        log(f"MusicIP server reload failed for {url!r}: {exc}", xbmc.LOGERROR)
-        raise MusicIPError(f"MusicIP server reload failed: {exc}") from exc
-
-
-def fetch_mix(seed_song: str, size: int, mix_params: dict | None = None, reload: bool = True,
-              progress=None) -> list[str]:
+def fetch_mix(seed_song: str, size: int, mix_params: dict | None = None, progress=None) -> list[str]:
     """MusicIP's mix for a seed. progress(percent, text), if given, is told about each step."""
     params = mix_params or get_effective_mix_parameters(size_override=size)
-    if reload:
-        if progress:
-            progress(15, "Updating MusicIP's library")
-        reload_musicip_server_before_mix_generation()
     if progress:
-        progress(55, "MusicIP is mixing")
+        progress(15, "MusicIP is mixing")
     url = build_musicip_url(seed_song, size, params)
     timeout = get_timeout()
 
@@ -7424,19 +7383,6 @@ def mix_assist_track_metadata(meta: dict) -> dict[str, dict]:
     return {str(key).replace("\\", "/").lower(): value for key, value in raw.items() if isinstance(value, dict)}
 
 
-def mix_assist_fetcher():
-    """fetch_mix for one tidy-up: MusicIP reloads its library before the first submix only (each reload takes
-    seconds, and a tidy-up may request a submix per outlier)."""
-    reloaded = []
-
-    def fetch(seed: str, size: int) -> list[str]:
-        tracks = fetch_mix(seed, size, reload=not reloaded)
-        reloaded.append(True)
-        return tracks
-
-    return fetch
-
-
 MIX_ASSIST_STEPS = ["Looking up the tracks", "Rating new music", "Working out what this mix is about",
                     "Finding replacements", "Checking the replacements"]
 
@@ -7466,7 +7412,7 @@ def compute_mix_assist_plan(tracks: list[str], meta: dict, progress=None, find_r
         return mix_assist.tidy_up(
             tracks, store, ask,
             resolve=lambda paths: mix_assist_library.resolve(paths, execute_jsonrpc, recorded),
-            fetch_mix=mix_assist_fetcher(),
+            fetch_mix=fetch_mix,
             intent=str(section.get("listener_intent") or ""),
             strictness=mix_strictness_for(meta)[0],
             artist_window=get_mix_reject_size() or mix_assist.ARTIST_WINDOW,

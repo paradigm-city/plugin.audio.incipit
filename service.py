@@ -1555,12 +1555,12 @@ def refill_radio_queue(state: dict, checked: bool = False) -> int:
     offset = int(state.get("refill_seed_offset") or 0) if checked else 0
 
     server_error = None
-    for attempt, entry in enumerate(list(reversed(queue))[offset:offset + RADIO_REFILL_SEEDS]):
+    for entry in list(reversed(queue))[offset:offset + RADIO_REFILL_SEEDS]:
         seed = str(entry["file"])
         try:
             request_size = RADIO_CHECK_SIZE if checked else size
-            tracks = plugin.fetch_mix(seed, request_size, plugin.get_effective_mix_parameters(size_override=request_size),
-                                      reload=attempt == 0)
+            tracks = plugin.fetch_mix(seed, request_size,
+                                      plugin.get_effective_mix_parameters(size_override=request_size))
         except Exception as exc:
             if isinstance(exc, plugin.MusicIPError) and "empty mix" in str(exc):
                 log_info(f"Radio mode: MusicIP returned no songs for {seed!r}.")
@@ -1615,7 +1615,7 @@ def refill_radio_queue(state: dict, checked: bool = False) -> int:
 
 def musicip_outage(state: dict, plugin, error: Exception) -> None:
     """MusicIP failed for two songs in a row: wait longer each time (1, 2, 4, 8, then 10 minutes), so a struggling
-    server isn't asked (and reloaded) every minute; say so once, on the screen and in the station's history."""
+    server isn't asked every minute; say so once, on the screen and in the station's history."""
     failures = int(state.get("musicip_failures") or 0) + 1
     wait = min(RADIO_OUTAGE_MAX_WAIT_SECONDS, RADIO_REFILL_RETRY_SECONDS * 2 ** (failures - 1))
     state["musicip_failures"] = failures
