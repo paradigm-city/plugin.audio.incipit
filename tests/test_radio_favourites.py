@@ -5,7 +5,7 @@ import unittest
 from unittest import mock
 
 from fake_kodi import kodi
-from support import main, plugin_query
+from support import main, plugin_query, service
 from test_radio_mode import SONGS, RadioTestCase as RadioBase
 
 SONGS_FIRST = SONGS[0]
@@ -30,6 +30,56 @@ class FavouriteIconTest(RadioBase):
                          ["icon-radio.png"])
         (item,) = [item for _url, item, _folder in kodi.directory_items]
         self.assertEqual(item.getMusicInfoTag().getAlbum(), item.getLabel2())  # the second line Kodi keeps
+
+
+class FavouriteArtworkTest(RadioBase):
+    def collages(self, name):
+        folder = os.path.join(kodi.root, "art")
+        os.makedirs(folder, exist_ok=True)
+        cover, fanart = os.path.join(folder, f"{name}.jpg"), os.path.join(folder, f"{name}_fanart.jpg")
+        for path in (cover, fanart):
+            with open(path, "wb") as handle:
+                handle.write(name.encode())
+        return cover, fanart
+
+    def test_saving_a_station_keeps_its_most_recent_collage(self):
+        self.start()
+        cover, fanart = self.collages("now")
+        main.save_radio_state(dict(self.radio(), station_cover=cover, station_fanart=fanart))
+        self.run_plugin(action="radio_save_favourite")
+        (favourite,) = main.load_radio_favourites()
+        self.assertEqual(open(favourite["fanart"], "rb").read(), b"now")  # a copy: the station's collage changes
+        self.assertTrue(os.path.basename(favourite["cover"]).startswith(f"favourite_{favourite['id']}_"))
+        kodi.directory_items.clear()
+        self.run_plugin(action="radio_favourites")
+        (item,) = [item for _url, item, _folder in kodi.directory_items]
+        self.assertEqual((item.getArt("thumb"), item.getArt("fanart")), (favourite["cover"], favourite["fanart"]))
+        self.run_plugin(action="radio_favourite_info", id=favourite["id"])
+        self.assertEqual(kodi.windows[-1].properties["image"], favourite["fanart"])
+
+    def test_a_playing_favourite_keeps_its_stations_newest_artwork(self):
+        self.start()
+        main.save_radio_favourites([{"id": "f1", "name": "Night Drive", "seed": self.radio()["seed"]}])
+        main.save_radio_state(dict(self.radio(), favourite_id="f1"))
+        first_cover, first_fanart = self.collages("first")
+        self.assertTrue(main.save_favourite_artwork("f1", first_cover, first_fanart))
+        old = main.find_radio_favourite(favourite_id="f1")["fanart"]
+        state = self.radio()
+        self.assertEqual(main.station_fanart(state), old)  # no collage of its own yet: the favourite's
+        newer = self.collages("newer")
+        with mock.patch.object(main, "make_station_collages", return_value={"cover": newer[0], "fanart": newer[1]}):
+            self.assertTrue(service.refresh_station_artwork(state))
+        favourite = main.find_radio_favourite(favourite_id="f1")
+        self.assertEqual(open(favourite["fanart"], "rb").read(), b"newer")
+        self.assertFalse(os.path.exists(old))  # its earlier artwork is gone
+
+    def test_removing_a_favourite_removes_its_artwork(self):
+        main.save_radio_favourites([{"id": "f1", "name": "Night Drive", "seed": "D:\a.mp3"}])
+        main.save_favourite_artwork("f1", *self.collages("x"))
+        artwork = main.find_radio_favourite(favourite_id="f1")["fanart"]
+        kodi.respond("yesno", True)
+        self.run_plugin(action="radio_remove_favourite", id="f1")
+        self.assertFalse(os.path.exists(artwork))
 
 
 class FavouriteInfoTest(RadioBase):
