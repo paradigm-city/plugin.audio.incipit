@@ -51,6 +51,28 @@ class DiscoveryMenuTest(KodiTestCase):
         self.assertIn(("setPluginCategory", "Discovery mode: Artist 1 - Song 1"), kodi.directory_calls)
 
 
+class DiscoveryArtworkTest(KodiTestCase):
+    def test_the_snippets_artwork_while_discovery_mode_plays(self):
+        main.save_discovery_state({"enabled": True, "current_song": "D:\\air.mp3", "current_label": "Air - Kelly"})
+        kodi.info_labels["Player.Filenameandpath"] = "D:\\air.mp3"
+        kodi.info_labels["Player.Art(fanart)"] = "https://assets.fanart.tv/fanart/air.jpg"
+        self.run_plugin(action="discovery_mode")
+        self.assertIn(("setPluginFanart", {"image": "https://assets.fanart.tv/fanart/air.jpg"}), kodi.directory_calls)
+        self.assertEqual({item.getArt("fanart") for _url, item, _folder in kodi.directory_items},
+                         {"https://assets.fanart.tv/fanart/air.jpg"})
+        kodi.directory_items.clear()
+        self.run_plugin()  # the first screen's Discovery entry too
+        entry = {item.getLabel(): item for _url, item, _folder in kodi.directory_items}["Discovery mode"]
+        self.assertEqual(entry.getArt("fanart"), "https://assets.fanart.tv/fanart/air.jpg")
+
+    def test_no_artwork_when_off_or_scanning_for_the_radio(self):
+        kodi.info_labels["Player.Art(fanart)"] = "https://assets.fanart.tv/fanart/air.jpg"
+        self.assertEqual(main.discovery_fanart(), "")
+        main.save_discovery_state({"enabled": True, "owner": "radio", "current_song": "D:\\air.mp3"})
+        kodi.info_labels["Player.Filenameandpath"] = "D:\\air.mp3"
+        self.assertEqual(main.discovery_fanart(), "")
+
+
 class DiscoveryMenuFocusTest(KodiTestCase):
     def test_a_redrawn_screen_has_the_same_urls_so_kodi_keeps_the_focus(self):
         main.save_discovery_state({"enabled": True, "current_label": "Artist 1 - Song 1"})

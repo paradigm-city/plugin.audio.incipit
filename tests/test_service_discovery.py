@@ -244,6 +244,15 @@ class SongDurationTest(KodiTestCase):
         self.assertEqual(service.get_song_duration_seconds({}), 0)
 
 
+class SnippetRedrawTest(KodiTestCase):
+    def test_a_new_snippet_redraws_the_discovery_screen(self):
+        queue = [{"file": f"D:/music/{name}.mp3", "label": name} for name in ("a", "b")]
+        state = {"enabled": True, "queue": queue, "current_song": queue[0]["file"], "current_playlist_position": 0}
+        with mock.patch.object(service, "player_position", return_value=1):
+            state = service.update_discovery_current_from_playlist(state)
+        self.assertEqual((state["current_song"], state["ui_refresh_requested"]), (queue[1]["file"], True))
+
+
 class MenuRefreshAndResetTest(KodiTestCase):
     def test_visible_discovery_menu_is_refreshed_once(self):
         service.save_discovery_state({"ui_refresh_requested": True})

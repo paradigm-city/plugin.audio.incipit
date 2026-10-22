@@ -704,6 +704,7 @@ def update_discovery_current_from_playlist(state: dict) -> dict:
         state["current_seek_confirmed"] = False
         state["current_startoffset_requested"] = bool(int(entry.get("offset") or 0) > 0)
         state["playlist_change_pending"] = False
+        state["ui_refresh_requested"] = True  # the Discovery screen shows the snippet and its artwork
         save_discovery_state(state)
         log_info(
             f"Discovery mode: current playlist item is now position={position}, "
