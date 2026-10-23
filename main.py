@@ -7999,8 +7999,8 @@ def station_name(state: dict) -> str:
 
 
 # --- Favourite stations: a station's picked song and name, kept to play again; it always starts fresh -----------
-# Each has a number, like a radio preset: it stays with the station (a removed station's number goes to the next
-# one saved), comes before its name and is drawn into its artwork.
+# Each has a number: it stays with the station, comes before its name and is drawn into its artwork. Numbers only
+# go up and are never given twice, not even a removed station's (radio_favourites.json keeps the highest given).
 
 FAVOURITE_NUMBER_HEIGHT = 0.25   # of the artwork's height
 FAVOURITE_NUMBER_OPACITY = 0.4   # white, see-through
@@ -8019,13 +8019,18 @@ def load_radio_favourites() -> list[dict]:
     return stations
 
 
+def highest_favourite_number(stations: list[dict]) -> int:
+    """The highest number a favourite has ever had, removed ones included."""
+    stored = load_json_file(radio_favourites_path())
+    given = stored.get("last_number")
+    numbers = [station.get("number") for station in list(stations) + list(stored.get("stations") or [])
+               if isinstance(station, dict)]  # the stored ones too: a removal saves the list without its station
+    return max([0] + [number for number in [given] + numbers if isinstance(number, int)])
+
+
 def next_favourite_number(stations: list[dict]) -> int:
-    """The lowest number no favourite has."""
-    taken = {station.get("number") for station in stations}
-    number = 1
-    while number in taken:
-        number += 1
-    return number
+    """The number for a new favourite: one more than any favourite has ever had."""
+    return highest_favourite_number(stations) + 1
 
 
 def number_radio_favourites(stations: list[dict]) -> bool:
@@ -8051,7 +8056,7 @@ def favourite_title(station: dict) -> str:
 
 
 def save_radio_favourites(stations: list[dict]) -> None:
-    save_json_file(radio_favourites_path(), {"stations": stations})
+    save_json_file(radio_favourites_path(), {"stations": stations, "last_number": highest_favourite_number(stations)})
 
 
 def find_radio_favourite(favourite_id: str = "", seed: str = "") -> dict | None:
