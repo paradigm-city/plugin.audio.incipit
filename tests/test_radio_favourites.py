@@ -135,7 +135,7 @@ class FavouriteNumberTest(RadioBase):
         cover, fanart = self.picture("c", (800, 800)), self.picture("f", (1920, 960))
         self.assertTrue(main.save_favourite_artwork("f1", cover, fanart))
         favourite = main.find_radio_favourite(favourite_id="f1")
-        self.assertEqual(favourite["artwork_number"], 7)
+        self.assertEqual(favourite["artwork_mark"], main.favourite_number_mark(7))
         from PIL import Image
         for kind in ("cover", "fanart"):
             image = Image.open(favourite[kind]).convert("L")
@@ -145,7 +145,7 @@ class FavouriteNumberTest(RadioBase):
             self.assertAlmostEqual((bottom - top) / image.height, main.FAVOURITE_NUMBER_HEIGHT, delta=0.02)
             self.assertGreater(left, image.width / 2)  # lower right
             self.assertGreater(top, image.height / 2)
-            self.assertAlmostEqual(image.getextrema()[1], round(255 * main.FAVOURITE_NUMBER_OPACITY), delta=12)  # white, 40 %
+            self.assertAlmostEqual(image.getextrema()[1], round(255 * main.FAVOURITE_NUMBER_OPACITY), delta=12)  # white, see-through
         self.assertEqual(Image.open(fanart).convert("L").getbbox(), None)  # the station's own collage stays as it is
 
     def test_artwork_saved_before_numbers_gets_its_number(self):
@@ -158,10 +158,26 @@ class FavouriteNumberTest(RadioBase):
         (favourite,) = main.load_radio_favourites()
         self.assertNotEqual(favourite["fanart"], old)  # a new file: Kodi caches pictures by path
         self.assertFalse(os.path.exists(old))
-        self.assertEqual(favourite["artwork_number"], 1)
+        self.assertEqual(favourite["artwork_mark"], main.favourite_number_mark(1))
         from PIL import Image
         self.assertIsNotNone(Image.open(favourite["fanart"]).convert("L").point(lambda v: 255 if v > 40 else 0).getbbox())
         self.assertEqual(main.load_radio_favourites()[0]["fanart"], favourite["fanart"])  # once
+
+    def test_a_changed_look_of_the_number_is_drawn_anew_from_the_artwork_without_it(self):
+        self.use_font()
+        main.save_radio_favourites([{"id": "f1", "name": "Night Drive", "seed": "D:\\a.mp3", "number": 7}])
+        main.save_favourite_artwork("f1", self.picture("c", (800, 800)), self.picture("f", (1920, 960)))
+        before = main.find_radio_favourite(favourite_id="f1")
+        from PIL import Image
+        self.assertIsNone(Image.open(before["fanart_plain"]).convert("L").getbbox())  # kept without the number
+        with mock.patch.object(main, "FAVOURITE_NUMBER_HEIGHT", 0.1):
+            (after,) = main.load_radio_favourites()
+            self.assertNotEqual(after["fanart"], before["fanart"])
+            self.assertFalse(os.path.exists(before["fanart"]))
+            image = Image.open(after["fanart"]).convert("L")
+            left, top, right, bottom = image.point(lambda value: 255 if value > 40 else 0).getbbox()
+            self.assertAlmostEqual((bottom - top) / image.height, 0.1, delta=0.02)  # once, the new height
+            self.assertEqual(main.load_radio_favourites()[0]["fanart"], after["fanart"])  # not again
 
     def test_the_playing_favourites_name_has_its_number(self):
         main.save_radio_favourites([{"id": "f1", "name": "Night Drive", "seed": "D:\\a.mp3", "number": 4}])
