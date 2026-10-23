@@ -8001,10 +8001,13 @@ def station_name(state: dict) -> str:
 # --- Favourite stations: a station's picked song and name, kept to play again; it always starts fresh -----------
 # Each has a number: it stays with the station, comes before its name and is drawn into its artwork. Numbers only
 # go up and are never given twice, not even a removed station's (radio_favourites.json keeps the highest given).
+# The artwork is kept twice, without the number too ("cover_plain", "fanart_plain"), so a changed look of the number
+# (FAVOURITE_NUMBER_*) is drawn anew on the next load.
 
-FAVOURITE_NUMBER_HEIGHT = 0.25   # of the artwork's height
-FAVOURITE_NUMBER_OPACITY = 0.4   # white, see-through
+FAVOURITE_NUMBER_HEIGHT = 0.2    # of the artwork's height
+FAVOURITE_NUMBER_OPACITY = 0.6   # white, see-through
 FAVOURITE_NUMBER_MARGIN = 0.05   # of the artwork's height, from the lower right corner
+
 
 def radio_favourites_path() -> str:
     return os.path.join(get_profile_dir(), "radio_favourites.json")
@@ -8034,19 +8037,28 @@ def next_favourite_number(stations: list[dict]) -> int:
 
 
 def number_radio_favourites(stations: list[dict]) -> bool:
-    """Numbers for the favourites without one, in the order they were saved, and into artwork without its number.
-    Returns whether anything changed."""
+    """Numbers for the favourites without one, in the order they were saved, and into artwork without its number
+    or with a number drawn differently. Returns whether anything changed."""
     changed = False
     for station in sorted((entry for entry in stations if not isinstance(entry.get("number"), int)),
                           key=lambda entry: int(entry.get("saved_ts") or 0)):
         station["number"] = next_favourite_number(stations)
         changed = True
     for station in stations:
-        cover, fanart = favourite_artwork(station, "cover"), favourite_artwork(station, "fanart")
-        if (cover or fanart) and station.get("artwork_number") != station["number"]:
-            keep_favourite_artwork(station, cover, fanart)
+        if station.get("artwork_mark") == favourite_number_mark(station["number"]):
+            continue
+        cover, fanart = favourite_artwork(station, "cover_plain"), favourite_artwork(station, "fanart_plain")
+        if not (cover or fanart) and not station.get("artwork_mark") and not station.get("artwork_number"):
+            # artwork from before the numbers (numbered artwork without its original keeps its number as it is)
+            cover, fanart = favourite_artwork(station, "cover"), favourite_artwork(station, "fanart")
+        if (cover or fanart) and keep_favourite_artwork(station, cover, fanart):
             changed = True
     return changed
+
+
+def favourite_number_mark(number: int) -> str:
+    """The number and how it is drawn, kept with the artwork: when either changes, the number is drawn anew."""
+    return f"{number}|{FAVOURITE_NUMBER_HEIGHT}|{FAVOURITE_NUMBER_OPACITY}|{FAVOURITE_NUMBER_MARGIN}"
 
 
 def favourite_title(station: dict) -> str:
@@ -8092,26 +8104,32 @@ def save_favourite_artwork(favourite_id: str, cover: str, fanart: str) -> bool:
 
 
 def keep_favourite_artwork(station: dict, cover: str, fanart: str) -> bool:
-    """Copies of the pictures as the favourite's artwork, with its number (a new file each time: Kodi caches pictures
-    by path); its earlier ones are removed. Updates station; returns whether anything was kept."""
+    """Copies of the pictures as the favourite's artwork, with its number, and without it (a new file each time:
+    Kodi caches pictures by path); its earlier ones are removed. Updates station; returns whether anything was
+    kept."""
     favourite_id = str(station.get("id") or "")
     folder = os.path.join(get_profile_dir(), "covers")
     os.makedirs(folder, exist_ok=True)
     stamp = int(time.time() * 1000)
-    while any(os.path.exists(os.path.join(folder, f"favourite_{favourite_id}_{stamp}{suffix}.jpg")) for suffix in ("", "_fanart")):
+    while any(os.path.exists(os.path.join(folder, f"favourite_{favourite_id}_{stamp}{suffix}.jpg"))
+              for suffix in ("", "_fanart", "_plain", "_plain_fanart")):
         stamp += 1  # a new name every time
     kept = {}
     for kind, source in (("cover", cover), ("fanart", fanart)):
         if source and os.path.isfile(source):
-            target = os.path.join(folder, f"favourite_{favourite_id}_{stamp}{'' if kind == 'cover' else '_fanart'}.jpg")
+            suffix = "" if kind == "cover" else "_fanart"
+            plain_copy = os.path.join(folder, f"favourite_{favourite_id}_{stamp}_plain{suffix}.jpg")
+            target = os.path.join(folder, f"favourite_{favourite_id}_{stamp}{suffix}.jpg")
+            shutil.copyfile(source, plain_copy)
             shutil.copyfile(source, target)
             if isinstance(station.get("number"), int):
                 draw_favourite_number(target, station["number"])
-            kept[kind] = target
+            kept.update({kind: target, f"{kind}_plain": plain_copy})
     if not kept:
         return False
     remove_favourite_artwork(favourite_id, keep=list(kept.values()))
-    station.update(kept, artwork_number=station.get("number"))
+    station.pop("artwork_number", None)  # before the look of the number was kept with it
+    station.update(kept, artwork_mark=favourite_number_mark(station["number"]) if isinstance(station.get("number"), int) else "")
     return True
 
 
@@ -8147,7 +8165,7 @@ def draw_favourite_number(path: str, number: int) -> bool:
 
 def remove_favourite_artwork(favourite_id: str, keep: list[str] = ()) -> None:
     folder = os.path.join(get_profile_dir(), "covers")
-    pattern = re.compile(rf"favourite_{re.escape(favourite_id)}_\d+(_fanart)?\.jpg")
+    pattern = re.compile(rf"favourite_{re.escape(favourite_id)}_\d+(_plain)?(_fanart)?\.jpg")
     for name in os.listdir(folder) if os.path.isdir(folder) else []:
         path = os.path.join(folder, name)
         if pattern.fullmatch(name) and path not in keep:
