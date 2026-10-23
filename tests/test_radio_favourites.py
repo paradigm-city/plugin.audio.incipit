@@ -110,10 +110,24 @@ class FavouriteNumberTest(RadioBase):
         self.run_plugin(action="radio_favourites")
         self.assertEqual(self.listed_labels(), ["1. Earlier", "2. Later"])  # in their order
 
-    def test_a_removed_stations_number_goes_to_the_next_one_saved(self):
+    def test_numbers_only_go_up_and_are_never_given_twice(self):
         main.save_radio_favourites([{"id": "a", "name": "A", "seed": "D:\\a.mp3", "number": 1},
                                     {"id": "c", "name": "C", "seed": "D:\\c.mp3", "number": 3}])
-        self.assertEqual(main.next_favourite_number(main.load_radio_favourites()), 2)
+        self.assertEqual(main.next_favourite_number(main.load_radio_favourites()), 4)  # not the gap
+        kodi.respond("yesno", True)
+        self.run_plugin(action="radio_remove_favourite", id="c")  # the highest
+        self.assertEqual(main.next_favourite_number(main.load_radio_favourites()), 4)  # not 3 again
+        self.start()
+        self.run_plugin(action="radio_save_favourite")
+        self.assertEqual([station["number"] for station in main.load_radio_favourites()], [1, 4])
+
+    def test_removing_the_highest_before_any_other_save_keeps_its_number_taken(self):
+        main.save_json_file(main.radio_favourites_path(), {"stations": [  # saved before "last_number" was kept
+            {"id": "a", "name": "A", "seed": "D:\a.mp3", "number": 1},
+            {"id": "b", "name": "B", "seed": "D:\b.mp3", "number": 2}]})
+        kodi.respond("yesno", True)
+        self.run_plugin(action="radio_remove_favourite", id="b")
+        self.assertEqual(main.next_favourite_number(main.load_radio_favourites()), 3)
 
     def test_the_number_is_drawn_into_the_artwork(self):
         self.use_font()
