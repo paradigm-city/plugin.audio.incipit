@@ -5220,7 +5220,7 @@ def start_radio_station(seed: str, favourite: dict | None = None) -> bool:
     favourite (or started from one) is that favourite: it keeps the favourite's name.
     A progress bar ("Opening <station>...") shows the steps until the music plays."""
     favourite = favourite or find_radio_favourite(seed=seed)
-    name = str((favourite or {}).get("name") or "") or radio_seed_label(seed)
+    name = favourite_title(favourite) if favourite else radio_seed_label(seed)
     with BackgroundProgress(plain(f"Opening {name}...")) as progress:
         return open_radio_station(seed, favourite, progress)
 
@@ -5330,7 +5330,7 @@ def open_radio_station(seed: str, favourite: dict | None, progress) -> bool:
 
     log(f"Radio mode: started from {seed!r} with {len(tracks)} song(s).", xbmc.LOGINFO)
     log(f"Radio mode: station parameters: {describe_station_start(params, favourite, assisted)}", xbmc.LOGINFO)
-    notify(f"Playing {favourite['name']}." if favourite else "Station picked.")
+    notify(plain(f"Playing {favourite_title(favourite)}.") if favourite else "Station picked.")
     return True
 
 
@@ -7989,21 +7989,65 @@ RADIO_DRIFT_LABELS = ("Stay close to the picked song", "Drift slowly", "Wander f
 
 
 def station_name(state: dict) -> str:
-    """The station's name: a favourite's, else the AI's (from the check of its first songs); "" without one."""
+    """The station's name: a favourite's (with its number), else the AI's (from the check of its first songs); ""
+    without one."""
     if not mix_naming_enabled() and not state.get("favourite_id"):
         return ""
-    return str(state.get("name") or "").strip()
+    name = str(state.get("name") or "").strip()
+    favourite = find_radio_favourite(favourite_id=str(state["favourite_id"])) if name and state.get("favourite_id") else None
+    return favourite_title(dict(favourite, name=name)) if favourite else name
 
 
 # --- Favourite stations: a station's picked song and name, kept to play again; it always starts fresh -----------
+# Each has a number, like a radio preset: it stays with the station (a removed station's number goes to the next
+# one saved), comes before its name and is drawn into its artwork.
+
+FAVOURITE_NUMBER_HEIGHT = 0.25   # of the artwork's height
+FAVOURITE_NUMBER_OPACITY = 0.4   # white, see-through
+FAVOURITE_NUMBER_MARGIN = 0.05   # of the artwork's height, from the lower right corner
 
 def radio_favourites_path() -> str:
     return os.path.join(get_profile_dir(), "radio_favourites.json")
 
 
 def load_radio_favourites() -> list[dict]:
+    """The favourite stations; those without a number yet (saved before favourites had numbers) get one."""
     stations = load_json_file(radio_favourites_path()).get("stations")
-    return [station for station in stations or [] if isinstance(station, dict) and station.get("seed")]
+    stations = [station for station in stations or [] if isinstance(station, dict) and station.get("seed")]
+    if number_radio_favourites(stations):
+        save_radio_favourites(stations)
+    return stations
+
+
+def next_favourite_number(stations: list[dict]) -> int:
+    """The lowest number no favourite has."""
+    taken = {station.get("number") for station in stations}
+    number = 1
+    while number in taken:
+        number += 1
+    return number
+
+
+def number_radio_favourites(stations: list[dict]) -> bool:
+    """Numbers for the favourites without one, in the order they were saved, and into artwork without its number.
+    Returns whether anything changed."""
+    changed = False
+    for station in sorted((entry for entry in stations if not isinstance(entry.get("number"), int)),
+                          key=lambda entry: int(entry.get("saved_ts") or 0)):
+        station["number"] = next_favourite_number(stations)
+        changed = True
+    for station in stations:
+        cover, fanart = favourite_artwork(station, "cover"), favourite_artwork(station, "fanart")
+        if (cover or fanart) and station.get("artwork_number") != station["number"]:
+            keep_favourite_artwork(station, cover, fanart)
+            changed = True
+    return changed
+
+
+def favourite_title(station: dict) -> str:
+    """"3. Night Drive": a favourite's number and name."""
+    name = str(station.get("name") or station.get("seed_label") or path_to_label(str(station.get("seed") or "")))
+    return f"{station['number']}. {name}" if isinstance(station.get("number"), int) else name
 
 
 def save_radio_favourites(stations: list[dict]) -> None:
@@ -8033,12 +8077,19 @@ def add_radio_favourites_folder() -> None:
 
 
 def save_favourite_artwork(favourite_id: str, cover: str, fanart: str) -> bool:
-    """Keep a station's most recent collages as the favourite's artwork (copies, a new file each time: Kodi caches
-    pictures by path); its earlier ones are removed. Returns whether it was saved."""
+    """Keep a station's most recent collages as the favourite's artwork. Returns whether it was saved."""
     stations = load_radio_favourites()
     station = next((entry for entry in stations if entry.get("id") == favourite_id), None)
-    if not station or not (cover or fanart):
+    if not station or not keep_favourite_artwork(station, cover, fanart):
         return False
+    save_radio_favourites(stations)
+    return True
+
+
+def keep_favourite_artwork(station: dict, cover: str, fanart: str) -> bool:
+    """Copies of the pictures as the favourite's artwork, with its number (a new file each time: Kodi caches pictures
+    by path); its earlier ones are removed. Updates station; returns whether anything was kept."""
+    favourite_id = str(station.get("id") or "")
     folder = os.path.join(get_profile_dir(), "covers")
     os.makedirs(folder, exist_ok=True)
     stamp = int(time.time() * 1000)
@@ -8049,12 +8100,43 @@ def save_favourite_artwork(favourite_id: str, cover: str, fanart: str) -> bool:
         if source and os.path.isfile(source):
             target = os.path.join(folder, f"favourite_{favourite_id}_{stamp}{'' if kind == 'cover' else '_fanart'}.jpg")
             shutil.copyfile(source, target)
+            if isinstance(station.get("number"), int):
+                draw_favourite_number(target, station["number"])
             kept[kind] = target
     if not kept:
         return False
     remove_favourite_artwork(favourite_id, keep=list(kept.values()))
-    station.update(kept)
-    save_radio_favourites(stations)
+    station.update(kept, artwork_number=station.get("number"))
+    return True
+
+
+def draw_favourite_number(path: str, number: int) -> bool:
+    """The favourite's number in the lower right corner of a picture: its digits FAVOURITE_NUMBER_HEIGHT of the
+    picture's height, white at FAVOURITE_NUMBER_OPACITY. False without Pillow, the font or a readable picture."""
+    font_path = chart_font_path()
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+        image = Image.open(path).convert("RGBA")
+    except Exception:
+        return False
+    if not font_path:
+        return False
+    text = str(number)
+
+    def ink(font):  # where the digits' ink is, drawn at (0, 0): measured, as Kodi's Pillow 6 has no getbbox
+        mask = Image.new("L", (font.size * (len(text) + 1), font.size * 2), 0)
+        ImageDraw.Draw(mask).text((0, 0), text, font=font, fill=255)
+        return mask.getbbox() or (0, 0, 1, 1)
+
+    height = image.height * FAVOURITE_NUMBER_HEIGHT
+    left, top, right, bottom = ink(ImageFont.truetype(font_path, 100))
+    font = ImageFont.truetype(font_path, max(1, round(100 * height / max(1, bottom - top))))  # the digits' height
+    left, top, right, bottom = ink(font)
+    margin = round(image.height * FAVOURITE_NUMBER_MARGIN)
+    layer = Image.new("RGBA", image.size, (0, 0, 0, 0))
+    ImageDraw.Draw(layer).text((image.width - margin - right, image.height - margin - bottom), text, font=font,
+                               fill=(255, 255, 255, round(255 * FAVOURITE_NUMBER_OPACITY)))
+    Image.alpha_composite(image, layer).convert("RGB").save(path, "JPEG", quality=88)
     return True
 
 
@@ -8084,12 +8166,14 @@ def save_station_as_favourite() -> None:
         return
     existing = find_radio_favourite(seed=seed)
     if existing:
-        notify(f"Already a favourite: {existing['name']}")
+        notify(plain(f"Already a favourite: {favourite_title(existing)}"))
         return
     picked = next((event.get("seed") for event in state.get("events") or [] if event.get("kind") == "started"), "")
     settings = state.get("settings") if isinstance(state.get("settings"), dict) else {}
+    stations = load_radio_favourites()
     favourite = {
         "id": new_nonce(),
+        "number": next_favourite_number(stations),
         "openness": station_setting_index(settings, "openness"),
         "drift": station_setting_index(settings, "drift"),
         "name": station_name(state) or picked or path_to_label(seed),
@@ -8098,12 +8182,12 @@ def save_station_as_favourite() -> None:
         "intent": str(state.get("intent") or ""),
         "saved_ts": int(time.time()),
     }
-    save_radio_favourites(load_radio_favourites() + [favourite])
+    save_radio_favourites(stations + [favourite])
     save_favourite_artwork(favourite["id"], str(state.get("station_cover") or ""), str(state.get("station_fanart") or ""))
     state.update(favourite_id=favourite["id"], name=favourite["name"], settings=favourite_settings(favourite),
                  ui_refresh_requested=True)
     save_radio_state(state)
-    notify(f"Saved as favourite station: {favourite['name']}")
+    notify(plain(f"Saved as favourite station: {favourite_title(favourite)}"))
     replace_with_radio_mode_menu()
 
 
@@ -8111,8 +8195,8 @@ def show_radio_favourites() -> None:
     xbmcplugin.setPluginCategory(HANDLE, "Favourite stations")
     xbmcplugin.setContent(HANDLE, "files")
     keep_second_lines()
-    for station in sorted(load_radio_favourites(), key=lambda entry: str(entry.get("name") or "").casefold()):
-        label = plain(station.get("name") or station.get("seed_label") or path_to_label(station["seed"]))
+    for station in sorted(load_radio_favourites(), key=lambda entry: entry["number"]):
+        label = plain(favourite_title(station))
         item = xbmcgui.ListItem(label=label, offscreen=True)
         apply_music_metadata(item, label)
         set_item_icon(item, media_icon("radio"))
@@ -8145,7 +8229,7 @@ def show_radio_favourite_info(favourite_id: str) -> None:
     if not station:
         notify("This favourite station no longer exists.", xbmcgui.NOTIFICATION_WARNING)
         return
-    name = str(station.get("name") or station.get("seed_label") or path_to_label(str(station["seed"])))
+    name = favourite_title(station)
     picked = str(station.get("seed_label") or path_to_label(str(station["seed"])))
     openness, drift = favourite_setting_labels(station)
     overview = "\n".join([
@@ -8186,7 +8270,7 @@ def change_favourite_setting(favourite_id: str, key: str) -> None:
         return
     labels = MIX_OPENNESS_LABELS if key == "openness" else RADIO_DRIFT_LABELS
     current = station_setting_index(favourite_settings(station), key)
-    heading = f"{'Openness' if key == 'openness' else 'Drift'} of {plain(station.get('name') or '')}"
+    heading = f"{'Openness' if key == 'openness' else 'Drift'} of {plain(favourite_title(station))}"
     choice = xbmcgui.Dialog().select(heading, list(labels), preselect=current)
     if choice is None or choice < 0 or choice == current:
         return
@@ -8229,7 +8313,7 @@ def rename_radio_favourite(favourite_id: str) -> None:
 def remove_radio_favourite(favourite_id: str) -> None:
     stations = load_radio_favourites()
     station = next((entry for entry in stations if entry.get("id") == favourite_id), None)
-    if not station or not xbmcgui.Dialog().yesno("Favourite stations", plain(f"Remove \"{station.get('name')}\" from the favourites?")):
+    if not station or not xbmcgui.Dialog().yesno("Favourite stations", plain(f"Remove \"{favourite_title(station)}\" from the favourites?")):
         return
     save_radio_favourites([entry for entry in stations if entry.get("id") != favourite_id])
     remove_favourite_artwork(favourite_id)
