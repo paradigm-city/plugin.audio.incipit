@@ -82,6 +82,78 @@ class FavouriteArtworkTest(RadioBase):
         self.assertFalse(os.path.exists(artwork))
 
 
+class FavouriteNumberTest(RadioBase):
+    def picture(self, name, size):
+        from PIL import Image
+        folder = os.path.join(kodi.root, "art")
+        os.makedirs(folder, exist_ok=True)
+        path = os.path.join(folder, f"{name}.jpg")
+        Image.new("RGB", size, (0, 0, 0)).save(path)
+        return path
+
+    def use_font(self):
+        font = next((path for path in (r"C:\Program Files\Kodi\media\Fonts\arial.ttf", r"C:\Windows\Fonts\arial.ttf",
+                                       "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf") if os.path.isfile(path)), "")
+        if not font:
+            self.skipTest("no font")
+        patcher = mock.patch.object(main, "chart_font_path", return_value=font)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_stations_saved_before_numbers_are_numbered_in_the_order_they_were_saved(self):
+        main.save_radio_favourites([{"id": "b", "name": "Later", "seed": "D:\\b.mp3", "saved_ts": 20},
+                                    {"id": "a", "name": "Earlier", "seed": "D:\\a.mp3", "saved_ts": 10}])
+        self.assertEqual({station["id"]: station["number"] for station in main.load_radio_favourites()}, {"a": 1, "b": 2})
+        stored = main.load_json_file(main.radio_favourites_path())["stations"]
+        self.assertEqual([station["number"] for station in stored], [2, 1])  # kept
+        kodi.directory_items.clear()
+        self.run_plugin(action="radio_favourites")
+        self.assertEqual(self.listed_labels(), ["1. Earlier", "2. Later"])  # in their order
+
+    def test_a_removed_stations_number_goes_to_the_next_one_saved(self):
+        main.save_radio_favourites([{"id": "a", "name": "A", "seed": "D:\\a.mp3", "number": 1},
+                                    {"id": "c", "name": "C", "seed": "D:\\c.mp3", "number": 3}])
+        self.assertEqual(main.next_favourite_number(main.load_radio_favourites()), 2)
+
+    def test_the_number_is_drawn_into_the_artwork(self):
+        self.use_font()
+        main.save_radio_favourites([{"id": "f1", "name": "Night Drive", "seed": "D:\\a.mp3", "number": 7}])
+        cover, fanart = self.picture("c", (800, 800)), self.picture("f", (1920, 960))
+        self.assertTrue(main.save_favourite_artwork("f1", cover, fanart))
+        favourite = main.find_radio_favourite(favourite_id="f1")
+        self.assertEqual(favourite["artwork_number"], 7)
+        from PIL import Image
+        for kind in ("cover", "fanart"):
+            image = Image.open(favourite[kind]).convert("L")
+            box = image.point(lambda value: 255 if value > 40 else 0).getbbox()  # where the number is
+            self.assertIsNotNone(box, kind)
+            left, top, right, bottom = box
+            self.assertAlmostEqual((bottom - top) / image.height, main.FAVOURITE_NUMBER_HEIGHT, delta=0.02)
+            self.assertGreater(left, image.width / 2)  # lower right
+            self.assertGreater(top, image.height / 2)
+            self.assertAlmostEqual(image.getextrema()[1], round(255 * main.FAVOURITE_NUMBER_OPACITY), delta=12)  # white, 40 %
+        self.assertEqual(Image.open(fanart).convert("L").getbbox(), None)  # the station's own collage stays as it is
+
+    def test_artwork_saved_before_numbers_gets_its_number(self):
+        self.use_font()
+        fanart = self.picture("f", (1920, 960))
+        old = os.path.join(main.get_profile_dir(), "covers", "favourite_f1_1_fanart.jpg")
+        os.makedirs(os.path.dirname(old), exist_ok=True)
+        os.replace(fanart, old)
+        main.save_radio_favourites([{"id": "f1", "name": "Night Drive", "seed": "D:\\a.mp3", "fanart": old}])
+        (favourite,) = main.load_radio_favourites()
+        self.assertNotEqual(favourite["fanart"], old)  # a new file: Kodi caches pictures by path
+        self.assertFalse(os.path.exists(old))
+        self.assertEqual(favourite["artwork_number"], 1)
+        from PIL import Image
+        self.assertIsNotNone(Image.open(favourite["fanart"]).convert("L").point(lambda v: 255 if v > 40 else 0).getbbox())
+        self.assertEqual(main.load_radio_favourites()[0]["fanart"], favourite["fanart"])  # once
+
+    def test_the_playing_favourites_name_has_its_number(self):
+        main.save_radio_favourites([{"id": "f1", "name": "Night Drive", "seed": "D:\\a.mp3", "number": 4}])
+        self.assertEqual(main.station_name({"favourite_id": "f1", "name": "Night Drive"}), "4. Night Drive")
+
+
 class FavouriteInfoTest(RadioBase):
     def test_information_shows_the_station_not_a_music_file(self):
         main.save_radio_favourites([{"id": "f1", "name": "Night Drive", "seed": "D:\\air.mp3", "seed_label": "Air - La femme",
@@ -93,7 +165,7 @@ class FavouriteInfoTest(RadioBase):
         self.run_plugin(action="radio_favourite_info", id="f1")
         window = kodi.windows[-1]
         self.assertEqual((window.properties["heading"], window.properties["facts"]),
-                         ("Night Drive", "Favourite station | Open | Wander freely"))
+                         ("1. Night Drive", "Favourite station | Open | Wander freely"))
         self.assertTrue(window.properties["text"].startswith("Picked song: Air - La femme"))
         window.onFocus(202)
         self.assertEqual(window.properties["text"], "dreamy downtempo")
@@ -104,7 +176,7 @@ class FavouriteInfoTest(RadioBase):
         (item,) = [item for _url, item, _folder in kodi.directory_items]
         kodi.info_labels["ListItem.Property(MusicIP.InfoAction)"] = item.getProperty("MusicIP.InfoAction")
         self.run_plugin(action="keyboard_info")
-        self.assertEqual(kodi.windows[-1].properties["heading"], "Night Drive")
+        self.assertEqual(kodi.windows[-1].properties["heading"], "1. Night Drive")
 
     def test_the_info_key_on_the_radio_entries_opens_the_playing_stations_information(self):
         self.start()
@@ -142,7 +214,7 @@ class FavouriteStationsTest(RadioBase):
         (favourite,) = self.favourites()
         self.assertEqual(favourite["seed"], seed)
         self.assertEqual(favourite["name"], self.radio()["events"][0]["seed"])  # no AI name: the picked song
-        self.assertNotified(f"Saved as favourite station: {favourite['name']}")
+        self.assertNotified(f"Saved as favourite station: 1. {favourite['name']}")
         self.assertEqual(self.radio()["favourite_id"], favourite["id"])
         self.assertEqual(self.menu(), ["Scan again", "Station information", "Favourite stations (1)", "Stop radio"])
 
@@ -173,7 +245,7 @@ class FavouriteStationsTest(RadioBase):
                          ("playing", seed, favourite["id"], favourite["name"]))
         self.assertEqual(self.musicip.mix_requests()[requests]["song"], seed)
         self.assertEqual(kodi.player.file, seed)
-        self.assertIn(("setPluginCategory", f"Radio: {favourite['name']}"), self.menu_calls())
+        self.assertIn(("setPluginCategory", f"Radio: 1. {favourite['name']}"), self.menu_calls())
 
     def test_opening_a_favourite_shows_progress_at_once(self):
         self.save_playlist_and_stop()
@@ -181,12 +253,12 @@ class FavouriteStationsTest(RadioBase):
         kodi.dialog_calls.clear()
         self.run_plugin(action="radio_play_favourite", id=favourite["id"])
         calls = [call for call in kodi.dialog_calls if call[0].startswith("progress")]
-        self.assertEqual(calls[0], ("progress.create", (f"Opening {favourite['name']}...", ""), {}))
+        self.assertEqual(calls[0], ("progress.create", (f"Opening 1. {favourite['name']}...", ""), {}))
         texts = [call[1][2] for call in calls if call[0] == "progress.update"]
         self.assertEqual([text for text in texts if text in ("MusicIP is mixing", "Starting playback")],
                          ["MusicIP is mixing", "Starting playback"])
         self.assertEqual(calls[-1][0], "progress.close")
-        self.assertNotified(f"Playing {favourite['name']}.")
+        self.assertNotified(f"Playing 1. {favourite['name']}.")
 
     def save_playlist_and_stop(self):
         self.save_playing_station()
@@ -203,7 +275,7 @@ class FavouriteStationsTest(RadioBase):
         kodi.directory_items.clear()
         self.run_plugin(action="radio_favourites")
         (url, item, is_folder), = kodi.directory_items
-        self.assertEqual(item.getLabel(), self.favourites()[0]["name"])
+        self.assertEqual(item.getLabel(), f"1. {self.favourites()[0]['name']}")
         self.assertFalse(is_folder)
         self.assertEqual([label for label, _action in item.context_menu],
                          ["Information", "Openness: Balanced", "Drift: Drift slowly", "Rename", "Remove from favourites"])
@@ -226,7 +298,7 @@ class FavouriteStationsTest(RadioBase):
         kodi.respond("select", 2)  # Wander freely
         self.run_plugin(action="radio_favourite_setting", id=favourite_id, setting="drift")
         self.assertEqual(self.favourites()[0]["drift"], 2)
-        self.assertEqual(kodi.dialogs("select")[-1][1][0], f"Drift of {self.favourites()[0]['name']}")
+        self.assertEqual(kodi.dialogs("select")[-1][1][0], f"Drift of 1. {self.favourites()[0]['name']}")
 
     def test_older_favourites_follow_the_global_settings(self):
         main.save_radio_favourites([{"id": "old", "name": "Old", "seed": SONGS_FIRST}])
