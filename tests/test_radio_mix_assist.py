@@ -163,7 +163,7 @@ class RadioMixAssistTest(RadioBase):
         mixes = {"chosen2": ["chosen2", "known", "n1"], "chosen1": ["n2"], "older": ["n3"]}
         requested = []
 
-        def fetch(seed, size):
+        def fetch(seed, size, params=None):
             requested.append(seed)
             return mixes[seed]
 
@@ -173,6 +173,36 @@ class RadioMixAssistTest(RadioBase):
             self.assertEqual(more(["chosen1", "chosen2"]), ["n2"])
             self.assertEqual(more(["chosen1", "chosen2"]), [])  # RADIO_CHECK_LISTS: the first list and 2 more
         self.assertEqual(requested, ["chosen2", "chosen1"])
+
+    def test_staying_close_looks_again_at_the_picked_song_first(self):
+        requested = []
+
+        def fetch(seed, size, params=None):
+            requested.append((seed, params["variety"]))
+            return [seed, f"new from {seed}"]
+
+        with mock.patch.object(main, "fetch_mix", side_effect=fetch):
+            more = main.radio_more_candidates(["older", "picked"], [], {"drift": 0}, picked="picked")
+            self.assertEqual(more(["chosen"]), ["picked", "new from picked"])
+            self.assertEqual(more(["chosen"]), ["chosen", "new from chosen"])
+            self.assertEqual(more(["chosen"]), [])  # the first list and 2 more; "picked" not asked twice
+            requested.clear()
+            more = main.radio_more_candidates(["older"], [], {"drift": 1}, picked="picked")
+            more(["chosen"])
+        self.assertEqual(requested, [("chosen", 0)])  # drifting: the songs that fit first, the variety as set
+
+    def test_staying_close_keeps_musicips_mixes_from_repeating(self):
+        kodi.settings["mix_variety"] = "0"
+        self.assertEqual(main.radio_mix_parameters(75, {"drift": 0})["variety"], main.RADIO_STAY_CLOSE_MIN_VARIETY)
+        self.assertEqual(main.radio_mix_parameters(75, {"drift": 1})["variety"], 0)
+        kodi.settings["mix_variety"] = "5"
+        self.assertEqual(main.radio_mix_parameters(75, {"drift": 0})["variety"], 5)
+
+    def test_a_station_that_stays_close_asks_musicip_with_variety(self):
+        kodi.settings.update({"mix_variety": "0", "mix_assist_radio_drift": "0"})
+        self.started_station()
+        self.assertEqual({query["variety"] for query in self.musicip.mix_requests()}, {"2"})  # start and refill
+        self.assertIn("variety 2", self.radio()["events"][0]["parameters"])
 
     def test_a_refill_may_look_further_from_earlier_checked_songs_and_the_picked_song(self):
         radio = self.started_station()
@@ -186,7 +216,7 @@ class RadioMixAssistTest(RadioBase):
         with mock.patch.object(main, "fetch_mix", return_value=mix) as fetch, \
                 mock.patch.object(main, "check_radio_refill", return_value={"chosen": []}) as refill:
             CHECK_RADIO_START([seed] + first, 6, settings={"openness": 0})
-        self.assertEqual(fetch.call_args[0], (seed, main.mix_assist.MUSICIP_MAX_MIX))
+        self.assertEqual(fetch.call_args[0][:2], (seed, main.mix_assist.MUSICIP_MAX_MIX))
         args, kwargs = refill.call_args
         self.assertEqual(args, (seed, first + [SONGS[7], SONGS[8]], 6, None, [seed]))  # each once, the seed not
         self.assertEqual((kwargs["name"], kwargs["settings"]), (True, {"openness": 0}))
