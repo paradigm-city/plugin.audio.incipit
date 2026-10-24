@@ -1,8 +1,8 @@
 """The AI's judgement of a mix: what the seed says the mix is about, and which tracks fit that.
 
 Two prompts from the pilot:
-- the seed-intent check states the intent from the seed (as musical qualities, not surface features) and judges
-  every track against it, with the rest of the mix as context only;
+- the seed-intent check states the intent from the seed (its intention, then musical qualities, not surface
+  features, then what it is not) and judges every track against it, with the rest of the mix as context only;
 - the intent check judges tracks against an intent that is already known (stated earlier, or edited by the
   listener); it is also used for replacement candidates.
 """
@@ -22,16 +22,21 @@ SEED_INTENT_PROMPT = """You judge whether the tracks of a music mix serve the li
 The listener started the mix from the first track (the seed); MusicIP then added tracks by comparing audio.
 The seed carries the intent of the mix.
 
-First, state that intent (field "character"): 5 to 8 musical qualities of the seed that a fitting track should share.
+First, state that intent (field "character"). Begin with the seed's intention in one sentence: what the music sets
+out to do, and how its makers stand towards the listener and the world (for example celebrating and showing off,
+provoking and tearing down, consoling, unsettling, hypnotising). Then give 5 to 8 musical qualities of the seed
+that a fitting track should share.
 Describe qualities, not surface features: complexity and structure, harmony (conventional or not), rhythm
 (straight, broken, danceable or not), how abstract or song-like it is, how progressive or traditional,
 handmade or electronic sound, mood and energy, era. Leave out instrumentation, scene, artists and production
 details unless they are essential to the music's character.
+End with "Not:" and 2 or 3 kinds of music that share many of these qualities but not the intention.
 
-Then judge every other track against that intent. A track can fit with different instruments, genre or production
-if it shares the qualities. The rest of the mix is context only: a track does not fit just because similar tracks
-are in the mix too. Verdicts: fits, borderline or outlier. For borderline and outlier tracks give a reason of at
-most 12 words, naming the qualities that clash. Give the seed itself the verdict fits.
+Then judge every other track against that intent. A track fits only if it shares the intention as well as the
+qualities; matching energy, era or sound alone is not enough. A track can fit with different instruments, genre or
+production if it shares both. The rest of the mix is context only: a track does not fit just because similar
+tracks are in the mix too. Verdicts: fits, borderline or outlier. For borderline and outlier tracks give a reason
+of at most 12 words, naming what clashes. Give the seed itself the verdict fits.
 
 """ + TRACK_LINES_NOTE
 
