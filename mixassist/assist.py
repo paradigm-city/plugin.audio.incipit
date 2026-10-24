@@ -315,7 +315,8 @@ def choose_additions(selected: str, candidates: Sequence[str], count: int, cache
                      resolve: Resolve, neighbours: Sequence[str] = (), strictness: float = DEFAULT_STRICTNESS,
                      artist_window: int = ARTIST_WINDOW, model: str = "",
                      progress: Optional[Callable[..., None]] = None, reference: Optional[dict] = None,
-                     accept_borderline: bool = False, name: bool = False) -> dict:
+                     accept_borderline: bool = False, name: bool = False, max_batches: int = 2,
+                     more: Optional[Callable[[List[str]], Sequence[str]]] = None) -> dict:
     """"More like this" (and Radio refills): the selected song and MusicIP's candidates for it form a small mix with the selected song
     as its seed. New tracks are held to the same rule as replacements: both signals must say a candidate fits what
     the selected song is about. The first `count` fitting candidates (closest first) are chosen, without repeating
@@ -328,14 +329,18 @@ def choose_additions(selected: str, candidates: Sequence[str], count: int, cache
     Returns intent (the selected song's), chosen (paths), entries (the chosen tracks' ratings by path), seed_entry
     (the selected song's rating), not_fitting ([{path, label, reason}]) and checked (False if the candidates
     couldn't be measured; then the first ones are taken unchecked). With name, also a name for what the selected
-    song is about (2 to 4 words, from the same AI call)."""
+    song is about (2 to 4 words, from the same AI call).
+
+    Candidates are examined in batches until `count` are chosen or `max_batches` were examined (a stricter choice
+    needs more to choose from). When the candidates run out first, more(chosen so far) may bring further ones
+    (another MusicIP list); [] ends the search. Also returns examined (how many) and lists (candidate lists used)."""
     def step(text: str, fraction: Optional[float] = None) -> None:
         if progress:
             progress(text) if fraction is None else progress(text, fraction)
 
     candidates = list(candidates)
     result = {"intent": "", "name": "", "chosen": [], "entries": {}, "seed_entry": None, "not_fitting": [],
-              "checked": False}
+              "checked": False, "examined": 0, "lists": 1 if candidates else 0}
     step("Looking up the tracks")
     selected_unit = resolve([selected])[0]
     blocked = set()
@@ -344,9 +349,18 @@ def choose_additions(selected: str, candidates: Sequence[str], count: int, cache
         blocked.add(artist_key(selected_unit.get("artist", "")))
         blocked.discard("")
     batch_size = max(3 * count, 10)
-    for batch in (candidates[:batch_size], candidates[batch_size:2 * batch_size]):
-        if not batch or len(result["chosen"]) >= count:
+    pending, examined, batches = list(candidates), {path_key(selected)}, 0
+    while len(result["chosen"]) < count and batches < max_batches:
+        pending = [path for path in dict.fromkeys(pending) if path_key(path) not in examined]
+        if not pending and more:
+            pending = [path for path in dict.fromkeys(more(list(result["chosen"]))) if path_key(path) not in examined]
+            result["lists"] += 1 if pending else 0
+        if not pending:
             break
+        batch, pending = pending[:batch_size], pending[batch_size:]
+        examined.update(path_key(path) for path in batch)
+        batches += 1
+        result["examined"] += len(batch)
         units = [selected_unit] + resolve(batch)
         step("Rating new music")
         rate_missing(units, cache, ask, model=model, progress=rating_progress(step, "Rating new music"))

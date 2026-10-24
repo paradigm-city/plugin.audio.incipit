@@ -1450,6 +1450,7 @@ def apply_radio_start_check(state: dict, plugin, position: int, result: dict) ->
     add_radio_event(state, "start_check", removed=removed_songs,
                     added=[str(entry.get("label") or "") for entry in state["queue"][first_new:]],
                     kept=len(chosen) - len(new), skipped_count=len(not_fitting),
+                    examined=result.get("examined") or 0, lists=result.get("lists") or 1,
                     skipped=[{"track": entry.get("label", ""), "reason": entry.get("reason", "")}
                              for entry in not_fitting if entry.get("label", "") not in removed_labels][:10],
                     intent=state["intent"], profile=state["reference"], name=result.get("name") or "")
@@ -1506,7 +1507,7 @@ def apply_radio_check(state: dict, plugin, position: int) -> None:
         not_fitting = result.get("not_fitting") or []
         append_radio_tracks(state, plugin, seed, chosen, checked=True, event={
             "kind": "refill", "checked": True, "intent": result.get("intent") or "", "profile": result.get("reference"),
-            "skipped_count": skipped,
+            "skipped_count": skipped, "examined": result.get("examined") or 0, "lists": result.get("lists") or 1,
             "skipped": [{"track": entry.get("label", ""), "reason": entry.get("reason", "")} for entry in not_fitting[:10]]})
         state["refill_seed_offset"] = 0
         log_info(f"Radio mode: AI Mix Assist kept {len(chosen)} song(s), skipped {skipped}.")
@@ -1625,6 +1626,7 @@ def refill_radio_queue(state: dict, checked: bool = False) -> int:
                 continue  # it may be this song: try the one before it, once
             break  # two songs failed: MusicIP itself has a problem
         server_error = None
+        used_entry = entry
         new_tracks = []
         for track in tracks:
             identity = plugin.normalize_track_identity(track)
@@ -1655,12 +1657,15 @@ def refill_radio_queue(state: dict, checked: bool = False) -> int:
         reference = state.get("reference") if isinstance(state.get("reference"), dict) else None
         neighbours = [str(entry["file"]) for entry in queue]
         candidates, fallback = list(new_tracks), list(new_tracks[:RADIO_CHECKED_BATCH])
+        seeds = [str(entry["file"]) for entry in refill_seed_entries(state, True)]
+        more_seeds = seeds[seeds.index(str(used_entry["file"])) + 1:] if str(used_entry["file"]) in seeds else []
+        seen = list(seen_set)
         log_info(f"Radio mode: AI Mix Assist picks {RADIO_CHECKED_BATCH} song(s) from MusicIP's {len(candidates)} "
                  f"suggestion(s) for {used_seed!r} (closest first, checked in groups).")
         start_radio_check(
             state, "refill",
             lambda check: plugin.check_radio_refill(reference_song, candidates, RADIO_CHECKED_BATCH, reference, neighbours,
-                                                    check=check, settings=settings),
+                                                    check=check, settings=settings, more_seeds=more_seeds, seen=seen),
             fallback=fallback, seed=used_seed)
         return 0
 
