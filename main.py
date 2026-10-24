@@ -8045,15 +8045,26 @@ def number_radio_favourites(stations: list[dict]) -> bool:
         station["number"] = next_favourite_number(stations)
         changed = True
     for station in stations:
-        if station.get("artwork_mark") == favourite_number_mark(station["number"]):
-            continue
-        cover, fanart = favourite_artwork(station, "cover_plain"), favourite_artwork(station, "fanart_plain")
-        if not (cover or fanart) and not station.get("artwork_mark") and not station.get("artwork_number"):
-            # artwork from before the numbers (numbered artwork without its original keeps its number as it is)
-            cover, fanart = favourite_artwork(station, "cover"), favourite_artwork(station, "fanart")
-        if (cover or fanart) and keep_favourite_artwork(station, cover, fanart):
-            changed = True
+        sources, numbered = {}, True
+        for kind in ("cover", "fanart"):
+            current, original = favourite_artwork(station, kind), favourite_artwork(station, f"{kind}_plain")
+            if current and original == plain_favourite_artwork_path(current):  # drawn here: its original
+                sources[kind] = original
+            elif current and not station.get("artwork_number"):  # without a number: saved before favourites had
+                # numbers, or by a service still running older code (numbered artwork without its original, from
+                # the first numbered version, keeps its number as it is)
+                sources[kind], numbered = current, False
+        if sources and (not numbered or station.get("artwork_mark") != favourite_number_mark(station["number"])):
+            if keep_favourite_artwork(station, sources.get("cover", ""), sources.get("fanart", "")):
+                changed = True
     return changed
+
+
+def plain_favourite_artwork_path(path: str) -> str:
+    """The original (without the number) kept with a favourite's numbered picture."""
+    folder, name = os.path.split(path)
+    base, fanart = (name[:-len("_fanart.jpg")], True) if name.endswith("_fanart.jpg") else (name[:-len(".jpg")], False)
+    return os.path.join(folder, f"{base}_plain{'_fanart' if fanart else ''}.jpg")
 
 
 def favourite_number_mark(number: int) -> str:
@@ -8118,8 +8129,8 @@ def keep_favourite_artwork(station: dict, cover: str, fanart: str) -> bool:
     for kind, source in (("cover", cover), ("fanart", fanart)):
         if source and os.path.isfile(source):
             suffix = "" if kind == "cover" else "_fanart"
-            plain_copy = os.path.join(folder, f"favourite_{favourite_id}_{stamp}_plain{suffix}.jpg")
             target = os.path.join(folder, f"favourite_{favourite_id}_{stamp}{suffix}.jpg")
+            plain_copy = plain_favourite_artwork_path(target)
             shutil.copyfile(source, plain_copy)
             shutil.copyfile(source, target)
             if isinstance(station.get("number"), int):
