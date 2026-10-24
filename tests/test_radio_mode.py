@@ -249,7 +249,7 @@ class StartRadioTest(RadioTestCase):
         self.assertEqual(self.radio().get("phase", "off"), "off")
 
     def test_the_log_has_the_stations_parameters(self):
-        kodi.settings.update({"playlist_size": "10", "mix_style_preference": "5", "mix_variety": "3"})
+        kodi.settings.update({"playlist_size": "10", "mix_style_preference": "5", "mix_variety": "3", "log_radio": "true"})
         self.start()
         (line,) = [message for message, _level in kodi.logs if "Radio mode: station parameters:" in message]
         self.assertIn("new station | mix: size 10, variety 3, style 5/10", line)

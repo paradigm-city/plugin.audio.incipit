@@ -12,7 +12,7 @@ from fake_kodi import ADDON_DIR
 if ADDON_DIR not in sys.path:
     sys.path.insert(0, ADDON_DIR)
 
-from mixassist import assist, cache, checks, claude, dimensions, library, rating  # noqa: E402
+from mixassist import assist, cache, checks, claude, dimensions, library, rating, trace  # noqa: E402
 
 
 def vector(**values):
@@ -326,6 +326,35 @@ class AssistTest(unittest.TestCase):
         self.assertEqual(result["chosen"], ["cand3", "cand1"])  # MusicIP's order
         self.assertEqual([entry["path"] for entry in result["not_fitting"]], ["candbad"])
         self.assertEqual((result["intent"], result["checked"]), ("abstract, instrumental", True))
+
+    def traced(self):
+        """What the package reports while AI Mix Assist logging is on."""
+        said = []
+        saved = (trace._SINK, trace._ACTIVE)
+        trace.set_sink(said.append)
+        self.addCleanup(trace.set_sink, *saved)
+        return said
+
+    def test_the_trace_has_both_checks_for_every_track_and_each_replacement(self):
+        said = self.traced()
+        assist.tidy_up(self.paths, self.store, self.ask, self.resolve, self.fetch_mix, artist_window=0)
+        text = "\n".join(said)
+        self.assertIn("What the mix is about (ai): abstract, instrumental", text)
+        self.assertIn("Both checks against the seed 'seed': typical misfit ", text)
+        self.assertRegex(text, r"  6\. outlier    'bad1': relative \d+\.\d\d \(misfit \d+\.\d\d\).*; AI: outlier \(clashes\)")
+        self.assertRegex(text, r"  2\. fits       'fit1': relative ")
+        self.assertIn("Tidy-up: 2 of 10 track(s) don't fit by both checks: [6, 11]", text)
+        self.assertIn("  candidate 'candbad': relative ", text)
+        self.assertRegex(text, r"Replacement for 6\. 'bad1': 'cand\d' \(submix, relative \d+\.\d\d, AI: fits\)\.")
+
+    def test_the_trace_says_why_each_candidate_was_taken_or_passed_over(self):
+        said = self.traced()
+        assist.choose_additions("seed", ["candbad", "cand3", "cand1", "cand2"], 2, self.store, self.ask, self.resolve,
+                                artist_window=0)
+        self.assertIn("  passed over 'candbad': doesn't fit (clashes).", said)
+        self.assertIn("  chosen 'cand3'.", said)
+        self.assertIn("Candidates for 'seed': 2 of 2 chosen from 4 examined in 1 batch(es) and 1 list(s); 1 didn't fit.",
+                      said)
 
     def test_more_like_this_can_name_what_the_selected_song_is_about(self):
         prompts = []

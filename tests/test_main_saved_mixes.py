@@ -311,8 +311,8 @@ class RepairReadinessTest(KodiTestCase):
         self.assertEqual(main.get_mix_repair_readiness({})["status"], "not_needed")
         self.assertEqual(main.evaluate_repair_readiness({"status": "ok"})["status"], "not_needed")
 
-    def test_readiness_result_is_logged_with_extended_logging(self):
-        kodi.settings["plugin_extended_logging"] = "true"
+    def test_readiness_result_is_logged_with_saved_mix_check_logging(self):
+        kodi.settings["log_checks"] = "true"
         self.library_still_lists_missing_file()
         self.readiness()
         kodi.library.songs.clear()
@@ -321,28 +321,28 @@ class RepairReadinessTest(KodiTestCase):
 
         lines = [message for message, _level in kodi.logs if "Repair readiness:" in message]
         self.assertEqual(lines, [
-            "[plugin.audio.musicip] Repair readiness: repair not available for '01 Song 1'; "
+            "[plugin.audio.musicip] [checks] Repair readiness: repair not available for '01 Song 1'; "
             "status=update_library_before_repair, reason='Kodi music library still lists 1 of 1 missing file(s). "
             "Update and clean the library.', missing_files=1, still_listed_by_kodi=1, "
             "unavailable_sources=0, outside_sources=0",
-            "[plugin.audio.musicip] Repair readiness: repair available for '01 Song 1'; status=ready, "
+            "[plugin.audio.musicip] [checks] Repair readiness: repair available for '01 Song 1'; status=ready, "
             "reason='Kodi music library no longer lists the missing files.', missing_files=1, still_listed_by_kodi=0, "
             "unavailable_sources=0, outside_sources=0",
-            "[plugin.audio.musicip] Repair readiness: repair not available for 'Fine mix'; status=not_needed, "
+            "[plugin.audio.musicip] [checks] Repair readiness: repair not available for 'Fine mix'; status=not_needed, "
             "reason='Mix is not inconsistent.'",
         ])
 
-    def test_readiness_is_not_logged_without_extended_logging(self):
+    def test_readiness_is_not_logged_without_saved_mix_check_logging(self):
         self.readiness()
         self.assertNotIn("Repair readiness:", kodi.log_text())
 
-    def test_library_freshness_follows_extended_service_logging(self):
+    def test_library_freshness_follows_saved_mix_check_logging(self):
         kodi.library_properties = {"librarylastupdated": "2026-10-04 08:00:00"}
-        kodi.settings["plugin_extended_logging"] = "true"
+        kodi.settings.update({"log_general": "true", "log_mixing": "true"})
         main.get_audio_library_freshness()
         self.assertNotIn("Library freshness:", kodi.log_text())
 
-        kodi.settings["service_extended_logging"] = "true"
+        kodi.settings["log_checks"] = "true"
         main.get_audio_library_freshness()
         self.assertIn("Library freshness: Kodi library property librarylastupdated='2026-10-04 08:00:00'", kodi.log_text())
         self.assertIn("Library freshness: parsed Kodi datetime '2026-10-04 08:00:00'", kodi.log_text())
@@ -457,7 +457,7 @@ class RepairReadinessSourcesTest(KodiTestCase):
         self.assertEqual(main.find_covering_music_source("D:\\musicbox\\a.mp3", ["D:\\music\\"]), "")
 
     def test_unreadable_sources_fall_back_to_the_library_check(self):
-        kodi.settings["plugin_extended_logging"] = "true"
+        kodi.settings["log_checks"] = "true"
         kodi.fail_jsonrpc("Files.GetSources")
         readiness = self.readiness()
         self.assertEqual(readiness["status"], "ready")

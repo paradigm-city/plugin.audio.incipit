@@ -7,9 +7,10 @@ import unittest
 import xml.etree.ElementTree as ET
 
 from fake_kodi import ADDON_DIR, ADDON_ID
-from support import main, service
+from support import logs, main, service
 
-SOURCES = ("main.py", "service.py", "context_mix.py", "context_radio.py")
+SOURCES = ("main.py", "service.py", "context_mix.py", "context_radio.py")  # the entry points
+MODULES = SOURCES + ("logs.py",)
 
 
 def read(name):
@@ -69,7 +70,8 @@ class SettingsXmlTest(unittest.TestCase):
 
     def used_setting_ids(self):
         pattern = re.compile(r"""(?:get_setting(?:_bool|_int)?|getSetting)\(\s*["']([a-z_]+)["']""")
-        return {name for source in SOURCES for name in pattern.findall(read(source))}
+        used = {name for source in MODULES for name in pattern.findall(read(source))}
+        return used | set(logs.AREAS.values())  # the switches in Settings > Logging
 
     def test_every_setting_used_in_code_is_declared(self):
         used = self.used_setting_ids()
@@ -100,7 +102,7 @@ class SettingsXmlTest(unittest.TestCase):
 
     def test_code_fallbacks_match_declared_defaults(self):
         pattern = re.compile(r"""get_setting(?:_bool|_int)?\(\s*["']([a-z_]+)["']\s*,\s*([^)]+)\)""")
-        for source in SOURCES:
+        for source in MODULES:
             for setting_id, fallback in pattern.findall(read(source)):
                 with self.subTest(source=source, setting=setting_id):
                     declared = self.settings[setting_id].findtext("default") or ""
@@ -134,13 +136,13 @@ class PythonCompatibilityTest(unittest.TestCase):
     """Kodi on Windows bundles Python 3.8; the sources must parse there."""
 
     def test_sources_parse_with_python_3_8_grammar(self):
-        for source in SOURCES:
+        for source in MODULES:
             with self.subTest(source=source):
                 ast.parse(read(source), filename=source, feature_version=(3, 8))
 
     def test_annotations_are_postponed(self):
         # list[str] / int | None annotations are only valid on 3.8 with postponed evaluation.
-        for source in SOURCES:
+        for source in MODULES:
             with self.subTest(source=source):
                 self.assertIn("from __future__ import annotations", read(source))
 

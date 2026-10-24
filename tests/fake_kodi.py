@@ -563,6 +563,9 @@ class Addon:
     def setSetting(self, key, value):
         kodi.settings[key] = str(value)
 
+    def setSettingBool(self, key, value):
+        kodi.settings[key] = "true" if value else "false"
+
     def getSettingBool(self, key):
         return self.getSetting(key).lower() == "true"
 

@@ -37,6 +37,7 @@ main = load_addon_module("main")
 service = load_addon_module("service")
 context_mix = load_addon_module("context_mix")
 context_radio = load_addon_module("context_radio")
+logs = load_addon_module("logs")
 
 
 def plugin_query(text):
@@ -85,9 +86,14 @@ class KodiTestCase(unittest.TestCase):
         service.METADATA_REFRESH_LAST_SELECTION_TOKEN = ""
         service.METADATA_REFRESH_LAST_REFRESH_TS = 0
         service.MUSICIP_RELOAD.update(thread=None, scan_finished=False, first_tick_ts=0.0)
+        service.RADIO_TICK_SUMMARY["text"] = ""
 
         # Keep tests independent of the user's locale settings in Kodi.
         kodi.kodi_settings["musicfiles.trackformat"] = "[%N. ]%A - %T"
+
+    def log_everything(self):
+        """Every area's switch in Settings > Logging on."""
+        kodi.settings.update({switch: "true" for switch in logs.AREAS.values()})
 
     # --- plugin --------------------------------------------------------------------------
     def run_plugin(self, **query):

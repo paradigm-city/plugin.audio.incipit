@@ -41,7 +41,7 @@ class MetadataRefreshTickTest(KodiTestCase):
         self.assertEqual(self.listed_labels()[0], "1. Motörhead - Ace of Spades  [COLOR FF8C929C]Seed[/COLOR]")
 
     def test_unresolved_tracks_are_retried_then_dropped(self):
-        kodi.settings["service_extended_logging"] = "true"
+        self.log_everything()
         main.enqueue_metadata_refresh_for_tracks([OTHER])
         for attempt in range(1, service.METADATA_REFRESH_MAX_ATTEMPTS):
             self.assertEqual(service.run_metadata_refresh_tick(), 0)
@@ -224,7 +224,7 @@ class BackgroundConsistencyCheckTest(KodiTestCase):
         self.assertEqual(kodi.notifications, [])
 
     def test_one_broken_mix_does_not_stop_the_check(self):
-        kodi.settings["service_extended_logging"] = "true"
+        self.log_everything()
         other = self.save_mix([self.MISSING, self.PRESENT])
         original = main.analyze_mix_consistency
 
@@ -238,8 +238,8 @@ class BackgroundConsistencyCheckTest(KodiTestCase):
         self.assertEqual(self.read_json(main.mix_meta_path_from_cache_path(other))["consistency"]["status"], "inconsistent")
         self.assertIn("Consistency check failed for", kodi.log_text())
 
-    def test_summary_is_logged_with_extended_logging(self):
-        kodi.settings["service_extended_logging"] = "true"
+    def test_summary_is_logged_with_saved_mix_check_logging(self):
+        kodi.settings["log_checks"] = "true"
         service.run_consistency_check()
         log_text = kodi.log_text()
         self.assertIn("Consistency check: '01 Overkill' has 1 missing track(s).", log_text)
@@ -270,61 +270,43 @@ class BackgroundConsistencyCheckTest(KodiTestCase):
 
 
 class ServiceLoggingTest(KodiTestCase):
-    LEVELS = {"debug": 0, "info": 1, "warning": 2, "error": 3, "fatal": 4}
-
-    def log_every_level(self):
-        for name, level in self.LEVELS.items():
-            service.log(f"{name} message", level)
-        service.log_info("log_info message")
-
-    def test_only_errors_without_extended_logging(self):
-        self.log_every_level()
-        self.assertEqual(kodi.log_text().splitlines(), [
-            "[plugin.audio.musicip] error message",
-            "[plugin.audio.musicip] fatal message",
-        ])
-
-    def test_everything_with_extended_logging(self):
-        kodi.settings["service_extended_logging"] = "true"
-        self.log_every_level()
-        self.assertEqual(len(kodi.logs), 6)
-
     def test_service_run_logs_nothing_but_errors(self):
-        kodi.add_media("D:\\music\\a.mp3")
-        self.save_mix(["D:\\music\\a.mp3", "D:\\music\\gone.mp3"])
-        main.enqueue_metadata_refresh_for_tracks(["D:\\music\\gone.mp3"])
+        kodi.add_media("D:\music\a.mp3")
+        self.save_mix(["D:\music\a.mp3", "D:\music\gone.mp3"])
+        main.enqueue_metadata_refresh_for_tracks(["D:\music\gone.mp3"])
         kodi.settings["service_auto_repair_enabled"] = "true"
         kodi.logs.clear()
         service.main()
         below_error = [message for message, level in kodi.logs if level < 3]
         self.assertEqual(len(below_error), 1)
-        self.assertTrue(below_error[0].startswith("[plugin.audio.musicip] MusicIP service started. version="))
+        self.assertTrue(below_error[0].startswith("[plugin.audio.musicip] [general] MusicIP service started. version="))
 
     def test_service_errors_are_still_logged(self):
         with mock.patch.object(service, "run_discovery_tick", side_effect=RuntimeError("boom")):
             service.main()
-        self.assertIn(("[plugin.audio.musicip] Discovery mode tick failed: boom", 3), kodi.logs)
+        self.assertIn(("[plugin.audio.musicip] [discovery] Discovery mode tick failed: boom", 3), kodi.logs)
 
 
 class ServiceStartupLogTest(KodiTestCase):
     def start_lines(self):
         return [(message, level) for message, level in kodi.logs if "MusicIP service started." in message]
 
-    def test_start_line_is_logged_as_info_without_extended_logging(self):
+    def test_start_line_is_logged_as_info_without_logging(self):
         service.main()
         lines = self.start_lines()
         self.assertEqual(len(lines), 1)
         self.assertEqual(lines[0][1], 1)  # LOGINFO
 
-    def test_start_line_with_extended_logging(self):
-        kodi.settings["service_extended_logging"] = "true"
+    def test_start_line_with_all_logging(self):
+        self.log_everything()
         service.main()
         self.assertEqual(len(self.start_lines()), 1)
+        self.assertIn("logging: general on, mixing on, ai on, radio on, discovery on, checks on.", self.start_lines()[0][0])
 
     def test_service_start_message_has_a_single_addon_prefix(self):
         service.main()
         message = self.start_lines()[0][0]
-        self.assertTrue(message.startswith("[plugin.audio.musicip] MusicIP service started. version="))
+        self.assertTrue(message.startswith("[plugin.audio.musicip] [general] MusicIP service started. version="))
         self.assertNotIn("[plugin.audio.musicip] [plugin.audio.musicip]", message)
 
 
@@ -344,8 +326,8 @@ class ServiceRepairReadinessTest(KodiTestCase):
                     self.assertEqual(from_service[key], from_plugin[key])
         self.assertEqual(service.get_repair_readiness_for_consistency({"status": "ok"})["status"], "not_needed")
 
-    def test_readiness_result_is_logged_with_extended_logging(self):
-        kodi.settings["service_extended_logging"] = "true"
+    def test_readiness_result_is_logged_with_saved_mix_check_logging(self):
+        kodi.settings["log_checks"] = "true"
         service.get_repair_readiness_for_consistency(self.CONSISTENCY, "Rock mix")
         kodi.library.add_song(self.MISSING, title="Gone", present=False)
         service.get_repair_readiness_for_consistency(self.CONSISTENCY)
@@ -354,8 +336,9 @@ class ServiceRepairReadinessTest(KodiTestCase):
         self.assertIn("Repair readiness: repair not available; status=update_library_before_repair, "
                       "reason='Kodi music library still lists 1 of 1 missing file(s). Update and clean the library.'", lines[1])
 
-    def test_readiness_follows_the_service_logging_setting(self):
-        kodi.settings["plugin_extended_logging"] = "true"
+    def test_readiness_follows_the_saved_mix_check_switch(self):
+        self.log_everything()
+        kodi.settings["log_checks"] = "false"
         service.get_repair_readiness_for_consistency(self.CONSISTENCY)
         self.assertNotIn("Repair readiness:", kodi.log_text())
 
@@ -366,15 +349,8 @@ class ServiceRepairReadinessTest(KodiTestCase):
         kodi.settings["consistency_interval_minutes"] = "0"
         self.assertEqual(service.get_check_interval_seconds(), 60)
 
-    def test_service_extended_logging(self):
-        service.log_info("hidden")
-        kodi.settings["service_extended_logging"] = "true"
-        service.log_info("shown")
-        self.assertNotIn("hidden", kodi.log_text())
-        self.assertIn("shown", kodi.log_text())
-
     def test_unreadable_json_file(self):
-        kodi.settings["service_extended_logging"] = "true"
+        self.log_everything()
         path = self.profile_path("broken.json")
         service.get_profile_dir()
         with open(path, "w", encoding="utf-8") as handle:

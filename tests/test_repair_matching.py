@@ -388,12 +388,12 @@ class RepairSavedMixTest(KodiTestCase):
         self.assertEqual(main.repair_saved_mix_automatic_only(self.cache_path), 0)
 
 
-class RepairExtendedLoggingTest(KodiTestCase):
-    def test_extended_logging_setting_controls_repair_logs(self):
+class RepairLoggingTest(KodiTestCase):
+    def test_saved_mix_check_logging_controls_repair_logs(self):
         main.get_repair_candidates_for_path(MISSING_PATH)
         self.assertNotIn("Auto-repair", kodi.log_text())
 
-        kodi.settings["plugin_extended_logging"] = "true"
+        kodi.settings["log_checks"] = "true"
         main.get_repair_candidates_for_path(MISSING_PATH)
         self.assertIn("Auto-repair: primary lookup by exact filename", kodi.log_text())
 

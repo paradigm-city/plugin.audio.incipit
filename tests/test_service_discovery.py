@@ -290,7 +290,7 @@ class MenuRefreshAndResetTest(KodiTestCase):
 
 class ServiceMainLoopTest(KodiTestCase):
     def test_one_loop_iteration_then_abort(self):
-        kodi.settings["service_extended_logging"] = "true"
+        self.log_everything()
         add_library_songs(3)
         service.save_discovery_state({"enabled": True})  # left over from before a Kodi restart
         service.main()

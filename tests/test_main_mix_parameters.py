@@ -46,8 +46,8 @@ class SettingsTest(KodiTestCase):
     def test_bool_settings_accept_common_spellings(self):
         for value, expected in (("true", True), ("1", True), ("YES", True), ("on", True), ("false", False), ("0", False)):
             with self.subTest(value=value):
-                kodi.settings["plugin_extended_logging"] = value
-                self.assertIs(main.is_plugin_extended_logging_enabled(), expected)
+                kodi.settings["consistency_enabled"] = value
+                self.assertIs(main.get_setting_bool("consistency_enabled", False), expected)
 
     def test_style_labels(self):
         self.assertEqual(main.get_mix_style_label(0), "ignore")

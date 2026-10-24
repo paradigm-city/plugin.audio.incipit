@@ -81,7 +81,7 @@ class UnavailableSourceTest(SourcesTestCase):
         self.assertEqual(main.find_covering_music_source("D:\\musicbox\\a.mp3", ["D:\\music\\"]), "")
 
     def test_unreadable_sources_fall_back_to_the_library_check(self):
-        kodi.settings["plugin_extended_logging"] = "true"
+        kodi.settings["log_checks"] = "true"
         kodi.fail_jsonrpc("Files.GetSources")
         readiness = self.readiness()
         self.assertEqual(readiness["status"], "ready")
@@ -258,8 +258,8 @@ class ServiceSearchTest(SourcesTestCase):
         self.assertNotIn("missing_file_search", self.meta())
         self.assertEqual(kodi.listed, [])
 
-    def test_search_is_logged_with_extended_service_logging(self):
-        kodi.settings["service_extended_logging"] = "true"
+    def test_search_is_logged_with_saved_mix_check_logging(self):
+        kodi.settings["log_checks"] = "true"
         service.run_consistency_check()
         self.assertIn(
             f"for 1 missing file(s); found 1 outside the music sources: [{MOVED!r}]; "
