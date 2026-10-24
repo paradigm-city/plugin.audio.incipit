@@ -57,6 +57,15 @@ class SettingsXmlTest(unittest.TestCase):
         self.assertEqual((root.tag, root.get("version")), ("settings", "1"))
         self.assertEqual(root.find("section").get("id"), ADDON_ID)
 
+    def test_the_perspective_settings_offer_every_perspective(self):
+        for setting_id in ("mix_assist_mix_perspective", "mix_assist_station_perspective"):
+            with self.subTest(setting=setting_id):
+                options = self.settings[setting_id].findall(".//option")
+                self.assertEqual([read_strings()[int(option.get("label"))] for option in options],
+                                 list(main.PERSPECTIVE_LABELS))
+        self.assertEqual(len(main.PERSPECTIVE_LABELS), len(main.mix_assist_checks.PERSPECTIVES))
+        self.assertEqual(len(main.PERSPECTIVE_HINTS), len(main.PERSPECTIVE_LABELS))
+
     def test_every_setting_has_a_label_and_a_help_text(self):
         strings = read_strings()
         for setting_id, node in self.settings.items():

@@ -324,7 +324,8 @@ class FavouriteStationsTest(RadioBase):
         self.assertEqual(item.getLabel(), f"1. {self.favourites()[0]['name']}")
         self.assertFalse(is_folder)
         self.assertEqual([label for label, _action in item.context_menu],
-                         ["Information", "Openness: Balanced", "Drift: Drift slowly", "Rename", "Remove from favourites"])
+                         ["Information", "Openness: Balanced", "Drift: Drift slowly", "Perspective: Mixed", "Rename",
+                          "Remove from favourites"])
         self.assertTrue(item.getLabel2().endswith("| Balanced | Drift slowly"))
 
     def test_a_favourite_keeps_the_settings_it_was_saved_with(self):
@@ -332,7 +333,7 @@ class FavouriteStationsTest(RadioBase):
         self.save_playing_station()
         favourite = self.favourites()[0]
         self.assertEqual((favourite["openness"], favourite["drift"]), (3, 2))
-        self.assertEqual(self.radio()["settings"], {"openness": 3, "drift": 2})
+        self.assertEqual(self.radio()["settings"], {"openness": 3, "drift": 2, "perspective": 0})
 
     def test_changing_a_favourites_settings(self):
         self.save_playing_station()
@@ -345,6 +346,19 @@ class FavouriteStationsTest(RadioBase):
         self.run_plugin(action="radio_favourite_setting", id=favourite_id, setting="drift")
         self.assertEqual(self.favourites()[0]["drift"], 2)
         self.assertEqual(kodi.dialogs("select")[-1][1][0], f"Drift of 1. {self.favourites()[0]['name']}")
+
+    def test_a_favourites_perspective(self):
+        kodi.settings["mix_assist_station_perspective"] = "3"
+        self.save_playing_station()
+        favourite_id = self.favourites()[0]["id"]
+        self.assertEqual(self.favourites()[0]["perspective"], 3)
+        kodi.respond("select", 4)  # Functional
+        self.run_plugin(action="radio_favourite_setting", id=favourite_id, setting="perspective")
+        _method, (heading, options), _kwargs = kodi.dialogs("select")[-1]
+        self.assertEqual(heading, f"Perspective of 1. {self.favourites()[0]['name']}")
+        self.assertEqual(options[3], "Cultural: where it comes from (default)")
+        self.assertEqual((self.favourites()[0]["perspective"], self.radio()["settings"]["perspective"]), (4, 4))
+        self.assertEqual(main.favourite_perspective_label(self.favourites()[0]), "Functional")
 
     def test_older_favourites_follow_the_global_settings(self):
         main.save_radio_favourites([{"id": "old", "name": "Old", "seed": SONGS_FIRST}])

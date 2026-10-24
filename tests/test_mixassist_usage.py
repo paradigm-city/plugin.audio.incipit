@@ -37,6 +37,15 @@ class CountingTest(UsageTestCase):
                           fields["cost_usd"]), ("judging", True, 1200, 9000, 0.0421))
         self.assertNotIn("system_prompt", fields)  # only the purpose is kept
 
+    def test_the_checks_of_every_perspective_are_told_apart(self):
+        checks = main.mix_assist_checks
+        for perspective in checks.PERSPECTIVES:
+            with self.subTest(perspective=perspective):
+                named = checks.seed_intent_prompt(perspective) + "\n\n" + checks.NAME_NOTE
+                self.assertEqual(main.ai_purpose(named), "describing")
+                self.assertEqual(main.ai_purpose(checks.intent_prompt(perspective)), "judging")
+        self.assertEqual(main.ai_purpose("something else"), "other")
+
     def test_a_failed_request_is_counted_with_its_kind(self):
         answer = dict(CLI_ANSWER, is_error=True, subtype="error", result="You've hit your usage limit")
         with self.assertRaises(claude.ClaudeError):

@@ -196,6 +196,56 @@ class NameTest(unittest.TestCase):
         self.assertEqual(checks.schema()["required"], ["character", "tracks"])  # judging candidates needs no name
 
 
+class PerspectiveTest(unittest.TestCase):
+    """Listening perspectives: from which point of view the intent is stated and the tracks are judged."""
+
+    def unit(self, title):
+        return {"key": title, "kind": "track", "label": title, "item": {"artist": "A", "title": title, "album": "B"}}
+
+    def test_mixed_is_prompt_c_as_it_was(self):
+        self.assertEqual(checks.PERSPECTIVES[0], checks.DEFAULT_PERSPECTIVE)
+        for perspective in ("mixed", "unknown"):
+            self.assertIs(checks.seed_intent_prompt(perspective), checks.SEED_INTENT_PROMPT)
+            self.assertIs(checks.intent_prompt(perspective), checks.INTENT_PROMPT)
+
+    def test_every_perspective_has_its_own_prompts(self):
+        self.assertEqual(checks.PERSPECTIVES, ("mixed", "technical", "emotional", "cultural", "functional", "lyrical"))
+        seed_prompts = [checks.seed_intent_prompt(p) for p in checks.PERSPECTIVES]
+        intent_prompts = [checks.intent_prompt(p) for p in checks.PERSPECTIVES]
+        self.assertEqual(len(set(seed_prompts + intent_prompts)), 12)
+        for perspective in checks.PERSPECTIVES[1:]:
+            with self.subTest(perspective=perspective):
+                prompt = checks.seed_intent_prompt(perspective)
+                self.assertTrue(prompt.startswith(checks.SEED_INTENT_HEAD))
+                self.assertTrue(prompt.endswith(checks.TRACK_LINES_NOTE))
+                self.assertIn('End with "Not:"', prompt)
+                self.assertIn("Give the seed itself the verdict fits.", prompt)
+                self.assertIn(checks.PERSPECTIVE_TEXTS[perspective][0], checks.intent_prompt(perspective))
+
+    def test_a_prompt_tells_its_purpose_and_perspective(self):
+        for perspective in checks.PERSPECTIVES:
+            with self.subTest(perspective=perspective):
+                named = checks.seed_intent_prompt(perspective) + "\n\n" + checks.NAME_NOTE
+                self.assertEqual(checks.perspective_of(named), ("describing", perspective))
+                self.assertEqual(checks.perspective_of(checks.intent_prompt(perspective)), ("judging", perspective))
+        self.assertIsNone(checks.perspective_of("You rate music."))
+
+    def test_every_check_asks_from_the_perspective(self):
+        systems = []
+
+        def ask(system, schema, message):
+            systems.append(system)
+            return {"character": "x", "name": "N", "tracks": []}
+
+        units = [self.unit("s"), self.unit("c")]
+        checks.state_intent(units, [None, None], ask, "emotional")
+        checks.describe(units, [None, None], ask, "emotional")
+        checks.judge("i", units[0], None, units[1:], [None], ask, "emotional")
+        checks.judge_named("i", units[0], None, units[1:], [None], ask, "emotional")
+        self.assertEqual([checks.perspective_of(system) for system in systems],
+                         [("describing", "emotional")] * 2 + [("judging", "emotional")] * 2)
+
+
 class AssistTest(unittest.TestCase):
     """A seed with a clear profile, fitting tracks, and two tracks that clearly don't fit."""
 
@@ -339,7 +389,7 @@ class AssistTest(unittest.TestCase):
         said = self.traced()
         assist.tidy_up(self.paths, self.store, self.ask, self.resolve, self.fetch_mix, artist_window=0)
         text = "\n".join(said)
-        self.assertIn("What the mix is about (ai): abstract, instrumental", text)
+        self.assertIn("What the mix is about (ai, mixed perspective): abstract, instrumental", text)
         self.assertIn("Both checks against the seed 'seed': typical misfit ", text)
         self.assertRegex(text, r"  6\. outlier    'bad1': relative \d+\.\d\d \(misfit \d+\.\d\d\).*; AI: outlier \(clashes\)")
         self.assertRegex(text, r"  2\. fits       'fit1': relative ")
@@ -410,6 +460,25 @@ class AssistTest(unittest.TestCase):
                                          neighbours=["cand1", "fit1"], artist_window=5)
         self.assertEqual(result["chosen"], ["solo1"])
         self.assertEqual(systems, [checks.SEED_INTENT_PROMPT, checks.INTENT_PROMPT])
+
+    def test_every_batch_and_replacement_is_judged_from_the_same_perspective(self):
+        systems = []
+
+        def ask(system, schema, message):
+            systems.append(system)
+            return self.ask(system, schema, message)
+
+        candidates = [f"cand{i}" for i in range(1, 5)] + [f"fit{i}" for i in range(1, 7)] + ["fit7", "fit8"]
+        assist.choose_additions("seed", candidates, 1, self.store, ask, self.resolve, neighbours=["cand1", "fit1"],
+                                artist_window=5, perspective="cultural")
+        self.assertEqual(systems, [checks.seed_intent_prompt("cultural"), checks.intent_prompt("cultural")])
+        systems.clear()
+        plan = assist.tidy_up(self.paths, self.store, ask, self.resolve, self.fetch_mix, artist_window=0,
+                              perspective="lyrical")
+        self.assertEqual(plan["perspective"], "lyrical")
+        self.assertEqual({checks.perspective_of(system) for system in systems},
+                         {("describing", "lyrical"), ("judging", "lyrical")})
+        self.assertEqual(plan["changes"] and len(plan["changes"]), 2)
 
     def test_a_radio_profile_drifts_song_by_song(self):
         reference = vector(energy=2, sounding_year=1980)

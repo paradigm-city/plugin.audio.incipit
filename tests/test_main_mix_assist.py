@@ -216,13 +216,13 @@ class SavedMixMenuTest(MixAssistTestCase):
 
     def test_the_menu_offers_undo_only_after_a_change(self):
         self.assertEqual(self.menu(), ["What this mix is about: <not worked out yet>", "Openness: Balanced",
-                                       "Name: <given at the first check>", "Run AI Mix Assist"])
+                                       "Perspective: Mixed", "Name: <given at the first check>", "Run AI Mix Assist"])
         self.tidy_up(plan(changes=[REPLACE_DISCO]))
         self.assertEqual(self.menu(), ["What this mix is about: dark, abstract, instrumental", "Openness: Balanced",
-                                       "Name: <given at the first check>", "Run AI Mix Assist", "Undo the AI Mix Assist changes"])
+                                       "Perspective: Mixed", "Name: <given at the first check>", "Run AI Mix Assist", "Undo the AI Mix Assist changes"])
 
     def test_tidy_up_now_from_the_menu(self):
-        kodi.respond("select", 3)
+        kodi.respond("select", 4)
         with mock.patch.object(main.mix_assist, "tidy_up", return_value=plan(changes=[REPLACE_DISCO])):
             self.run_plugin(action="mix_assist_menu", cache_path=self.cache_path)
         self.assertEqual(self.read_mix(self.cache_path)[2], REPLACEMENT)
@@ -238,6 +238,29 @@ class SavedMixMenuTest(MixAssistTestCase):
         self.assertEqual(self.history()[-1]["openness"], "Open")
         self.assertNotified("Saved. AI Mix Assist uses it for this mix from now on.")
         self.assertIn("AI Mix Assist: openness Open (chosen for this mix)", main.build_mix_info_page(self.cache_path))
+
+    def test_the_perspective_of_a_mix_can_be_changed(self):
+        self.assertEqual(self.tidy_up(plan()).call_args[1]["perspective"], "mixed")  # the setting's default
+        kodi.respond("select", 2, 1)  # Perspective, then: Mixed, Technical, ...
+        self.run_plugin(action="mix_assist_menu", cache_path=self.cache_path)
+        _method, (heading, options), _kwargs = kodi.dialogs("select")[-1]
+        self.assertEqual(heading, "Perspective of this mix")
+        self.assertEqual(options[:2], ["Mixed: intention and qualities (default)", "Technical: how it is made"])
+        self.assertEqual(self.section()["perspective"], 1)
+        self.assertEqual(self.history()[-1]["perspective"], "Technical")
+        self.assertIn("You set AI Mix Assist to the technical perspective", main.build_mix_history_text(
+            self.read_json(main.mix_meta_path_from_cache_path(self.cache_path))))
+        self.assertNotified("Saved. Tidy up the mix to see it from the new perspective.")
+        self.assertIn("AI Mix Assist: openness Balanced, technical perspective (chosen for this mix)",
+                      main.build_mix_info_page(self.cache_path))
+        self.assertEqual(self.tidy_up(dict(plan(), perspective="technical")).call_args[1]["perspective"], "technical")
+        self.assertEqual(self.section()["intent_perspective"], "technical")
+        self.assertIn("(as the AI put it, from the technical perspective)", main.build_mix_info_page(self.cache_path))
+
+    def test_the_perspective_setting_applies_to_mixes_without_their_own(self):
+        kodi.settings["mix_assist_mix_perspective"] = "2"
+        self.assertEqual(self.tidy_up(plan()).call_args[1]["perspective"], "emotional")
+        self.assertEqual(self.menu()[2], "Perspective: Emotional")
 
     def test_cancelling_the_menu_does_nothing(self):
         self.run_plugin(action="mix_assist_menu", cache_path=self.cache_path)
@@ -382,11 +405,20 @@ class GenerateDialogTest(MusicIPServerTestCase):
     def test_the_dialog_shows_the_ai_mix_assist_lines(self):
         params = main.confirm_mix_generation({}) or {}
         choices = kodi.dialogs("select")[0][1][1]
-        self.assertEqual(choices[6:], ["AI Mix Assist: Balanced", "What this mix is about: <worked out by the AI>"])
+        self.assertEqual(choices[6:], ["AI Mix Assist: Balanced", "Perspective: Mixed",
+                                       "What this mix is about: <worked out by the AI>"])
         self.assertEqual(params, {})  # cancelled
 
+    def test_a_perspective_chosen_when_generating_is_kept_with_the_mix(self):
+        kodi.respond("select", 7, 5, 0)  # Perspective -> Lyrical, Generate
+        self.run_plugin(action="browse_mix", seed=TRACKS[0], size="20")
+        self.assertEqual(self.sidecar()["mix_assist"]["perspective"], 5)
+        self.assertIn("When you created the mix, you set AI Mix Assist to the lyrical perspective",
+                      main.build_mix_history_text(self.sidecar()))
+        self.assertNotIn("assist_perspective", self.sidecar()["mix_generation_parameters"])
+
     def test_choices_made_when_generating_are_kept_with_the_mix(self):
-        kodi.respond("select", 6, 5, 7, 0)  # AI Mix Assist -> Adventurous, What it is about -> ..., Generate
+        kodi.respond("select", 6, 5, 8, 0)  # AI Mix Assist -> Adventurous, What it is about -> ..., Generate
         kodi.respond("keyboard", "  dark cosmic electronics  ")
         self.run_plugin(action="browse_mix", seed=TRACKS[0], size="20")
         section = self.sidecar()["mix_assist"]
@@ -429,14 +461,14 @@ class MixNameTest(MixAssistTestCase):
 
     def test_your_name_wins_and_can_be_removed(self):
         self.tidy_up(self.named_plan())
-        kodi.respond("select", 2)  # Name
+        kodi.respond("select", 3)  # Name
         kodi.respond("keyboard", " My  Mix ")
         self.run_plugin(action="mix_assist_menu", cache_path=self.cache_path)
         self.assertEqual(self.label(), "My Mix (5 tracks)")
         self.assertEqual(self.history()[-1]["kind"], "renamed")
         self.tidy_up(self.named_plan("Something Else"))  # a later check renames only the AI's name
         self.assertEqual(self.label(), "My Mix (5 tracks)")
-        kodi.respond("select", 2)
+        kodi.respond("select", 3)
         kodi.respond("keyboard", "")
         self.run_plugin(action="mix_assist_menu", cache_path=self.cache_path)
         self.assertEqual(self.label(), "Something Else (5 tracks)")
@@ -508,7 +540,7 @@ class CurrentMixNameTest(MixAssistTestCase):
 
     def test_renaming_keeps_the_name_where_saving_does(self):
         self.save("Night Drive")
-        kodi.respond("select", 2)  # Name
+        kodi.respond("select", 3)  # Name
         kodi.respond("keyboard", "Late Night Drive")
         self.run_plugin(action="mix_assist_menu", cache_path=self.cache_path)
         sidecar = self.read_json(main.mix_meta_path_from_cache_path(self.cache_path))
@@ -521,7 +553,7 @@ class CurrentMixNameTest(MixAssistTestCase):
         sidecar["mix_assist"]["listener_name"] = "Old Name"
         self.write_json(main.mix_meta_path_from_cache_path(self.cache_path), sidecar)
         self.assertEqual(main.format_saved_mix_label(self.meta()), "Old Name (5 tracks)")
-        kodi.respond("select", 2)
+        kodi.respond("select", 3)
         kodi.respond("keyboard", "")  # back to the AI's name
         self.run_plugin(action="mix_assist_menu", cache_path=self.cache_path)
         self.assertEqual(main.format_saved_mix_label(self.meta()), "Cosmic Analog Journeys (5 tracks)")

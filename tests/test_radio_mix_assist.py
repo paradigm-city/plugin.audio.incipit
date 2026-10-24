@@ -159,6 +159,15 @@ class RadioMixAssistTest(RadioBase):
         self.assertEqual(choose.call_args[1]["max_batches"], 6)
         self.assertTrue(callable(choose.call_args[1]["more"]))
 
+    def test_a_check_judges_from_the_stations_perspective(self):
+        kodi.settings["mix_assist_station_perspective"] = "1"
+        with mock.patch.object(main.mix_assist, "choose_additions", return_value={"chosen": [], "entries": {}}) as choose, \
+                mock.patch.object(main, "mix_assist_ask", return_value=lambda *args: {}):
+            CHECK_RADIO_REFILL("a", ["b"], 6, REFERENCE, ["x"], settings={})
+            self.assertEqual(choose.call_args[1]["perspective"], "technical")
+            CHECK_RADIO_REFILL("a", ["b"], 6, REFERENCE, ["x"], settings={"perspective": 2})  # a favourite's own
+            self.assertEqual(choose.call_args[1]["perspective"], "emotional")
+
     def test_more_candidates_come_from_the_songs_that_fit_then_earlier_seeds(self):
         mixes = {"chosen2": ["chosen2", "known", "n1"], "chosen1": ["n2"], "older": ["n3"]}
         requested = []
