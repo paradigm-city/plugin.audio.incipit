@@ -52,7 +52,7 @@ The Radio screen then offers:
 ## Not included
 
 - Radio sessions are not mixes: they are neither the current mix nor listed under **Saved mixes**.
-- There are no radio-specific settings.
+- Radio's own settings (Settings > **Radio**) are AI Mix Assist's: **Keep Radio on track**, **Station drift**, **Station openness**.
 
 ## State
 

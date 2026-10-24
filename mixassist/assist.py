@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Callable, Dict, List, Optional, Sequence
 
-from mixassist import checks, dimensions, fit
+from mixassist import checks, dimensions, fit, trace
 from mixassist.cache import RatingCache, normalize
 from mixassist.rating import Ask, rate_missing
 from mixassist.stats import median
@@ -94,8 +94,23 @@ def analyze(units: Sequence[dict], entries: Sequence[Optional[dict]], verdicts: 
             row["status"] = "borderline"
         else:
             row["status"] = "fits"
+    if trace.active():
+        trace_rows(rows, typical, strictness, weights)
     return {"rows": rows, "weights": weights, "spreads": weighted, "inverse": inverse, "typical": typical,
             "ready": True}
+
+
+def trace_rows(rows: Sequence[dict], typical: float, strictness: float, weights: Dict[str, float]) -> None:
+    trace.say(f"Both checks against the seed {rows[0]['unit']['label']!r}: typical misfit {trace.number(typical)}, "
+              f"a track is off beyond {trace.number(strictness)} x that; seed weights "
+              + ", ".join(f"{key} {trace.number(value)}" for key, value in weights.items()))
+    for row in rows:
+        trace.say(f"  {row['position']:>2}. {row.get('status', ''):<10} {row['unit']['label']!r}: relative "
+                  f"{trace.number(row.get('relative'))} (misfit {trace.number(row.get('misfit'))})"
+                  + (f", clearly off in {row['single']}" if row.get("single") else "")
+                  + (", rating guessed" if row.get("guessed") else "")
+                  + f"; AI: {row.get('verdict') or '-'}" + (f" ({row['reason']})" if row.get("reason") else "")
+                  + (f"; profile: {row['why']}" if row.get("why") else ""))
 
 
 def clearly_fitting(rows: Sequence[dict], strictness: float) -> set:
@@ -160,6 +175,9 @@ def score_candidates(candidate_paths: Sequence[str], units: Sequence[dict], entr
             candidate["single"] = single_dimension_miss(entry, entries[0])
             candidate["entry"] = entry
         scored[unit["path"]] = candidate
+        trace.say(f"  candidate {unit['label']!r}: relative {trace.number(candidate.get('relative'))}"
+                  + (f", clearly off in {candidate['single']}" if candidate.get("single") else "")
+                  + f"; AI: {candidate['verdict'] or '-'}" + (f" ({candidate['reason']})" if candidate["reason"] else ""))
     return scored
 
 
@@ -200,9 +218,12 @@ def tidy_up(paths: Sequence[str], cache: RatingCache, ask: Ask, resolve: Resolve
         intent, verdicts, name = checks.describe(units, entries, ask)
         intent_source = "ai"
 
+    trace.say(f"What the mix is about ({intent_source}): {intent}" + (f"; name: {name}" if name else ""))
     analysis = analyze(units, entries, verdicts, cache.library(), strictness)
     rows = analysis["rows"]
     outliers = [row["position"] for row in rows if row.get("status") == "outlier"]
+    trace.say(f"Tidy-up: {len(outliers)} of {len(rows) - 1} track(s) don't fit by both checks: {outliers}"
+              + ("" if analysis["ready"] else " (too few rated tracks to measure)"))
     plan = {"intent": intent, "intent_source": intent_source, "name": name, "rows": rows, "outliers": outliers, "changes": [],
             "removed": [], "paths": paths, "rebuild_suggested": False}
     if not analysis["ready"] or not outliers or not find_replacements:
@@ -262,9 +283,13 @@ def tidy_up(paths: Sequence[str], cache: RatingCache, ask: Ask, resolve: Resolve
                 choice = pick(shared, strictness, taken, blocked, accept_borderline)
                 origin = "seed" if choice and choice["path"] in fallback else source
             if choice is None:
+                trace.say(f"Replacement for {position}. {rows[position - 1]['unit']['label']!r}: none of "
+                          f"{len(options)} {source} candidate(s) or the round's others passes.")
                 unfilled.append(position)
                 continue
             row = rows[position - 1]
+            trace.say(f"Replacement for {position}. {row['unit']['label']!r}: {choice['label']!r} ({origin}, relative "
+                      f"{trace.number(choice.get('relative'))}, AI: {choice['verdict']}).")
             taken.add(path_key(choice["path"]))
             artists[position - 1] = choice["artist"]
             new_paths[position - 1] = choice["path"]
@@ -285,6 +310,8 @@ def tidy_up(paths: Sequence[str], cache: RatingCache, ask: Ask, resolve: Resolve
     gaps = []
     for seed_position, members in groups.items():
         options = fresh(musicip_mix(seed_position), SUBMIX_SIZE * len(members))
+        trace.say(f"Submix from {seed_position}. {rows[seed_position - 1]['unit']['label']!r} for position(s) {members}: "
+                  f"{len(options)} fresh candidate(s).")
         gaps.extend((position, options) for position in members)
     gaps.sort()
     fallback = fresh(musicip_mix(1), SUBMIX_SIZE * FALLBACK_FACTOR)
@@ -360,6 +387,9 @@ def choose_additions(selected: str, candidates: Sequence[str], count: int, cache
         batch, pending = pending[:batch_size], pending[batch_size:]
         examined.update(path_key(path) for path in batch)
         batches += 1
+        trace.say(f"Candidates for {selected_unit['label']!r}: batch {batches} of at most {max_batches}, {len(batch)} "
+                  f"track(s); {len(result['chosen'])} of {count} chosen so far; strictness {trace.number(strictness)}"
+                  f"{', borderline accepted' if accept_borderline else ''}; blocked artists: {sorted(blocked)}.")
         result["examined"] += len(batch)
         units = [selected_unit] + resolve(batch)
         step("Rating new music")
@@ -374,9 +404,14 @@ def choose_additions(selected: str, candidates: Sequence[str], count: int, cache
         else:
             result["intent"], verdicts = checks.state_intent(units, entries, ask)
         result["seed_entry"] = result["seed_entry"] or entries[0]
+        if batches == 1:
+            trace.say(f"What {selected_unit['label']!r} is about: {result['intent']}"
+                      + (f"; name: {result['name']}" if result["name"] else ""))
         vector_entries = [reference] + entries[1:] if reference else entries
         analysis = analyze(units, vector_entries, verdicts, cache.library(), strictness)
         if not analysis["ready"]:
+            trace.say("Candidates: too few rated tracks to measure"
+                      + ("; the first ones are taken unchecked." if not result["checked"] else "; the search ends."))
             if not result["checked"]:
                 result["chosen"] = batch[:count]
                 return result
@@ -389,14 +424,20 @@ def choose_additions(selected: str, candidates: Sequence[str], count: int, cache
             if not passes(row, strictness, accept_borderline):
                 result["not_fitting"].append({"path": path, "label": row["unit"]["label"],
                                               "reason": row.get("reason") or row.get("why", "")})
+                trace.say(f"  passed over {row['unit']['label']!r}: doesn't fit ({row.get('reason') or row.get('why', '')}).")
                 continue
             artist = artist_key(row["unit"].get("artist", ""))
             if artist in blocked:
+                trace.say(f"  passed over {row['unit']['label']!r}: fits, but its artist plays nearby.")
                 continue
+            trace.say(f"  chosen {row['unit']['label']!r}.")
             result["chosen"].append(path)
             result["entries"][path] = row["entry"]
             if artist_window > 0:
                 blocked.add(artist)
+    trace.say(f"Candidates for {selected_unit['label']!r}: {len(result['chosen'])} of {count} chosen from "
+              f"{result['examined']} examined in {batches} batch(es) and {result['lists']} list(s); "
+              f"{len(result['not_fitting'])} didn't fit.")
     return result
 
 

@@ -6,7 +6,7 @@ import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
-from mixassist import usage
+from mixassist import trace, usage
 from mixassist.cache import RatingCache
 from mixassist.claude import USAGE_LIMIT, ClaudeError
 from mixassist.dimensions import ALL_KEYS, ERA_KEY, SCALE_KEYS, build_system_prompt, output_schema
@@ -78,6 +78,8 @@ def rate_missing(units: Sequence[dict], cache: RatingCache, ask: Ask, model: str
     keys = {unit["key"] for unit in units}
     usage.emit("cache", hits=len(cached), misses=len(keys) - len(cached))
     work = batches(unit for unit in units if unit["key"] not in cached)
+    trace.say(f"Ratings: {len(keys)} unit(s), {len(cached)} rated before, {len(keys) - len(cached)} to rate in "
+              f"{len(work)} request(s).")
     if not work:
         return 0
     system_prompt, schema = build_system_prompt(), output_schema()
@@ -95,6 +97,7 @@ def rate_missing(units: Sequence[dict], cache: RatingCache, ask: Ask, model: str
             try:
                 (kind, group), payload = future.result()
             except ClaudeError as exc:
+                trace.say(f"Ratings: a request failed ({exc.kind}); its units stay unrated this time.")
                 if exc.kind == USAGE_LIMIT:
                     limit_error = exc
                     for other in futures:
@@ -106,6 +109,11 @@ def rate_missing(units: Sequence[dict], cache: RatingCache, ask: Ask, model: str
                 if rating:
                     cache.put(unit["key"], rating, model=model, source="mixassist", kind=kind)
                     stored += 1
+                    trace.say(f"Rated {unit.get('label') or unit['key']!r}: "
+                              + ", ".join(f"{key} {rating[key]}" for key in ("familiarity",) + ALL_KEYS)
+                              + f"; {rating['description']}")
+                else:
+                    trace.say(f"Ratings: no usable rating for {unit.get('label') or unit['key']!r} in the answer.")
             if progress:
                 progress(done, len(work))
     usage.emit("rated", count=stored)

@@ -36,7 +36,11 @@ from mixassist import chart as mix_assist_chart
 from mixassist import claude as mix_assist_claude
 from mixassist import checks as mix_assist_checks
 from mixassist import library as mix_assist_library
+from mixassist import trace as mix_assist_trace
 from mixassist import usage as mix_assist_usage
+
+import logs
+from logs import log_ai, log_checks, log_discovery, log_general, log_mixing, log_radio
 
 
 ADDON = xbmcaddon.Addon()
@@ -165,7 +169,7 @@ def ensure_musicip_keymap_installed() -> None:
             with open(target, "r", encoding="utf-8") as fh:
                 current = fh.read()
     except Exception as exc:
-        log(f"Could not read existing MusicIP keymap: {exc}", xbmc.LOGWARNING)
+        log_general(f"Could not read existing MusicIP keymap: {exc}", xbmc.LOGWARNING)
 
     if current == MUSICIP_KEYMAP_CONTENT:
         return
@@ -175,28 +179,9 @@ def ensure_musicip_keymap_installed() -> None:
         with open(target, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(MUSICIP_KEYMAP_CONTENT)
         xbmc.executebuiltin("ReloadKeymaps")
-        log(f"Installed MusicIP keymap to {target} and reloaded keymaps.", xbmc.LOGINFO)
+        log_general(f"Installed MusicIP keymap to {target} and reloaded keymaps.", xbmc.LOGINFO)
     except Exception as exc:
-        log(f"Could not install MusicIP keymap to {target}: {exc}", xbmc.LOGERROR)
-
-
-def log(message: str, level: int = xbmc.LOGINFO) -> None:
-    xbmc.log(f"[{ADDON_ID}] {message}", level)
-
-
-def is_plugin_extended_logging_enabled() -> bool:
-    return get_setting_bool("plugin_extended_logging", False)
-
-
-def log_info(message: str) -> None:
-    if is_plugin_extended_logging_enabled():
-        log(message, xbmc.LOGINFO)
-
-
-def log_library_freshness(message: str) -> None:
-    # Library timestamp details belong to the consistency/repair system and follow the service logging setting.
-    if get_setting_bool("service_extended_logging", False):
-        log(message, xbmc.LOGINFO)
+        log_general(f"Could not install MusicIP keymap to {target}: {exc}", xbmc.LOGERROR)
 
 
 def addon_url(**query: str) -> str:
@@ -674,7 +659,7 @@ def discovery_song_label_from_song(song: dict) -> str:
 
 
 def get_discovery_library_songs() -> list[dict]:
-    log("Discovery mode: UI loading Kodi music library songs for direct playlist start.", xbmc.LOGINFO)
+    log_discovery("Discovery mode: UI loading Kodi music library songs for direct playlist start.", xbmc.LOGINFO)
     try:
         result = execute_jsonrpc(
             "AudioLibrary.GetSongs",
@@ -684,19 +669,19 @@ def get_discovery_library_songs() -> list[dict]:
             },
         )
     except Exception as exc:
-        log(f"Discovery mode: UI AudioLibrary.GetSongs with random sort failed: {exc}", xbmc.LOGWARNING)
+        log_discovery(f"Discovery mode: UI AudioLibrary.GetSongs with random sort failed: {exc}", xbmc.LOGWARNING)
         try:
             result = execute_jsonrpc(
                 "AudioLibrary.GetSongs",
                 {"properties": ["title", "artist", "displayartist", "album", "duration", "file"]},
             )
         except Exception as exc2:
-            log(f"Discovery mode: UI AudioLibrary.GetSongs fallback failed: {exc2}", xbmc.LOGERROR)
+            log_discovery(f"Discovery mode: UI AudioLibrary.GetSongs fallback failed: {exc2}", xbmc.LOGERROR)
             return []
 
     songs = result.get("songs") or []
     usable = [song for song in songs if str(song.get("file") or "").strip()]
-    log(f"Discovery mode: UI loaded {len(usable)} usable song(s).", xbmc.LOGINFO)
+    log_discovery(f"Discovery mode: UI loaded {len(usable)} usable song(s).", xbmc.LOGINFO)
     return usable
 
 
@@ -761,7 +746,7 @@ def build_discovery_queue_from_library(excerpt_seconds: int, offset_percent: int
             "songid": song.get("songid"),
         })
 
-    log(f"Discovery mode: UI built direct playlist queue with {len(queue)} item(s).", xbmc.LOGINFO)
+    log_discovery(f"Discovery mode: UI built direct playlist queue with {len(queue)} item(s).", xbmc.LOGINFO)
     return queue
 
 
@@ -772,9 +757,9 @@ def start_discovery_playlist_direct(state: dict) -> dict:
     playlist = get_music_playlist()
     try:
         playlist.clear()
-        log("Discovery mode: UI cleared Kodi music playlist.", xbmc.LOGINFO)
+        log_discovery("Discovery mode: UI cleared Kodi music playlist.", xbmc.LOGINFO)
     except Exception as exc:
-        log(f"Discovery mode: UI could not clear Kodi music playlist: {exc}", xbmc.LOGWARNING)
+        log_discovery(f"Discovery mode: UI could not clear Kodi music playlist: {exc}", xbmc.LOGWARNING)
 
     queue = build_discovery_queue_from_library(excerpt_seconds, offset_percent, DISCOVERY_BUFFER_SIZE)
     if not queue:
@@ -783,31 +768,31 @@ def start_discovery_playlist_direct(state: dict) -> dict:
         state["last_error"] = "Discovery playlist could not be filled from Kodi music library."
         save_discovery_state(state)
         notify(state["last_error"], xbmcgui.NOTIFICATION_ERROR)
-        log(f"Discovery mode: {state['last_error']}", xbmc.LOGERROR)
+        log_discovery(f"Discovery mode: {state['last_error']}", xbmc.LOGERROR)
         return state
 
     for entry in queue:
         try:
             playlist.add(str(entry.get("file") or ""), discovery_playlist_item(entry))
         except Exception as exc:
-            log(f"Discovery mode: UI playlist add failed for {entry.get('file')!r}: {exc}", xbmc.LOGWARNING)
+            log_discovery(f"Discovery mode: UI playlist add failed for {entry.get('file')!r}: {exc}", xbmc.LOGWARNING)
 
     try:
         playlist_size = playlist.size()
     except Exception:
         playlist_size = -1
-    log(f"Discovery mode: UI playlist prepared. queue={len(queue)}, kodi_playlist_size={playlist_size}.", xbmc.LOGINFO)
+    log_discovery(f"Discovery mode: UI playlist prepared. queue={len(queue)}, kodi_playlist_size={playlist_size}.", xbmc.LOGINFO)
 
     try:
         xbmc.Player().play(playlist)
-        log("Discovery mode: UI called xbmc.Player().play(playlist).", xbmc.LOGINFO)
+        log_discovery("Discovery mode: UI called xbmc.Player().play(playlist).", xbmc.LOGINFO)
     except Exception as exc:
         state["enabled"] = False
         state["startup_in_progress"] = False
         state["last_error"] = f"Discovery playlist could not be started: {exc}"
         save_discovery_state(state)
         notify(state["last_error"], xbmcgui.NOTIFICATION_ERROR)
-        log(f"Discovery mode: {state['last_error']}", xbmc.LOGERROR)
+        log_discovery(f"Discovery mode: {state['last_error']}", xbmc.LOGERROR)
         return state
 
     first = queue[0]
@@ -852,7 +837,7 @@ def replace_with_discovery_mode_menu() -> None:
             f"Container.Update({addon_url(action='discovery_mode', nonce=new_nonce())},replace)"
         )
     except Exception as exc:
-        log(f"Discovery mode: could not replace container with Discovery screen: {exc}", xbmc.LOGWARNING)
+        log_discovery(f"Discovery mode: could not replace container with Discovery screen: {exc}", xbmc.LOGWARNING)
 
 
 def mix_cache_key(seed: str, size: int) -> str:
@@ -1029,7 +1014,7 @@ def read_track_metadata_cache(path: str) -> dict[str, object]:
         finally:
             connection.close()
     except Exception as exc:
-        log(f"Track metadata cache read failed for {path!r}: {exc}", xbmc.LOGDEBUG)
+        log_general(f"Track metadata cache read failed for {path!r}: {exc}", xbmc.LOGDEBUG)
         return {}
 
     if row is None:
@@ -1115,7 +1100,7 @@ def write_track_metadata_cache(path: str, metadata: dict | None) -> None:
         finally:
             connection.close()
     except Exception as exc:
-        log(f"Track metadata cache write failed for {path!r}: {exc}", xbmc.LOGDEBUG)
+        log_general(f"Track metadata cache write failed for {path!r}: {exc}", xbmc.LOGDEBUG)
 
 
 def build_sidecar_track_metadata_map(meta: dict | None) -> dict[str, dict]:
@@ -1360,7 +1345,7 @@ def enqueue_metadata_refresh_for_tracks(
         save_metadata_refresh_queue(queue)
 
     if queued_count:
-        log(
+        log_general(
             f"Queued {queued_count} track(s) for background metadata refresh "
             f"context={reason_context!r}, cache_path={cache_path!r}.",
             xbmc.LOGINFO,
@@ -1782,7 +1767,7 @@ def parse_kodi_datetime(value: object) -> int:
         text,
     )
     if not match:
-        log_library_freshness(f"Library freshness: could not parse Kodi datetime value {text!r}")
+        log_checks(f"Library freshness: could not parse Kodi datetime value {text!r}")
         return 0
 
     try:
@@ -1802,10 +1787,10 @@ def parse_kodi_datetime(value: object) -> int:
             tzinfo=datetime.timezone.utc,
         )
         timestamp = int(parsed.timestamp())
-        log_library_freshness(f"Library freshness: parsed Kodi datetime {text!r} as timestamp {timestamp}")
+        log_checks(f"Library freshness: parsed Kodi datetime {text!r} as timestamp {timestamp}")
         return timestamp
     except Exception as exc:
-        log_library_freshness(f"Library freshness: failed to convert Kodi datetime {text!r}: {exc}")
+        log_checks(f"Library freshness: failed to convert Kodi datetime {text!r}: {exc}")
         return 0
 
 
@@ -1830,7 +1815,7 @@ def get_audio_library_freshness() -> dict:
             {"properties": properties},
         )
     except Exception as exc:
-        log_library_freshness(f"Library freshness: could not read Kodi audio library properties: {exc}")
+        log_checks(f"Library freshness: could not read Kodi audio library properties: {exc}")
         return {
             "properties": {},
             "timestamps": {},
@@ -1841,7 +1826,7 @@ def get_audio_library_freshness() -> dict:
     timestamps = {}
     for key in properties:
         timestamps[key] = parse_kodi_datetime(result.get(key))
-        log_library_freshness(
+        log_checks(
             f"Library freshness: Kodi library property {key}="
             f"{str(result.get(key) or '')!r}, parsed_ts={timestamps[key]}"
         )
@@ -2235,7 +2220,7 @@ def format_repair_readiness_log(readiness: dict, mix_label: str = "") -> str:
 
 
 def log_repair_readiness(readiness: dict, mix_label: str = "") -> None:
-    log_info(format_repair_readiness_log(readiness, mix_label))
+    log_checks(format_repair_readiness_log(readiness, mix_label))
 
 
 def update_mix_repair_readiness_metadata(cache_path: str, tracks: list[str], meta: dict) -> dict:
@@ -2576,13 +2561,10 @@ def fetch_mix(seed_song: str, size: int, mix_params: dict | None = None, progres
     except Exception:
         encoded_seed = ""
 
-    log(f"MusicIP seed raw: {seed_song!r}", xbmc.LOGDEBUG)
-    log(f"MusicIP seed encoded: {encoded_seed!r}", xbmc.LOGDEBUG)
-    log(f"MusicIP playlist size: {size}", xbmc.LOGDEBUG)
-    log(f"MusicIP mix parameters: {params!r}", xbmc.LOGDEBUG)
-    log(f"MusicIP request URL: {url!r}", xbmc.LOGDEBUG)
-    log(f"Requesting MusicIP mix: {url}")
+    log_mixing(f"MusicIP mix request: seed {seed_song!r} (encoded {encoded_seed!r}), size {size}, "
+               f"parameters {params!r}, timeout {timeout} s, URL {url!r}")
 
+    started = time.time()
     try:
         with urlopen(url, timeout=timeout) as response:
             body = response.read()
@@ -2592,22 +2574,24 @@ def fetch_mix(seed_song: str, size: int, mix_params: dict | None = None, progres
         except Exception:
             error_body = b""
 
-        log(f"MusicIP HTTP error {exc.code}", xbmc.LOGERROR)
-        log(f"MusicIP error URL: {url!r}", xbmc.LOGERROR)
-        log(f"MusicIP error seed raw: {seed_song!r}", xbmc.LOGERROR)
-        log(f"MusicIP error seed encoded: {encoded_seed!r}", xbmc.LOGERROR)
-        log(f"MusicIP error playlist size: {size}", xbmc.LOGERROR)
-        log(f"MusicIP error body: {error_body!r}", xbmc.LOGERROR)
+        log_mixing(f"MusicIP HTTP error {exc.code}", xbmc.LOGERROR)
+        log_mixing(f"MusicIP error URL: {url!r}", xbmc.LOGERROR)
+        log_mixing(f"MusicIP error seed raw: {seed_song!r}", xbmc.LOGERROR)
+        log_mixing(f"MusicIP error seed encoded: {encoded_seed!r}", xbmc.LOGERROR)
+        log_mixing(f"MusicIP error playlist size: {size}", xbmc.LOGERROR)
+        log_mixing(f"MusicIP error body: {error_body!r}", xbmc.LOGERROR)
         raise MusicIPError(f"MusicIP server returned HTTP {exc.code}.") from exc
     except URLError as exc:
-        log(f"MusicIP URL error for {url!r}: {exc}", xbmc.LOGERROR)
+        log_mixing(f"MusicIP URL error for {url!r}: {exc}", xbmc.LOGERROR)
         raise MusicIPError(f"Could not reach MusicIP server at {get_server_host()}:{get_server_port()}.") from exc
     except Exception as exc:
-        log(f"MusicIP request failed for {url!r}: {exc}", xbmc.LOGERROR)
+        log_mixing(f"MusicIP request failed for {url!r}: {exc}", xbmc.LOGERROR)
         raise MusicIPError(f"MusicIP request failed: {exc}") from exc
 
     text = decode_response(body)
     tracks = [line.strip() for line in text.splitlines() if line.strip()]
+    log_mixing(f"MusicIP answered in {time.time() - started:.1f} s with {len(tracks)} song(s) for {seed_song!r}"
+               + "".join(f"\n  {number}. {track}" for number, track in enumerate(tracks, start=1)))
     if not tracks:
         raise MusicIPError("MusicIP returned an empty mix.")
 
@@ -3206,12 +3190,12 @@ def find_song_by_file_relaxed(songs: list[dict], path: str) -> dict | None:
 
 
 def log_library_candidates(path: str, songs: list[dict]) -> None:
-    log(f"MusicIP path: {path!r}", xbmc.LOGDEBUG)
-    log(f"Canonical MusicIP path: {canonical_audio_path(path)!r}", xbmc.LOGDEBUG)
+    log_general(f"MusicIP path: {path!r}", xbmc.LOGDEBUG)
+    log_general(f"Canonical MusicIP path: {canonical_audio_path(path)!r}", xbmc.LOGDEBUG)
     for song in songs:
         file_value = str(song.get("file") or "")
-        log(f"Kodi candidate file: {file_value!r}", xbmc.LOGDEBUG)
-        log(f"Kodi candidate canonical: {canonical_audio_path(file_value)!r}", xbmc.LOGDEBUG)
+        log_general(f"Kodi candidate file: {file_value!r}", xbmc.LOGDEBUG)
+        log_general(f"Kodi candidate canonical: {canonical_audio_path(file_value)!r}", xbmc.LOGDEBUG)
 
 
 def get_unique_song_candidates(songs: list[dict]) -> list[dict]:
@@ -3455,7 +3439,7 @@ def audio_library_get_songs_with_metadata_properties(params: dict, context: str)
         result = execute_jsonrpc("AudioLibrary.GetSongs", request_params)
         return result.get("songs") or []
     except Exception as exc:
-        log(f"{context}: metadata lookup failed with full properties: {exc}", xbmc.LOGDEBUG)
+        log_general(f"{context}: metadata lookup failed with full properties: {exc}", xbmc.LOGDEBUG)
 
     safe_params = dict(params or {})
     safe_params["properties"] = SONG_METADATA_SAFE_PROPERTIES
@@ -3463,10 +3447,10 @@ def audio_library_get_songs_with_metadata_properties(params: dict, context: str)
     try:
         result = execute_jsonrpc("AudioLibrary.GetSongs", safe_params)
         songs = result.get("songs") or []
-        log(f"{context}: metadata lookup retried with safe properties; returned {len(songs)} song(s).", xbmc.LOGDEBUG)
+        log_general(f"{context}: metadata lookup retried with safe properties; returned {len(songs)} song(s).", xbmc.LOGDEBUG)
         return songs
     except Exception as exc:
-        log(f"{context}: metadata lookup failed with safe properties: {exc}", xbmc.LOGDEBUG)
+        log_general(f"{context}: metadata lookup failed with safe properties: {exc}", xbmc.LOGDEBUG)
         return []
 
 
@@ -3491,7 +3475,7 @@ def collect_fallback_repair_candidates(hints: dict) -> list[dict]:
         if len(normalized_value) < 3:
             return
         if normalized_value in REPAIR_BROAD_TERMS:
-            log_info(f"Auto-repair fallback: skipping broad query term {normalized_value!r}")
+            log_checks(f"Auto-repair fallback: skipping broad query term {normalized_value!r}")
             return
 
         query_key = (field, normalized_value)
@@ -3499,9 +3483,9 @@ def collect_fallback_repair_candidates(hints: dict) -> list[dict]:
             return
 
         seen_queries.add(query_key)
-        log_info(f"Auto-repair fallback: query {field} contains {normalized_value!r}")
+        log_checks(f"Auto-repair fallback: query {field} contains {normalized_value!r}")
         result = query_library_songs_contains(field, normalized_value)
-        log_info(f"Auto-repair fallback: query returned {len(result)} candidate(s).")
+        log_checks(f"Auto-repair fallback: query returned {len(result)} candidate(s).")
         raw_candidates.extend(result)
 
     for term in hints.get("search_terms") or []:
@@ -3519,7 +3503,7 @@ def collect_fallback_repair_candidates(hints: dict) -> list[dict]:
         run_query("album", folder_hint)
 
     unique_candidates = get_unique_song_candidates(raw_candidates)
-    log_info(
+    log_checks(
         f"Auto-repair fallback: collected {len(raw_candidates)} raw candidate(s), "
         f"{len(unique_candidates)} unique candidate(s)."
     )
@@ -3659,9 +3643,9 @@ def score_fallback_repair_candidates(candidates: list[dict], hints: dict) -> lis
         scored.append(enriched)
 
     scored.sort(key=lambda item: int(item.get("_repair_score") or 0), reverse=True)
-    log_info(f"Auto-repair fallback: {len(scored)} scored candidate(s).")
+    log_checks(f"Auto-repair fallback: {len(scored)} scored candidate(s).")
     for index, candidate in enumerate(scored[:15], start=1):
-        log_info(
+        log_checks(
             f"Auto-repair fallback score {index}: "
             f"score={candidate.get('_repair_score')}, "
             f"safe_auto={candidate.get('_repair_safe_auto')}, "
@@ -3674,7 +3658,7 @@ def score_fallback_repair_candidates(candidates: list[dict], hints: dict) -> lis
 
 def get_fallback_repair_candidates(old_path: str) -> list[dict]:
     hints = build_repair_hints(old_path)
-    log_info(
+    log_checks(
         "Auto-repair fallback hints: "
         f"titles={hints.get('possible_titles')}, "
         f"artists={hints.get('possible_artists')}, "
@@ -3692,22 +3676,22 @@ def get_fallback_repair_candidates(old_path: str) -> list[dict]:
 def get_repair_candidates_for_path(old_path: str) -> list[dict]:
     filename, _directory = split_full_path(old_path)
     if not filename:
-        log_info(f"Auto-repair: no filename could be extracted from old path: {old_path!r}")
+        log_checks(f"Auto-repair: no filename could be extracted from old path: {old_path!r}")
         return []
 
-    log_info(f"Auto-repair: primary lookup by exact filename: {filename!r}")
+    log_checks(f"Auto-repair: primary lookup by exact filename: {filename!r}")
     candidates = query_library_songs_by_filename(filename)
     unique_candidates = get_unique_song_candidates(candidates)
-    log_info(
+    log_checks(
         f"Auto-repair: primary lookup returned {len(candidates)} raw candidate(s), "
         f"{len(unique_candidates)} unique candidate(s) for {filename!r}."
     )
 
     if unique_candidates:
-        log_info("Auto-repair: using primary filename candidate strategy.")
+        log_checks("Auto-repair: using primary filename candidate strategy.")
         return unique_candidates
 
-    log_info("Auto-repair: primary lookup returned no candidates; starting fallback heuristics.")
+    log_checks("Auto-repair: primary lookup returned no candidates; starting fallback heuristics.")
     return get_fallback_repair_candidates(old_path)
 
 
@@ -3740,10 +3724,10 @@ def format_repair_candidate_label(song: dict) -> str:
 
 
 def log_repair_candidates(old_path: str, candidates: list[dict]) -> None:
-    log_info(f"Auto-repair: missing path: {old_path!r}")
-    log_info(f"Auto-repair: candidate count: {len(candidates)}")
+    log_checks(f"Auto-repair: missing path: {old_path!r}")
+    log_checks(f"Auto-repair: candidate count: {len(candidates)}")
     for index, candidate in enumerate(candidates, start=1):
-        log_info(
+        log_checks(
             "Auto-repair candidate "
             f"{index}: file={str(candidate.get('file') or '').strip()!r}, "
             f"title={str(candidate.get('title') or '').strip()!r}, "
@@ -3756,7 +3740,7 @@ def choose_repair_candidate(old_path: str, candidates: list[dict]) -> str:
     log_repair_candidates(old_path, candidates)
 
     if not candidates:
-        log_info("Auto-repair: no repair candidates found.")
+        log_checks("Auto-repair: no repair candidates found.")
         return ""
 
     scored_candidates = [candidate for candidate in candidates if int(candidate.get("_repair_score") or 0) > 0]
@@ -3771,13 +3755,13 @@ def choose_repair_candidate(old_path: str, candidates: list[dict]) -> str:
         if best_safe_auto and best_score >= 120 and score_gap >= 35:
             value = str(best.get("file") or "").strip()
             if value:
-                log_info(
+                log_checks(
                     f"Auto-repair fallback: high-confidence candidate selected automatically: "
                     f"score={best_score}, gap={score_gap}, safe_auto={best_safe_auto}, file={value!r}"
                 )
                 return value
 
-        log_info(
+        log_checks(
             f"Auto-repair fallback: no high-confidence automatic match. "
             f"best_score={best_score}, second_score={second_score}, gap={score_gap}, "
             f"safe_auto={best_safe_auto}."
@@ -3788,15 +3772,15 @@ def choose_repair_candidate(old_path: str, candidates: list[dict]) -> str:
         if matched is not None:
             value = str(matched.get("file") or "").strip()
             if value:
-                log_info(f"Auto-repair: relaxed lookup selected candidate automatically: {value!r}")
+                log_checks(f"Auto-repair: relaxed lookup selected candidate automatically: {value!r}")
                 return value
 
         if len(candidates) == 1:
             value = str(candidates[0].get("file") or "").strip()
-            log_info(f"Auto-repair: single candidate selected automatically: {value!r}")
+            log_checks(f"Auto-repair: single candidate selected automatically: {value!r}")
             return value
 
-    log_info("Auto-repair: ambiguous candidates found, showing manual selection dialog.")
+    log_checks("Auto-repair: ambiguous candidates found, showing manual selection dialog.")
     labels = ["Skip this track"] + [format_repair_candidate_label(song) for song in candidates]
     selected = xbmcgui.Dialog().select(
         f"Repair missing track: {path_to_label(old_path)}",
@@ -3804,15 +3788,15 @@ def choose_repair_candidate(old_path: str, candidates: list[dict]) -> str:
     )
 
     if selected < 0:
-        log_info("Auto-repair: manual selection cancelled.")
+        log_checks("Auto-repair: manual selection cancelled.")
         raise MusicIPError("Repair cancelled.")
 
     if selected == 0:
-        log_info("Auto-repair: user skipped this track.")
+        log_checks("Auto-repair: user skipped this track.")
         return ""
 
     value = str(candidates[selected - 1].get("file") or "").strip()
-    log_info(f"Auto-repair: user selected repair candidate: {value!r}")
+    log_checks(f"Auto-repair: user selected repair candidate: {value!r}")
     return value
 
 
@@ -3820,7 +3804,7 @@ def choose_repair_candidate_automatic_only(old_path: str, candidates: list[dict]
     log_repair_candidates(old_path, candidates)
 
     if not candidates:
-        log_info("Auto-repair service: no repair candidates found.")
+        log_checks("Auto-repair service: no repair candidates found.")
         return ""
 
     scored_candidates = [candidate for candidate in candidates if int(candidate.get("_repair_score") or 0) > 0]
@@ -3842,13 +3826,13 @@ def choose_repair_candidate_automatic_only(old_path: str, candidates: list[dict]
         if len(high_confidence_candidates) == 1 and best_safe_auto and best_score >= 120 and score_gap >= 35:
             value = str(best.get("file") or "").strip()
             if value:
-                log_info(
+                log_checks(
                     f"Auto-repair service: high-confidence fallback candidate selected: "
                     f"score={best_score}, gap={score_gap}, file={value!r}"
                 )
                 return value
 
-        log_info(
+        log_checks(
             f"Auto-repair service: no safe automatic fallback match. "
             f"best_score={best_score}, second_score={second_score}, gap={score_gap}, "
             f"safe_auto={best_safe_auto}, high_confidence_count={len(high_confidence_candidates)}."
@@ -3859,24 +3843,24 @@ def choose_repair_candidate_automatic_only(old_path: str, candidates: list[dict]
     if matched is not None:
         value = str(matched.get("file") or "").strip()
         if value:
-            log_info(f"Auto-repair service: relaxed lookup selected candidate: {value!r}")
+            log_checks(f"Auto-repair service: relaxed lookup selected candidate: {value!r}")
             return value
 
     if len(candidates) == 1:
         value = str(candidates[0].get("file") or "").strip()
-        log_info(f"Auto-repair service: single primary candidate selected: {value!r}")
+        log_checks(f"Auto-repair service: single primary candidate selected: {value!r}")
         return value
 
-    log_info(f"Auto-repair service: {len(candidates)} unscored candidates found; manual repair required.")
+    log_checks(f"Auto-repair service: {len(candidates)} unscored candidates found; manual repair required.")
     return ""
 
 
 def repair_saved_mix_automatic_only(cache_path: str) -> int:
-    log_info(f"Auto-repair service: started for saved mix: {cache_path!r}")
+    log_checks(f"Auto-repair service: started for saved mix: {cache_path!r}")
 
     tracks = load_mix_by_cache_path(cache_path)
     if not tracks:
-        log_info("Auto-repair service: stored mix is empty.")
+        log_checks("Auto-repair service: stored mix is empty.")
         return 0
 
     repaired = 0
@@ -3890,21 +3874,21 @@ def repair_saved_mix_automatic_only(cache_path: str) -> int:
             continue
 
         missing += 1
-        log_info(f"Auto-repair service: track {index} is missing: {track!r}")
+        log_checks(f"Auto-repair service: track {index} is missing: {track!r}")
 
         candidates = get_repair_candidates_for_path(track)
         replacement = choose_repair_candidate_automatic_only(track, candidates)
 
         if replacement:
-            log_info(f"Auto-repair service: replacing {track!r} with {replacement!r}")
+            log_checks(f"Auto-repair service: replacing {track!r} with {replacement!r}")
             updated_tracks.append(replacement)
             replaced.append((track, replacement))
             repaired += 1
         else:
-            log_info(f"Auto-repair service: no safe automatic replacement for {track!r}")
+            log_checks(f"Auto-repair service: no safe automatic replacement for {track!r}")
             updated_tracks.append(track)
 
-    log_info(f"Auto-repair service: completed candidate handling. Missing={missing}, repaired={repaired}.")
+    log_checks(f"Auto-repair service: completed candidate handling. Missing={missing}, repaired={repaired}.")
 
     if repaired <= 0:
         return 0
@@ -3912,7 +3896,7 @@ def repair_saved_mix_automatic_only(cache_path: str) -> int:
     save_mix_by_cache_path(cache_path, updated_tracks)
     record_repair_history(cache_path, replaced, automatic=True)
     analyze_mix_consistency(cache_path)
-    log_info(f"Auto-repair service: saved repaired mix. Repaired={repaired}.")
+    log_checks(f"Auto-repair service: saved repaired mix. Repaired={repaired}.")
     return repaired
 
 
@@ -3926,11 +3910,11 @@ def record_repair_history(cache_path: str, replaced: list[tuple[str, str]], auto
 
 
 def repair_saved_mix_foreground(cache_path: str, progress=None) -> int:
-    log_info(f"Auto-repair: started for saved mix: {cache_path!r}")
+    log_checks(f"Auto-repair: started for saved mix: {cache_path!r}")
 
     tracks = load_mix_by_cache_path(cache_path)
     if not tracks:
-        log_info("Auto-repair: stored mix is empty.")
+        log_checks("Auto-repair: stored mix is empty.")
         raise MusicIPError("Stored mix is empty.")
 
     repaired = 0
@@ -3946,7 +3930,7 @@ def repair_saved_mix_foreground(cache_path: str, progress=None) -> int:
             continue
 
         missing += 1
-        log_info(f"Auto-repair: track {index} is missing: {track!r}")
+        log_checks(f"Auto-repair: track {index} is missing: {track!r}")
         if progress:
             progress(int(100 * index / len(tracks)), f"Looking for {path_to_label(track)}")
 
@@ -3954,25 +3938,25 @@ def repair_saved_mix_foreground(cache_path: str, progress=None) -> int:
         replacement = choose_repair_candidate(track, candidates)
 
         if replacement:
-            log_info(f"Auto-repair: replacing {track!r} with {replacement!r}")
+            log_checks(f"Auto-repair: replacing {track!r} with {replacement!r}")
             updated_tracks.append(replacement)
             replaced.append((track, replacement))
             repaired += 1
         else:
-            log_info(f"Auto-repair: no replacement selected for {track!r}")
+            log_checks(f"Auto-repair: no replacement selected for {track!r}")
             updated_tracks.append(track)
 
-    log_info(f"Auto-repair: completed candidate handling. Missing={missing}, repaired={repaired}.")
+    log_checks(f"Auto-repair: completed candidate handling. Missing={missing}, repaired={repaired}.")
 
     if repaired <= 0:
         analyze_mix_consistency(cache_path)
-        log_info("Auto-repair: no tracks were repaired.")
+        log_checks("Auto-repair: no tracks were repaired.")
         raise MusicIPError("No tracks were repaired.")
 
     save_mix_by_cache_path(cache_path, updated_tracks)
     record_repair_history(cache_path, replaced, automatic=False)
     analyze_mix_consistency(cache_path)
-    log_info(f"Auto-repair: saved repaired mix. Repaired={repaired}.")
+    log_checks(f"Auto-repair: saved repaired mix. Repaired={repaired}.")
     return repaired
 
 
@@ -3996,7 +3980,7 @@ def query_library_songs_strict(filename: str, directory: str) -> list[dict]:
     ]
 
     path_candidates = build_path_candidates(directory)
-    log(f"Library lookup filename={filename!r} path_candidates={path_candidates!r}", xbmc.LOGDEBUG)
+    log_general(f"Library lookup filename={filename!r} path_candidates={path_candidates!r}", xbmc.LOGDEBUG)
     if path_candidates:
         filters.append({
             "or": [
@@ -4125,32 +4109,32 @@ def get_library_track_metadata(path: str) -> dict[str, str]:
         return {}
 
     strict_candidates = query_library_songs_strict(filename, directory)
-    log(f"Strict library lookup returned {len(strict_candidates)} candidate song(s) for {path}", xbmc.LOGDEBUG)
+    log_general(f"Strict library lookup returned {len(strict_candidates)} candidate song(s) for {path}", xbmc.LOGDEBUG)
 
     matched_song = find_song_by_file_relaxed(strict_candidates, path)
     if matched_song is not None:
         return extract_song_metadata(matched_song)
 
     if len(strict_candidates) == 1:
-        log("Using single strict library candidate without file-match confirmation.", xbmc.LOGDEBUG)
+        log_general("Using single strict library candidate without file-match confirmation.", xbmc.LOGDEBUG)
         return extract_song_metadata(strict_candidates[0])
 
     filename_candidates = query_library_songs_by_filename(filename)
-    log(f"Filename-only library lookup returned {len(filename_candidates)} candidate song(s) for {path}", xbmc.LOGDEBUG)
+    log_general(f"Filename-only library lookup returned {len(filename_candidates)} candidate song(s) for {path}", xbmc.LOGDEBUG)
 
     matched_song = find_song_by_file_relaxed(filename_candidates, path)
     if matched_song is not None:
         return extract_song_metadata(matched_song)
 
     if len(filename_candidates) == 1:
-        log("Using single filename-only library candidate without file-match confirmation.", xbmc.LOGDEBUG)
+        log_general("Using single filename-only library candidate without file-match confirmation.", xbmc.LOGDEBUG)
         return extract_song_metadata(filename_candidates[0])
 
     if strict_candidates:
-        log("No unique relaxed match found in strict library candidates.", xbmc.LOGDEBUG)
+        log_general("No unique relaxed match found in strict library candidates.", xbmc.LOGDEBUG)
         log_library_candidates(path, strict_candidates)
     if filename_candidates:
-        log("No unique relaxed match found in filename-only library candidates.", xbmc.LOGDEBUG)
+        log_general("No unique relaxed match found in filename-only library candidates.", xbmc.LOGDEBUG)
         log_library_candidates(path, filename_candidates)
 
     return {}
@@ -4199,7 +4183,7 @@ def get_kodi_setting_value_safe(setting_id: str):
     try:
         return execute_jsonrpc("Settings.GetSettingValue", {"setting": setting_id}).get("value")
     except Exception as exc:
-        log(f"Could not read Kodi setting {setting_id!r}: {exc}", xbmc.LOGDEBUG)
+        log_general(f"Could not read Kodi setting {setting_id!r}: {exc}", xbmc.LOGDEBUG)
         return None
 
 
@@ -4214,11 +4198,11 @@ def get_kodi_music_track_template() -> str:
         value = get_kodi_setting_value_safe(setting_id)
         if isinstance(value, str) and "%" in value:
             KODI_MUSIC_TRACK_TEMPLATE_CACHE = value
-            log(f"Using Kodi music track template from {setting_id!r}: {value!r}", xbmc.LOGDEBUG)
+            log_general(f"Using Kodi music track template from {setting_id!r}: {value!r}", xbmc.LOGDEBUG)
             return value
 
     KODI_MUSIC_TRACK_TEMPLATE_CACHE = KODI_MUSIC_TRACK_TEMPLATE_FALLBACK
-    log(
+    log_general(
         f"Using fallback Kodi music track template: {KODI_MUSIC_TRACK_TEMPLATE_FALLBACK!r}",
         xbmc.LOGINFO,
     )
@@ -4461,9 +4445,9 @@ def run_selected_mix_keyboard_action(property_name: str, action_label: str) -> N
 
     try:
         xbmc.executebuiltin(command)
-        log(f"Keyboard shortcut executed {action_label}: {command}", xbmc.LOGINFO)
+        log_mixing(f"Keyboard shortcut executed {action_label}: {command}", xbmc.LOGINFO)
     except Exception as exc:
-        log(f"Keyboard shortcut failed for {action_label}: {exc}", xbmc.LOGERROR)
+        log_mixing(f"Keyboard shortcut failed for {action_label}: {exc}", xbmc.LOGERROR)
         notify(str(exc), xbmcgui.NOTIFICATION_ERROR)
 
     finish_plugin_action()
@@ -4849,7 +4833,7 @@ def show_root() -> None:
         try:
             add_current_mix_item(current_mix)
         except Exception as exc:
-            log(f"Current mix {current_mix!r} could not be listed: {exc}", xbmc.LOGWARNING)
+            log_general(f"Current mix {current_mix!r} could not be listed: {exc}", xbmc.LOGWARNING)
 
     discovery_item = xbmcgui.ListItem(label="Discovery mode", offscreen=True)
     apply_music_metadata(discovery_item, "Discovery mode")
@@ -4996,7 +4980,7 @@ def begin_discovery_playback(owner: str = "") -> dict:
 
     state = start_discovery_playlist_direct(state)
 
-    log(
+    log_discovery(
         f"Discovery mode: UI completed direct playlist start. state_path={discovery_state_path()}",
         xbmc.LOGINFO,
     )
@@ -5064,7 +5048,7 @@ def replace_with_radio_mode_menu() -> None:
         else:
             xbmc.executebuiltin(f"Container.Update({radio_mode_url()},replace)")
     except Exception as exc:
-        log(f"Radio mode: could not show the Radio screen: {exc}", xbmc.LOGWARNING)
+        log_radio(f"Radio mode: could not show the Radio screen: {exc}", xbmc.LOGWARNING)
 
 
 def radio_phase() -> str:
@@ -5261,7 +5245,7 @@ def open_radio_station(seed: str, favourite: dict | None, progress) -> bool:
         tracks = fetch_mix(seed, size, params, progress=progress)
     except Exception as exc:
         notify(f"Radio could not start: {exc}", xbmcgui.NOTIFICATION_ERROR)
-        log(f"Radio mode: start failed for seed {seed!r}: {exc}", xbmc.LOGERROR)
+        log_radio(f"Radio mode: start failed for seed {seed!r}: {exc}", xbmc.LOGERROR)
         return False
 
     discovery = get_discovery_state()
@@ -5325,11 +5309,11 @@ def open_radio_station(seed: str, favourite: dict | None, progress) -> bool:
     except Exception as exc:
         save_radio_state({"phase": "off", "stopped_ts": int(time.time()), "stop_reason": "playback_failed"})
         notify(f"Radio could not start: {exc}", xbmcgui.NOTIFICATION_ERROR)
-        log(f"Radio mode: playback failed: {exc}", xbmc.LOGERROR)
+        log_radio(f"Radio mode: playback failed: {exc}", xbmc.LOGERROR)
         return False
 
-    log(f"Radio mode: started from {seed!r} with {len(tracks)} song(s).", xbmc.LOGINFO)
-    log(f"Radio mode: station parameters: {describe_station_start(params, favourite, assisted)}", xbmc.LOGINFO)
+    log_radio(f"Radio mode: started from {seed!r} with {len(tracks)} song(s).", xbmc.LOGINFO)
+    log_radio(f"Radio mode: station parameters: {describe_station_start(params, favourite, assisted)}", xbmc.LOGINFO)
     notify(plain(f"Playing {favourite_title(favourite)}.") if favourite else "Station picked.")
     return True
 
@@ -5379,7 +5363,7 @@ def set_discovery_mix_dialog_hold(seed: str) -> dict:
         "pending_player_stop_reason": "",
     })
     save_discovery_state(state)
-    log(
+    log_discovery(
         f"Discovery mode: mix dialog hold started for seed={seed!r}, "
         f"excerpt_seconds={excerpt_seconds}.",
         xbmc.LOGINFO,
@@ -5433,7 +5417,7 @@ def clear_discovery_mix_dialog_hold(skip_if_elapsed: bool = False) -> None:
         if isinstance(queue, list) and target_pos < len(queue):
             try:
                 execute_jsonrpc("Player.GoTo", {"playerid": 0, "to": target_pos})
-                log(
+                log_discovery(
                     f"Discovery mode: mix dialog was open {elapsed}s >= {excerpt_seconds}s; "
                     f"skipping directly to playlist position {target_pos}.",
                     xbmc.LOGINFO,
@@ -5441,13 +5425,13 @@ def clear_discovery_mix_dialog_hold(skip_if_elapsed: bool = False) -> None:
                 update_discovery_state_for_playlist_position(state, target_pos)
                 return
             except Exception as exc:
-                log(f"Discovery mode: mix dialog cancel skip failed: {exc}", xbmc.LOGWARNING)
+                log_discovery(f"Discovery mode: mix dialog cancel skip failed: {exc}", xbmc.LOGWARNING)
 
     # Dialog was shorter than the excerpt length, or direct skip failed:
     # keep current_started_ts unchanged so the Discovery timer continues as if
     # the dialog had never been opened.
     save_discovery_state(state)
-    log(
+    log_discovery(
         f"Discovery mode: mix dialog hold cleared after {elapsed}s; "
         f"continuing existing excerpt timer.",
         xbmc.LOGINFO,
@@ -5498,7 +5482,7 @@ def update_discovery_state_for_playlist_position(state: dict, position: int) -> 
         "last_error": "",
     })
     save_discovery_state(state)
-    log(
+    log_discovery(
         f"Discovery mode: UI updated state for playlist position {position}, "
         f"label={state.get('current_label')!r}.",
         xbmc.LOGINFO,
@@ -5528,11 +5512,11 @@ def skip_discovery_song() -> bool | None:
             return None
 
         execute_jsonrpc("Player.GoTo", {"playerid": 0, "to": target_pos})
-        log(f"Discovery mode: UI requested direct Player.GoTo({target_pos}).", xbmc.LOGINFO)
+        log_discovery(f"Discovery mode: UI requested direct Player.GoTo({target_pos}).", xbmc.LOGINFO)
         update_discovery_state_for_playlist_position(state, target_pos)
         return True
     except Exception as exc:
-        log(f"Discovery mode: UI direct next failed: {exc}", xbmc.LOGWARNING)
+        log_discovery(f"Discovery mode: UI direct next failed: {exc}", xbmc.LOGWARNING)
         return False
 
 def discovery_mix_from_current() -> None:
@@ -5559,13 +5543,13 @@ def discovery_mix_from_current() -> None:
         tracks = fetch_mix_confirmed(seed, size)
     except MusicIPError as exc:
         notify(str(exc), xbmcgui.NOTIFICATION_WARNING if "cancelled" in str(exc).lower() else xbmcgui.NOTIFICATION_ERROR)
-        log(str(exc), xbmc.LOGERROR)
+        log_discovery(str(exc), xbmc.LOGERROR)
         clear_discovery_mix_dialog_hold(skip_if_elapsed=True)
         replace_with_discovery_mode_menu()
         return
     except Exception as exc:
         notify(str(exc), xbmcgui.NOTIFICATION_ERROR)
-        log(f"Discovery mix generation failed: {exc}", xbmc.LOGERROR)
+        log_discovery(f"Discovery mix generation failed: {exc}", xbmc.LOGERROR)
         clear_discovery_mix_dialog_hold(skip_if_elapsed=True)
         replace_with_discovery_mode_menu()
         return
@@ -5606,7 +5590,7 @@ def discovery_mix_from_current() -> None:
         play_tracks_as_music_playlist(tracks, track_metadata_list)
     except Exception as exc:
         notify(str(exc), xbmcgui.NOTIFICATION_ERROR)
-        log(f"Discovery mix playback failed: {exc}", xbmc.LOGERROR)
+        log_discovery(f"Discovery mix playback failed: {exc}", xbmc.LOGERROR)
         replace_with_discovery_mode_menu()
         return
 
@@ -5614,7 +5598,7 @@ def discovery_mix_from_current() -> None:
     try:
         xbmc.executebuiltin(f"Container.Update({build_saved_browse_url(cache_path)},replace)")
     except Exception as exc:
-        log(f"Discovery mode: could not replace container with generated mix: {exc}", xbmc.LOGWARNING)
+        log_discovery(f"Discovery mode: could not replace container with generated mix: {exc}", xbmc.LOGWARNING)
         replace_with_discovery_mode_menu()
 
 def show_saved_mixes() -> None:
@@ -5658,7 +5642,7 @@ def show_saved_mixes_by_date(date_key: str) -> None:
         try:
             add_saved_mix_item(cache_path)
         except Exception as exc:
-            log(f"Skipping invalid stored mix {cache_path}: {exc}", xbmc.LOGDEBUG)
+            log_mixing(f"Skipping invalid stored mix {cache_path}: {exc}", xbmc.LOGDEBUG)
 
     end_directory(HANDLE, cacheToDisc=False)
 
@@ -5676,14 +5660,14 @@ def generate_current_mix() -> None:
     except MusicIPError as exc:
         message = str(exc)
         notify(message, xbmcgui.NOTIFICATION_WARNING if "cancelled" in message.lower() else xbmcgui.NOTIFICATION_ERROR)
-        log(message, xbmc.LOGERROR)
+        log_mixing(message, xbmc.LOGERROR)
         add_error_item(f"MusicIP mix failed: {message}")
         end_directory(HANDLE, succeeded=True, cacheToDisc=False)
         return
     except Exception as exc:
         message = str(exc)
         notify(message, xbmcgui.NOTIFICATION_ERROR)
-        log(f"Generate mix from playing audio failed: {message}", xbmc.LOGERROR)
+        log_mixing(f"Generate mix from playing audio failed: {message}", xbmc.LOGERROR)
         add_error_item(f"MusicIP mix failed: {message}")
         end_directory(HANDLE, succeeded=True, cacheToDisc=False)
         return
@@ -5703,7 +5687,7 @@ def generate_current_mix() -> None:
     except Exception as exc:
         message = str(exc)
         notify(message, xbmcgui.NOTIFICATION_ERROR)
-        log(f"Generate mix playback failed: {message}", xbmc.LOGERROR)
+        log_mixing(f"Generate mix playback failed: {message}", xbmc.LOGERROR)
         add_error_item(f"MusicIP mix playback failed: {message}")
         end_directory(HANDLE, succeeded=True, cacheToDisc=False)
         return
@@ -5712,7 +5696,7 @@ def generate_current_mix() -> None:
     try:
         xbmc.executebuiltin(f"Container.Update({build_saved_browse_url(cache_path)},replace)")
     except Exception as exc:
-        log(f"Generate mix: could not replace container with generated mix: {exc}", xbmc.LOGWARNING)
+        log_mixing(f"Generate mix: could not replace container with generated mix: {exc}", xbmc.LOGWARNING)
         browse_saved_mix(cache_path)
 
 def browse_mix(
@@ -5742,12 +5726,12 @@ def browse_mix(
             queue_mix_assist_for_new_mix(cache_path, load_mix_by_cache_path(cache_path))
             created = True
         else:
-            log("Loaded the current mix.")
+            log_mixing("Loaded the current mix.")
         tracks = load_mix_by_cache_path(cache_path)
     except MusicIPError as exc:
         message = str(exc)
         notify(message, xbmcgui.NOTIFICATION_WARNING if "cancelled" in message.lower() else xbmcgui.NOTIFICATION_ERROR)
-        log(message, xbmc.LOGERROR)
+        log_mixing(message, xbmc.LOGERROR)
         add_error_item(f"MusicIP mix failed: {message}")
         end_directory(HANDLE, succeeded=True, updateListing=update_listing, cacheToDisc=False)
         return
@@ -5817,7 +5801,7 @@ def browse_saved_mix(
         size = int(meta.get("size") or len(tracks) or get_playlist_size())
     except MusicIPError as exc:
         notify(str(exc), xbmcgui.NOTIFICATION_WARNING if "cancelled" in str(exc).lower() else xbmcgui.NOTIFICATION_ERROR)
-        log(str(exc), xbmc.LOGERROR)
+        log_mixing(str(exc), xbmc.LOGERROR)
         end_directory(HANDLE, succeeded=False, updateListing=update_listing, cacheToDisc=False)
         return
 
@@ -5835,7 +5819,7 @@ def browse_saved_mix(
             created = True
         except MusicIPError as exc:
             notify(str(exc), xbmcgui.NOTIFICATION_WARNING if "cancelled" in str(exc).lower() else xbmcgui.NOTIFICATION_ERROR)
-            log(str(exc), xbmc.LOGERROR)
+            log_mixing(str(exc), xbmc.LOGERROR)
             end_directory(HANDLE, succeeded=False, updateListing=update_listing, cacheToDisc=False)
             return
 
@@ -5880,8 +5864,9 @@ def record_mix_history(cache_path: str, kind: str, **details) -> None:
         history.append(dict(details, kind=kind, ts=int(time.time())))
         meta[MIX_HISTORY_KEY] = history[-MIX_HISTORY_LIMIT:]
         save_json_file(meta_path, meta)
+        log_mixing(f"Mix history of {os.path.basename(cache_path)!r}: {kind} {json.dumps(details, ensure_ascii=False, default=str)}")
     except Exception as exc:
-        log(f"Mix history: could not record {kind!r} for {cache_path!r}: {exc}", xbmc.LOGWARNING)
+        log_mixing(f"Mix history: could not record {kind!r} for {cache_path!r}: {exc}", xbmc.LOGWARNING)
     if kind in ("ai_tidy_up", "ai_undone", "intent_edited", "more_like_this"):
         mix_assist_usage.emit("mix", event=kind, automatic=bool(details.get("automatic")),
                               judged=int(details.get("judged") or 0),
@@ -6183,6 +6168,8 @@ def record_usage(kind: str, **fields) -> None:
 
 
 mix_assist_usage.set_sink(record_usage)
+# AI Mix Assist's steps go to kodi.log while its logging is on (Settings > Logging).
+mix_assist_trace.set_sink(log_ai, lambda: logs.enabled("ai"))
 
 
 def format_count(value: float) -> str:
@@ -6365,7 +6352,7 @@ def show_info_window(heading: str, facts: str, tabs: list[dict], fallback) -> No
         set_highlight_properties()
         window = InfoWindow(INFO_WINDOW_XML, ADDON.getAddonInfo("path"), "Default", "1080i").setup(heading, facts, tabs)
     except Exception as exc:
-        log(f"The information window is not available ({exc}); showing the text instead", xbmc.LOGWARNING)
+        log_general(f"The information window is not available ({exc}); showing the text instead", xbmc.LOGWARNING)
         fallback()
         return
     window.doModal()
@@ -6872,7 +6859,7 @@ def apply_mix_album_metadata(list_item: xbmcgui.ListItem, cache_path: str, track
         if fields["duration"]:
             tag.setDuration(fields["duration"])
     except Exception as exc:
-        log(f"Mix album fields for {cache_path!r}: {exc}", xbmc.LOGDEBUG)
+        log_mixing(f"Mix album fields for {cache_path!r}: {exc}", xbmc.LOGDEBUG)
     list_item.setProperty("Album_Type", "Mix")
     list_item.setProperty("Album_Label", MIX_ALBUM_ARTIST)
     description = [f"From: {fields['seed_label']}"] if fields["seed_label"] else []
@@ -6956,7 +6943,7 @@ def forget_cached_image(path: str) -> None:
         for texture in result.get("textures") or []:
             execute_jsonrpc("Textures.RemoveTexture", {"textureid": texture["textureid"]})
     except Exception as exc:
-        log(f"Could not remove Kodi's cached copy of {path!r}: {exc}", xbmc.LOGDEBUG)
+        log_general(f"Could not remove Kodi's cached copy of {path!r}: {exc}", xbmc.LOGDEBUG)
 
 
 def cover_image_file(thumbnail: str) -> str:
@@ -7178,7 +7165,7 @@ def apply_playing_background(handle: int, items: list) -> None:
     try:
         background = playing_background()
     except Exception as exc:
-        log(f"No background for what plays: {exc}", xbmc.LOGDEBUG)
+        log_general(f"No background for what plays: {exc}", xbmc.LOGDEBUG)
         return
     if not background:
         return
@@ -7262,11 +7249,11 @@ def play_new_mix_if_idle(tracks: list[str]) -> bool:
     """Start a newly created mix, but never interrupt other media: not while anything plays or is paused."""
     try:
         if xbmc.Player().isPlaying():
-            log_info("New mix not started: other media is playing.")
+            log_mixing("New mix not started: other media is playing.")
             return False
         play_tracks_as_music_playlist(tracks, collect_mix_track_metadata(tracks, allow_live_lookup=True))
     except Exception as exc:
-        log(f"New mix could not be started: {exc}", xbmc.LOGWARNING)
+        log_mixing(f"New mix could not be started: {exc}", xbmc.LOGWARNING)
         return False
     notify("Playing the new mix.")
     return True
@@ -7558,7 +7545,7 @@ def mix_assist_for_more_like_this() -> bool:
 def report_automatic_mix_assist_error(exc: Exception) -> None:
     """Automatic checks stay quiet without the Claude CLI (AI Mix Assist is optional); other problems are shown."""
     kind = getattr(exc, "kind", "")
-    log(f"AI Mix Assist: {kind}: {exc}", xbmc.LOGWARNING if kind == mix_assist_claude.NOT_FOUND else xbmc.LOGERROR)
+    log_ai(f"AI Mix Assist: {kind}: {exc}", xbmc.LOGWARNING if kind == mix_assist_claude.NOT_FOUND else xbmc.LOGERROR)
     if kind != mix_assist_claude.NOT_FOUND:
         notify(MIX_ASSIST_MESSAGES.get(kind, str(exc)), xbmcgui.NOTIFICATION_WARNING)
 
@@ -7782,7 +7769,7 @@ def queue_mix_assist_for_new_mix(cache_path: str, tracks: list[str]) -> None:
     if not mix_assist_for_new_mixes() or len(tracks) < 2:
         return
     if mix_openness_index(get_saved_mix_metadata(cache_path, tracks)) == MIX_OPENNESS_OFF:
-        log_info(f"AI Mix Assist: off for {cache_path!r}; not queued.")
+        log_ai(f"AI Mix Assist: off for {cache_path!r}; not queued.")
         return
     try:
         queue = [entry for entry in load_json_file(mix_assist_queue_path()).get("entries", [])
@@ -7791,7 +7778,7 @@ def queue_mix_assist_for_new_mix(cache_path: str, tracks: list[str]) -> None:
         os.makedirs(os.path.dirname(mix_assist_queue_path()), exist_ok=True)
         save_json_file(mix_assist_queue_path(), {"entries": queue})
     except Exception as exc:
-        log(f"AI Mix Assist: could not queue {cache_path!r}: {exc}", xbmc.LOGWARNING)
+        log_ai(f"AI Mix Assist: could not queue {cache_path!r}: {exc}", xbmc.LOGWARNING)
 
 
 def pop_mix_assist_request() -> dict:
@@ -7832,7 +7819,7 @@ def patch_playlist_for_mix(original: list[str], plan: dict) -> int:
                 playlist.add(track, build_mix_playlist_item(track, metadata, position), index)
             patched += 1
         except Exception as exc:
-            log(f"AI Mix Assist: could not patch playlist position {position}: {exc}", xbmc.LOGWARNING)
+            log_ai(f"AI Mix Assist: could not patch playlist position {position}: {exc}", xbmc.LOGWARNING)
     return patched
 
 
@@ -7856,7 +7843,7 @@ def process_mix_assist_request(entry: dict) -> None:
     if not cache_path or not original:
         return
     if load_mix_by_cache_path(cache_path) != original:
-        log_info(f"AI Mix Assist: {cache_path!r} changed since it was queued; skipped.")
+        log_ai(f"AI Mix Assist: {cache_path!r} changed since it was queued; skipped.")
         return
     monitor = xbmc.Monitor()
 
@@ -7871,20 +7858,20 @@ def process_mix_assist_request(entry: dict) -> None:
                 progress=mix_assist_step_reporter(progress, MIX_ASSIST_STEPS, check=check_abort))
         check_abort()
         if load_mix_by_cache_path(cache_path) != original:
-            log_info(f"AI Mix Assist: {cache_path!r} changed while it was checked; not applied.")
+            log_ai(f"AI Mix Assist: {cache_path!r} changed while it was checked; not applied.")
             return
         changed = record_mix_assist_result(cache_path, original, plan, automatic=True)
     except mix_assist_claude.ClaudeError as exc:
         report_automatic_mix_assist_error(exc)
         return
     except MusicIPError as exc:
-        log(f"AI Mix Assist: {exc}", xbmc.LOGWARNING)
+        log_ai(f"AI Mix Assist: {exc}", xbmc.LOGWARNING)
         return
 
     if not changed:
         return
     patched = patch_playlist_for_mix(original, plan)
-    log_info(f"AI Mix Assist: {cache_path!r}: {len(plan['changes'])} replaced, {len(plan['removed'])} removed, "
+    log_ai(f"AI Mix Assist: {cache_path!r}: {len(plan['changes'])} replaced, {len(plan['removed'])} removed, "
              f"{patched} playlist entries patched.")
     if is_addon_mix_container_active() and wait_until_kodi_has_loaded():
         xbmc.executebuiltin("Container.Refresh")
@@ -7977,12 +7964,12 @@ def radio_more_candidates(seeds: list[str], seen, settings: dict | None = None, 
             try:
                 mix = fetch_mix(seed, mix_assist.MUSICIP_MAX_MIX, radio_mix_parameters(mix_assist.MUSICIP_MAX_MIX, settings))
             except MusicIPError as exc:
-                log(f"Radio mode: MusicIP's mix for {seed!r} failed: {exc}", xbmc.LOGWARNING)
+                log_radio(f"Radio mode: MusicIP's mix for {seed!r} failed: {exc}", xbmc.LOGWARNING)
                 continue
             lists["left"] -= 1
             fresh = [track for track in mix if normalize_track_identity(track) not in seen]
             if fresh:
-                log(f"Radio mode: AI Mix Assist looks further, in MusicIP's mix for {seed!r}.")
+                log_radio(f"Radio mode: AI Mix Assist looks further, in MusicIP's mix for {seed!r}.")
                 return fresh
         return []
     return more
@@ -7997,7 +7984,7 @@ def check_radio_start(tracks: list[str], count: int, check=None, settings: dict 
     try:
         mix = fetch_mix(seed, mix_assist.MUSICIP_MAX_MIX, radio_mix_parameters(mix_assist.MUSICIP_MAX_MIX, settings))
     except MusicIPError as exc:
-        log(f"Radio mode: MusicIP's mix for the start check failed: {exc}", xbmc.LOGWARNING)
+        log_radio(f"Radio mode: MusicIP's mix for the start check failed: {exc}", xbmc.LOGWARNING)
         mix = []
     candidates, known = [], {normalize_track_identity(seed)}
     for track in list(tracks[1:]) + mix:
@@ -8020,6 +8007,11 @@ def check_radio_refill(reference_song: str, candidates: list[str], count: int, r
     try:
         window = get_mix_reject_size() or mix_assist.ARTIST_WINDOW
         strictness, borderline = get_station_strictness(settings)
+        profile = "the station's drifting profile" if reference else "the song's own profile"
+        log_radio(f"Radio mode: checking {len(candidates)} candidate(s) for {reference_song!r}: {count} wanted, "
+                  f"strictness {strictness}{', borderline accepted' if borderline else ''}, at most "
+                  f"{radio_check_batches(settings)} batch(es), drift half-life {get_radio_drift_half_life(settings)} "
+                  f"song(s), measured against {profile}, artists blocked within {window}.")
         result = mix_assist.choose_additions(
             reference_song, candidates, count, store, mix_assist_ask(),
             resolve=lambda paths: mix_assist_library.resolve(paths, execute_jsonrpc, {}),
@@ -8810,7 +8802,7 @@ def router(params: dict[str, str] | None = None) -> None:
             removed = cleanup_saved_mixes_for_date(date_key, include_older=include_older)
         except Exception as exc:
             notify(str(exc), xbmcgui.NOTIFICATION_WARNING if "cancelled" in str(exc).lower() else xbmcgui.NOTIFICATION_ERROR)
-            log(str(exc), xbmc.LOGERROR)
+            log_general(str(exc), xbmc.LOGERROR)
             return
         if include_older:
             notify(f"Removed {removed} stored mix(es) from {date_key} and older.")
@@ -8841,7 +8833,7 @@ def router(params: dict[str, str] | None = None) -> None:
             delete_saved_mix_files(cache_path)
         except Exception as exc:
             notify(str(exc), xbmcgui.NOTIFICATION_WARNING if "cancelled" in str(exc).lower() else xbmcgui.NOTIFICATION_ERROR)
-            log(str(exc), xbmc.LOGERROR)
+            log_general(str(exc), xbmc.LOGERROR)
             return
         notify("Removed mix.")
         xbmc.executebuiltin(f"Container.Update({build_saved_mixes_url()},replace)")
@@ -8905,10 +8897,10 @@ def router(params: dict[str, str] | None = None) -> None:
             elif edit_mix_assist_intent(cache_path):
                 notify("Saved. Tidy up the mix to apply it.")
         except mix_assist_claude.ClaudeError as exc:
-            log(f"AI Mix Assist: {exc.kind}: {exc}", xbmc.LOGERROR)
+            log_ai(f"AI Mix Assist: {exc.kind}: {exc}", xbmc.LOGERROR)
             notify(MIX_ASSIST_MESSAGES.get(exc.kind, str(exc)), xbmcgui.NOTIFICATION_ERROR)
         except MusicIPError as exc:
-            log(f"AI Mix Assist: {exc}", xbmc.LOGERROR)
+            log_ai(f"AI Mix Assist: {exc}", xbmc.LOGERROR)
             notify(str(exc), xbmcgui.NOTIFICATION_ERROR)
         xbmc.executebuiltin("Container.Refresh")
         return
@@ -8925,7 +8917,7 @@ def router(params: dict[str, str] | None = None) -> None:
                 repaired = repair_saved_mix_foreground(cache_path, progress=progress)
         except MusicIPError as exc:
             notify(str(exc), xbmcgui.NOTIFICATION_WARNING if "cancelled" in str(exc).lower() else xbmcgui.NOTIFICATION_ERROR)
-            log(str(exc), xbmc.LOGERROR)
+            log_general(str(exc), xbmc.LOGERROR)
             xbmc.executebuiltin("Container.Refresh")
             return
 
@@ -9006,7 +8998,7 @@ def router(params: dict[str, str] | None = None) -> None:
             removed_path = remove_track_from_mix(seed, size, index, path, cache_path=cache_path)
         except MusicIPError as exc:
             notify(str(exc), xbmcgui.NOTIFICATION_WARNING if "cancelled" in str(exc).lower() else xbmcgui.NOTIFICATION_ERROR)
-            log(str(exc), xbmc.LOGERROR)
+            log_general(str(exc), xbmc.LOGERROR)
             return
 
         notify(f"Removed: {path_to_label(removed_path)}")
@@ -9034,7 +9026,7 @@ def router(params: dict[str, str] | None = None) -> None:
                                                           report=report, progress=progress)
         except MusicIPError as exc:
             notify(str(exc), xbmcgui.NOTIFICATION_WARNING if "cancelled" in str(exc).lower() else xbmcgui.NOTIFICATION_ERROR)
-            log(str(exc), xbmc.LOGERROR)
+            log_general(str(exc), xbmc.LOGERROR)
             return
 
         notify(more_like_this_message(inserted, report))
@@ -9060,7 +9052,7 @@ def router(params: dict[str, str] | None = None) -> None:
                                                          progress=progress)
         except MusicIPError as exc:
             notify(str(exc), xbmcgui.NOTIFICATION_WARNING if "cancelled" in str(exc).lower() else xbmcgui.NOTIFICATION_ERROR)
-            log(str(exc), xbmc.LOGERROR)
+            log_general(str(exc), xbmc.LOGERROR)
             return
 
         notify(f"Removed {removed} track(s).")
@@ -9084,7 +9076,7 @@ if __name__ == "__main__":
     try:
         router()
     except Exception as exc:  # pragma: no cover - defensive logging in Kodi runtime
-        log(f"Unhandled error: {exc}", xbmc.LOGERROR)
+        log_general(f"Unhandled error: {exc}", xbmc.LOGERROR)
         notify(str(exc), xbmcgui.NOTIFICATION_WARNING if "cancelled" in str(exc).lower() else xbmcgui.NOTIFICATION_ERROR)
         try:
             end_directory(HANDLE, succeeded=False, cacheToDisc=False)

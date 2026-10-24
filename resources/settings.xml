@@ -2,147 +2,161 @@
 <settings version="1">
     <section id="plugin.audio.musicip">
         <category id="general" label="30100">
-            <group id="1">
-                <setting id="plugin_extended_logging" type="boolean" label="30101" help="30102">
-                    <level>0</level>
-                    <default>false</default>
-                    <control type="toggle"/>
-                </setting>
-                <setting id="timeout" type="integer" label="30103" help="30104">
-                    <level>0</level>
-                    <default>10</default>
-                    <control type="edit" format="integer"><heading>30103</heading></control>
-                </setting>
-            </group>
-        </category>
-        <category id="server" label="30200">
-            <group id="1">
-                <setting id="host" type="string" label="30201" help="30202">
+            <group id="1" label="30101">
+                <setting id="host" type="string" label="30102" help="30103">
                     <level>0</level>
                     <default>localhost</default>
                     <constraints><allowempty>true</allowempty></constraints>
-                    <control type="edit" format="string"><heading>30201</heading></control>
+                    <control type="edit" format="string"><heading>30102</heading></control>
                 </setting>
-                <setting id="port" type="integer" label="30203" help="30204">
+                <setting id="port" type="integer" label="30104" help="30105">
                     <level>0</level>
                     <default>10002</default>
-                    <control type="edit" format="integer"><heading>30203</heading></control>
+                    <control type="edit" format="integer"><heading>30104</heading></control>
+                </setting>
+                <setting id="timeout" type="integer" label="30106" help="30107">
+                    <level>0</level>
+                    <default>10</default>
+                    <control type="edit" format="integer"><heading>30106</heading></control>
                 </setting>
             </group>
         </category>
         <category id="mix" label="30300">
-            <group id="1">
-                <setting id="playlist_size" type="integer" label="30301" help="30302">
+            <group id="1" label="30301">
+                <setting id="playlist_size" type="integer" label="30302" help="30303">
                     <level>0</level>
                     <default>20</default>
                     <constraints><minimum>1</minimum><step>1</step><maximum>100</maximum></constraints>
                     <control type="slider" format="integer"><popup>false</popup></control>
                 </setting>
-                <setting id="mix_style_preference" type="integer" label="30303" help="30304">
+                <setting id="mix_style_preference" type="integer" label="30304" help="30305">
                     <level>0</level>
                     <default>2</default>
                     <constraints><minimum>0</minimum><step>1</step><maximum>10</maximum></constraints>
                     <control type="slider" format="integer"><popup>false</popup></control>
                 </setting>
-                <setting id="mix_variety" type="integer" label="30305" help="30306">
+                <setting id="mix_variety" type="integer" label="30306" help="30307">
                     <level>0</level>
                     <default>0</default>
                     <constraints><minimum>0</minimum><step>1</step><maximum>9</maximum></constraints>
                     <control type="slider" format="integer"><popup>false</popup></control>
                 </setting>
-                <setting id="mix_filter" type="string" label="30307" help="30308">
+                <setting id="mix_filter" type="string" label="30308" help="30309">
                     <level>0</level>
                     <default/>
                     <constraints><allowempty>true</allowempty></constraints>
-                    <control type="edit" format="string"><heading>30307</heading></control>
+                    <control type="edit" format="string"><heading>30308</heading></control>
                 </setting>
-                <setting id="mix_reject_size" type="integer" label="30309" help="30310">
+                <setting id="mix_reject_size" type="integer" label="30310" help="30311">
                     <level>0</level>
                     <default>0</default>
                     <constraints><minimum>0</minimum><step>1</step><maximum>20</maximum></constraints>
                     <control type="slider" format="integer"><popup>false</popup></control>
                 </setting>
             </group>
+            <group id="2" label="30312">
+                <setting id="consistency_enabled" type="boolean" label="30313" help="30314">
+                    <level>0</level>
+                    <default>true</default>
+                    <control type="toggle"/>
+                </setting>
+                <setting id="consistency_interval_minutes" type="integer" label="30315" help="30316">
+                    <level>0</level>
+                    <default>60</default>
+                    <control type="edit" format="integer"><heading>30315</heading></control>
+                </setting>
+                <setting id="service_auto_repair_enabled" type="boolean" label="30317" help="30318">
+                    <level>0</level>
+                    <default>false</default>
+                    <control type="toggle"/>
+                </setting>
+            </group>
         </category>
         <category id="assist" label="30400">
-            <group id="1">
-                <setting id="mix_assist_auto_new_mixes" type="boolean" label="30401" help="30402">
+            <group id="1" label="30401">
+                <setting id="mix_assist_auto_new_mixes" type="boolean" label="30402" help="30403">
                     <level>0</level>
                     <default>true</default>
                     <control type="toggle"/>
                 </setting>
-                <setting id="mix_assist_auto_more_like_this" type="boolean" label="30403" help="30404">
+                <setting id="mix_assist_auto_more_like_this" type="boolean" label="30404" help="30405">
                     <level>0</level>
                     <default>true</default>
                     <control type="toggle"/>
                 </setting>
-                <setting id="mix_assist_mix_strictness" type="integer" label="30405" help="30406">
+                <setting id="mix_assist_mix_strictness" type="integer" label="30406" help="30407">
                     <level>0</level>
                     <default>2</default>
                     <constraints>
                         <options>
-                            <option label="30407">0</option>
-                            <option label="30408">1</option>
-                            <option label="30409">2</option>
-                            <option label="30410">3</option>
-                            <option label="30411">4</option>
+                            <option label="30408">0</option>
+                            <option label="30409">1</option>
+                            <option label="30410">2</option>
+                            <option label="30411">3</option>
+                            <option label="30412">4</option>
                         </options>
                     </constraints>
                     <control type="spinner" format="string"/>
                 </setting>
-                <setting id="mix_assist_name_mixes" type="boolean" label="30412" help="30413">
+                <setting id="mix_assist_name_mixes" type="boolean" label="30413" help="30414">
                     <level>0</level>
                     <default>true</default>
                     <control type="toggle"/>
                 </setting>
-                <setting id="mix_assist_auto_radio" type="boolean" label="30414" help="30415">
-                    <level>0</level>
-                    <default>true</default>
-                    <control type="toggle"/>
-                </setting>
-                <setting id="mix_assist_radio_drift" type="integer" label="30416" help="30417">
-                    <level>0</level>
-                    <default>1</default>
-                    <constraints>
-                        <options>
-                            <option label="30418">0</option>
-                            <option label="30419">1</option>
-                            <option label="30420">2</option>
-                        </options>
-                    </constraints>
-                    <control type="spinner" format="string"/>
-                </setting>
-                <setting id="mix_assist_station_strictness" type="integer" label="30421" help="30422">
-                    <level>0</level>
-                    <default>2</default>
-                    <constraints>
-                        <options>
-                            <option label="30423">0</option>
-                            <option label="30424">1</option>
-                            <option label="30425">2</option>
-                            <option label="30426">3</option>
-                            <option label="30427">4</option>
-                        </options>
-                    </constraints>
-                    <control type="spinner" format="string"/>
-                </setting>
-                <setting id="mix_assist_cli_path" type="string" label="30428" help="30429">
+            </group>
+            <group id="2" label="30415">
+                <setting id="mix_assist_cli_path" type="string" label="30416" help="30417">
                     <level>0</level>
                     <default/>
                     <constraints><allowempty>true</allowempty></constraints>
-                    <control type="edit" format="string"><heading>30428</heading></control>
+                    <control type="edit" format="string"><heading>30416</heading></control>
                 </setting>
-                <setting id="mix_assist_statistics" type="action" label="30430" help="30431">
+                <setting id="mix_assist_statistics" type="action" label="30418" help="30419">
                     <level>0</level>
                     <data>RunPlugin(plugin://plugin.audio.musicip/?action=mix_assist_statistics)</data>
                     <constraints><allowempty>true</allowempty></constraints>
                     <control type="button" format="action"><close>true</close></control>
                 </setting>
-                <setting id="mix_assist_statistics_reset" type="action" label="30432" help="30433">
+                <setting id="mix_assist_statistics_reset" type="action" label="30420" help="30421">
                     <level>0</level>
                     <data>RunPlugin(plugin://plugin.audio.musicip/?action=mix_assist_statistics_reset)</data>
                     <constraints><allowempty>true</allowempty></constraints>
                     <control type="button" format="action"><close>true</close></control>
+                </setting>
+            </group>
+        </category>
+        <category id="radio" label="30600">
+            <group id="1" label="30601">
+                <setting id="mix_assist_auto_radio" type="boolean" label="30602" help="30603">
+                    <level>0</level>
+                    <default>true</default>
+                    <control type="toggle"/>
+                </setting>
+                <setting id="mix_assist_radio_drift" type="integer" label="30604" help="30605">
+                    <level>0</level>
+                    <default>1</default>
+                    <constraints>
+                        <options>
+                            <option label="30606">0</option>
+                            <option label="30607">1</option>
+                            <option label="30608">2</option>
+                        </options>
+                    </constraints>
+                    <control type="spinner" format="string"/>
+                </setting>
+                <setting id="mix_assist_station_strictness" type="integer" label="30609" help="30610">
+                    <level>0</level>
+                    <default>2</default>
+                    <constraints>
+                        <options>
+                            <option label="30611">0</option>
+                            <option label="30612">1</option>
+                            <option label="30613">2</option>
+                            <option label="30614">3</option>
+                            <option label="30615">4</option>
+                        </options>
+                    </constraints>
+                    <control type="spinner" format="string"/>
                 </setting>
             </group>
         </category>
@@ -162,24 +176,34 @@
                 </setting>
             </group>
         </category>
-        <category id="consistency" label="30600">
+        <category id="logging" label="30700">
             <group id="1">
-                <setting id="consistency_enabled" type="boolean" label="30601" help="30602">
-                    <level>0</level>
-                    <default>true</default>
-                    <control type="toggle"/>
-                </setting>
-                <setting id="consistency_interval_minutes" type="integer" label="30603" help="30604">
-                    <level>0</level>
-                    <default>60</default>
-                    <control type="edit" format="integer"><heading>30603</heading></control>
-                </setting>
-                <setting id="service_extended_logging" type="boolean" label="30605" help="30606">
+                <setting id="log_general" type="boolean" label="30701" help="30702">
                     <level>0</level>
                     <default>false</default>
                     <control type="toggle"/>
                 </setting>
-                <setting id="service_auto_repair_enabled" type="boolean" label="30607" help="30608">
+                <setting id="log_mixing" type="boolean" label="30703" help="30704">
+                    <level>0</level>
+                    <default>false</default>
+                    <control type="toggle"/>
+                </setting>
+                <setting id="log_ai" type="boolean" label="30705" help="30706">
+                    <level>0</level>
+                    <default>false</default>
+                    <control type="toggle"/>
+                </setting>
+                <setting id="log_radio" type="boolean" label="30707" help="30708">
+                    <level>0</level>
+                    <default>false</default>
+                    <control type="toggle"/>
+                </setting>
+                <setting id="log_discovery" type="boolean" label="30709" help="30710">
+                    <level>0</level>
+                    <default>false</default>
+                    <control type="toggle"/>
+                </setting>
+                <setting id="log_checks" type="boolean" label="30711" help="30712">
                     <level>0</level>
                     <default>false</default>
                     <control type="toggle"/>

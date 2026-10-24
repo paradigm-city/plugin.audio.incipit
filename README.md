@@ -15,10 +15,12 @@ Kodi music add-on that can create a mix from the currently playing audio track o
 
 ## Settings
 
-- Playlist size (tracks)
-- HTTP timeout
-- MusicIP host
-- MusicIP port
+- **General**: the MusicIP server (host, port, HTTP timeout)
+- **Mixing**: mix parameters (playlist size, style, variety, filter, no artist repeat) and saved mixes (consistency check, its interval, automatic repair)
+- **AI Mix Assist**: new mixes and "More like this" (on track, openness, names), Claude Code (CLI path, statistics)
+- **Radio**: AI Mix Assist for stations (on track, drift, openness)
+- **Discovery mode**: excerpt length, start offset
+- **Logging**: one switch per area (General, Mixing, AI Mix Assist, Radio, Discovery mode, Saved-mix checks). With a switch on, that area writes detailed messages to `kodi.log`, each line tagged with its area, e.g. `[plugin.audio.musicip] [radio] ...`. Errors and warnings are always logged. AI Mix Assist logs every request to the AI in full, with its answer.
 
 ## Install
 

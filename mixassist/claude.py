@@ -10,6 +10,7 @@ Tested from Kodi 21's Python on Windows (docs/concept_ai_mix_assist.md, "Running
 from __future__ import annotations
 
 import glob
+import itertools
 import json
 import os
 import re
@@ -19,7 +20,7 @@ import tempfile
 import time
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
-from mixassist import usage
+from mixassist import trace, usage
 
 CREATE_NO_WINDOW = 0x08000000
 
@@ -36,6 +37,8 @@ NOT_LOGGED_IN = "not_logged_in"
 USAGE_LIMIT = "usage_limit"
 TIMEOUT = "timeout"
 FAILED = "failed"
+
+REQUEST_NUMBERS = itertools.count(1)
 
 
 class ClaudeError(Exception):
@@ -176,18 +179,30 @@ def ask(cli: str, system_prompt: str, schema: dict, message: str, model: str = D
         raise ClaudeError(NOT_FOUND, "The Claude CLI was not found.")
     started = time.monotonic()
     report = {"system_prompt": system_prompt, "model": model, "ok": False}
+    request = next(REQUEST_NUMBERS)  # pairs a request with its answer in the log
+    if trace.active():  # only then: prompt_label() remembers which prompts the log has in full
+        trace.say(f"AI request {request} ({model}, effort {effort}), {trace.prompt_label(system_prompt)}\n"
+                  f"Message:\n{message}")
+    stderr = ""
     try:
         stdout, stderr = run_command(cli, structured_command(system_prompt, schema, model, effort), message, timeout,
                                      runner)
         report.update(call_usage(stdout))
         result = parse_structured(stdout, stderr)
         report["ok"] = True
+        if trace.active():
+            trace.say(f"AI answer {request}:\n{json.dumps(result, ensure_ascii=False, indent=1)}")
         return result
     except ClaudeError as exc:
         report["failure"] = exc.kind
+        trace.say(f"AI request {request} failed ({exc.kind}): {exc}" + (f"\nstderr: {stderr.strip()[:2000]}"
+                                                                        if stderr.strip() else ""))
         raise
     finally:
         report["seconds"] = round(time.monotonic() - started, 1)
+        trace.say(f"AI request {request}: {report['seconds']} s, tokens in {report.get('input_tokens', 0)} "
+                  f"(cache read {report.get('cache_read_tokens', 0)}, written {report.get('cache_write_tokens', 0)}), "
+                  f"out {report.get('output_tokens', 0)}, API-equivalent cost ${report.get('cost_usd', 0):.4f}.")
         usage.emit("ai_call", **report)
 
 

@@ -13,83 +13,107 @@ msgid "General"
 msgstr ""
 
 msgctxt "#30101"
-msgid "Extended plugin logging"
-msgstr ""
-
-msgctxt "#30102"
-msgid "Writes detailed messages from the add-on's menus and actions to Kodi's log (kodi.log). Useful when looking into a problem; otherwise leave it off."
-msgstr ""
-
-msgctxt "#30103"
-msgid "HTTP timeout (seconds)"
-msgstr ""
-
-msgctxt "#30104"
-msgid "How long to wait for the MusicIP server to answer. Raise it if large mixes or a busy server cause time-outs."
-msgstr ""
-
-msgctxt "#30200"
 msgid "MusicIP server"
 msgstr ""
 
-msgctxt "#30201"
+msgctxt "#30102"
 msgid "Host"
 msgstr ""
 
-msgctxt "#30202"
+msgctxt "#30103"
 msgid "Name or address of the computer that runs the MusicIP server. \"localhost\" when it runs on this computer."
 msgstr ""
 
-msgctxt "#30203"
+msgctxt "#30104"
 msgid "Port"
 msgstr ""
 
-msgctxt "#30204"
+msgctxt "#30105"
 msgid "Port of the MusicIP server's web interface. MusicIP's default is 10002."
 msgstr ""
 
+msgctxt "#30106"
+msgid "HTTP timeout (seconds)"
+msgstr ""
+
+msgctxt "#30107"
+msgid "How long to wait for the MusicIP server to answer. Raise it if large mixes or a busy server cause time-outs."
+msgstr ""
+
 msgctxt "#30300"
-msgid "Mix parameters"
+msgid "Mixing"
 msgstr ""
 
 msgctxt "#30301"
-msgid "Mix size (tracks)"
+msgid "Mix parameters"
 msgstr ""
 
 msgctxt "#30302"
-msgid "How many tracks a new mix has. \"More like this\" and \"Less like this\" change a mix by a fifth of this number."
+msgid "Mix size (tracks)"
 msgstr ""
 
 msgctxt "#30303"
-msgid "Style preference (0 ignore, 10 strongly prefer)"
+msgid "How many tracks a new mix has. \"More like this\" and \"Less like this\" change a mix by a fifth of this number."
 msgstr ""
 
 msgctxt "#30304"
-msgid "How strongly MusicIP favours tracks in the seed's style. 0 ignores style; 10 strongly prefers it."
+msgid "Style preference (0 ignore, 10 strongly prefer)"
 msgstr ""
 
 msgctxt "#30305"
-msgid "Variety"
+msgid "How strongly MusicIP favours tracks in the seed's style. 0 ignores style; 10 strongly prefers it."
 msgstr ""
 
 msgctxt "#30306"
-msgid "How far MusicIP may reach from the seed. 0 keeps a mix close to the seed's sound; 9 gives the widest choice."
+msgid "Variety"
 msgstr ""
 
 msgctxt "#30307"
-msgid "MusicIP filter"
+msgid "How far MusicIP may reach from the seed. 0 keeps a mix close to the seed's sound; 9 gives the widest choice."
 msgstr ""
 
 msgctxt "#30308"
-msgid "Name of a filter defined in MusicIP, for example to leave out certain genres. Empty: no filter."
+msgid "MusicIP filter"
 msgstr ""
 
 msgctxt "#30309"
-msgid "Do not repeat artist within this many tracks"
+msgid "Name of a filter defined in MusicIP, for example to leave out certain genres. Empty: no filter."
 msgstr ""
 
 msgctxt "#30310"
+msgid "Do not repeat artist within this many tracks"
+msgstr ""
+
+msgctxt "#30311"
 msgid "Keeps an artist from appearing again within this many tracks. 0 allows repeats."
+msgstr ""
+
+msgctxt "#30312"
+msgid "Saved mixes"
+msgstr ""
+
+msgctxt "#30313"
+msgid "Enable saved-mix consistency service"
+msgstr ""
+
+msgctxt "#30314"
+msgid "Regularly checks saved mixes for files that were moved or deleted, and marks the mixes affected with a red \"!\"."
+msgstr ""
+
+msgctxt "#30315"
+msgid "Check interval (minutes)"
+msgstr ""
+
+msgctxt "#30316"
+msgid "How often the consistency check runs."
+msgstr ""
+
+msgctxt "#30317"
+msgid "Enable automatic mix repair"
+msgstr ""
+
+msgctxt "#30318"
+msgid "Replaces missing files in saved mixes on its own when the library has a safe match (the same song, moved or re-tagged). Uncertain cases are left for \"Auto-repair this mix\" in the mix's context menu."
 msgstr ""
 
 msgctxt "#30400"
@@ -97,135 +121,151 @@ msgid "AI Mix Assist"
 msgstr ""
 
 msgctxt "#30401"
-msgid "Keep new mixes on track"
+msgid "Mixes"
 msgstr ""
 
 msgctxt "#30402"
-msgid "After a new mix is created, AI Mix Assist checks it in the background and replaces tracks that don't fit what the mix is about. A progress bar shows the steps; the changes are in the mix history and can be undone. Needs the Claude Code CLI."
+msgid "Keep new mixes on track"
 msgstr ""
 
 msgctxt "#30403"
-msgid "Keep \"More like this\" on track"
+msgid "After a new mix is created, AI Mix Assist checks it in the background and replaces tracks that don't fit what the mix is about. A progress bar shows the steps; the changes are in the mix history and can be undone. Needs the Claude Code CLI."
 msgstr ""
 
 msgctxt "#30404"
-msgid "Before \"More like this\" inserts tracks, AI Mix Assist checks MusicIP's suggestions against the song you selected and inserts only those that clearly fit. Takes up to a minute."
+msgid "Keep \"More like this\" on track"
 msgstr ""
 
 msgctxt "#30405"
-msgid "Mix openness"
+msgid "Before \"More like this\" inserts tracks, AI Mix Assist checks MusicIP's suggestions against the song you selected and inserts only those that clearly fit. Takes up to a minute."
 msgstr ""
 
 msgctxt "#30406"
-msgid "How much variety a mix welcomes when AI Mix Assist checks a new mix, tidies one up or adds tracks with \"More like this\". Focused stays with the heart of the mix's style; Adventurous welcomes wide variation, including tracks the AI calls borderline. Balanced is the tested default."
+msgid "Mix openness"
 msgstr ""
 
 msgctxt "#30407"
-msgid "Focused"
+msgid "How much variety a mix welcomes when AI Mix Assist checks a new mix, tidies one up or adds tracks with \"More like this\". Focused stays with the heart of the mix's style; Adventurous welcomes wide variation, including tracks the AI calls borderline. Balanced is the tested default."
 msgstr ""
 
 msgctxt "#30408"
-msgid "Close"
-msgstr ""
-
-msgctxt "#30409"
-msgid "Balanced"
-msgstr ""
-
-msgctxt "#30410"
-msgid "Open"
-msgstr ""
-
-msgctxt "#30411"
-msgid "Adventurous"
-msgstr ""
-
-msgctxt "#30412"
-msgid "Name mixes and stations"
-msgstr ""
-
-msgctxt "#30413"
-msgid "At its first check, AI Mix Assist gives a mix or radio station a short name of 2 to 4 words saying what it is about, like \"Cosmic Analog Journeys\". It is shown instead of the seed song and suggested when you save a mix; a mix can be renamed in its \"AI Mix Assist...\" menu. Off: mixes and stations are named after their seed song, unless you name them yourself."
-msgstr ""
-
-msgctxt "#30414"
-msgid "Keep Radio on track"
-msgstr ""
-
-msgctxt "#30415"
-msgid "Takes the songs that clearly don't fit out of a new station's first songs, and checks every refill before it is queued. Runs in the background; the radio keeps playing."
-msgstr ""
-
-msgctxt "#30416"
-msgid "Station drift"
-msgstr ""
-
-msgctxt "#30417"
-msgid "How far a station may wander from the song you picked. Stay close: every song is measured against the picked song. Drift slowly: the station has moved half the way to where it went after about 60 songs (about 4 hours). Wander freely: after about 20 songs (about 1 hour 20 minutes)."
-msgstr ""
-
-msgctxt "#30418"
-msgid "Stay close to the picked song"
-msgstr ""
-
-msgctxt "#30419"
-msgid "Drift slowly"
-msgstr ""
-
-msgctxt "#30420"
-msgid "Wander freely"
-msgstr ""
-
-msgctxt "#30421"
-msgid "Station openness"
-msgstr ""
-
-msgctxt "#30422"
-msgid "How much each new song on the radio may surprise you. Focused keeps every song close to the one before; Adventurous welcomes bold steps, including songs the AI calls borderline. Same scale as Mix openness, set separately."
-msgstr ""
-
-msgctxt "#30423"
 msgid "Focused"
 msgstr ""
 
-msgctxt "#30424"
+msgctxt "#30409"
 msgid "Close"
 msgstr ""
 
-msgctxt "#30425"
+msgctxt "#30410"
 msgid "Balanced"
 msgstr ""
 
-msgctxt "#30426"
+msgctxt "#30411"
 msgid "Open"
 msgstr ""
 
-msgctxt "#30427"
+msgctxt "#30412"
 msgid "Adventurous"
 msgstr ""
 
-msgctxt "#30428"
+msgctxt "#30413"
+msgid "Name mixes and stations"
+msgstr ""
+
+msgctxt "#30414"
+msgid "At its first check, AI Mix Assist gives a mix or radio station a short name of 2 to 4 words saying what it is about, like \"Cosmic Analog Journeys\". It is shown instead of the seed song and suggested when you save a mix; a mix can be renamed in its \"AI Mix Assist...\" menu. Off: mixes and stations are named after their seed song, unless you name them yourself."
+msgstr ""
+
+msgctxt "#30415"
+msgid "Claude Code"
+msgstr ""
+
+msgctxt "#30416"
 msgid "Claude Code CLI (empty: find it automatically)"
 msgstr ""
 
-msgctxt "#30429"
+msgctxt "#30417"
 msgid "Full path to the Claude Code program (claude.exe). Leave empty to find it automatically, for example in the VS Code extension. AI Mix Assist uses your claude.ai subscription through it."
 msgstr ""
 
-msgctxt "#30430"
+msgctxt "#30418"
 msgid "Show statistics"
 msgstr ""
 
-msgctxt "#30431"
+msgctxt "#30419"
 msgid "What AI Mix Assist costs and does: requests to the AI, tokens, the rating cache's hit rate, what it changed in mixes and stations, and how often you undid it. Today, the last 7 and 30 days, all time."
 msgstr ""
 
-msgctxt "#30432"
+msgctxt "#30420"
 msgid "Reset statistics"
 msgstr ""
 
-msgctxt "#30433"
+msgctxt "#30421"
 msgid "Deletes the statistics counted so far (after asking). Statistics are kept for a year."
+msgstr ""
+
+msgctxt "#30600"
+msgid "Radio"
+msgstr ""
+
+msgctxt "#30601"
+msgid "AI Mix Assist"
+msgstr ""
+
+msgctxt "#30602"
+msgid "Keep Radio on track"
+msgstr ""
+
+msgctxt "#30603"
+msgid "Takes the songs that clearly don't fit out of a new station's first songs, and checks every refill before it is queued. Runs in the background; the radio keeps playing."
+msgstr ""
+
+msgctxt "#30604"
+msgid "Station drift"
+msgstr ""
+
+msgctxt "#30605"
+msgid "How far a station may wander from the song you picked. Stay close: every song is measured against the picked song. Drift slowly: the station has moved half the way to where it went after about 60 songs (about 4 hours). Wander freely: after about 20 songs (about 1 hour 20 minutes)."
+msgstr ""
+
+msgctxt "#30606"
+msgid "Stay close to the picked song"
+msgstr ""
+
+msgctxt "#30607"
+msgid "Drift slowly"
+msgstr ""
+
+msgctxt "#30608"
+msgid "Wander freely"
+msgstr ""
+
+msgctxt "#30609"
+msgid "Station openness"
+msgstr ""
+
+msgctxt "#30610"
+msgid "How much each new song on the radio may surprise you. Focused keeps every song close to the one before; Adventurous welcomes bold steps, including songs the AI calls borderline. Same scale as Mix openness, set separately."
+msgstr ""
+
+msgctxt "#30611"
+msgid "Focused"
+msgstr ""
+
+msgctxt "#30612"
+msgid "Close"
+msgstr ""
+
+msgctxt "#30613"
+msgid "Balanced"
+msgstr ""
+
+msgctxt "#30614"
+msgid "Open"
+msgstr ""
+
+msgctxt "#30615"
+msgid "Adventurous"
 msgstr ""
 
 msgctxt "#30500"
@@ -248,38 +288,54 @@ msgctxt "#30504"
 msgid "Where in each song the excerpt starts, as a share of its length. 33 % skips most intros."
 msgstr ""
 
-msgctxt "#30600"
-msgid "Consistency check"
+msgctxt "#30700"
+msgid "Logging"
 msgstr ""
 
-msgctxt "#30601"
-msgid "Enable saved-mix consistency service"
+msgctxt "#30701"
+msgid "General"
 msgstr ""
 
-msgctxt "#30602"
-msgid "Regularly checks saved mixes for files that were moved or deleted, and marks the mixes affected with a red \"!\"."
+msgctxt "#30702"
+msgid "Detailed messages in Kodi's log (kodi.log) about menus and screens, keymaps, track details and artwork, MusicIP library reloads and the service's start. Errors and warnings are always logged, whatever these switches say."
 msgstr ""
 
-msgctxt "#30603"
-msgid "Check interval (minutes)"
+msgctxt "#30703"
+msgid "Mixing"
 msgstr ""
 
-msgctxt "#30604"
-msgid "How often the consistency check runs."
+msgctxt "#30704"
+msgid "Every request to MusicIP (seed, parameters, address) with the songs it returned and how long it took, and every mix created, opened, refreshed or changed."
 msgstr ""
 
-msgctxt "#30605"
-msgid "Extended service logging"
+msgctxt "#30705"
+msgid "AI Mix Assist"
 msgstr ""
 
-msgctxt "#30606"
-msgid "Writes detailed messages from the background service to Kodi's log (kodi.log)."
+msgctxt "#30706"
+msgid "Every request to the AI with its full text and its answer, the ratings it gave, both checks for every track (distance from the seed, the AI's verdict and reason) and why each replacement was taken or passed over. Writes a lot."
 msgstr ""
 
-msgctxt "#30607"
-msgid "Enable automatic mix repair"
+msgctxt "#30707"
+msgid "Radio"
 msgstr ""
 
-msgctxt "#30608"
-msgid "Replaces missing files in saved mixes on its own when the library has a safe match (the same song, moved or re-tagged). Uncertain cases are left for \"Auto-repair this mix\" in the mix's context menu."
+msgctxt "#30708"
+msgid "Every step of a running station: what plays and what is queued, each refill with its seed and songs, the AI checks and what they changed, and why the station stopped."
+msgstr ""
+
+msgctxt "#30709"
+msgid "Discovery mode"
+msgstr ""
+
+msgctxt "#30710"
+msgid "Every step of Discovery mode: the snippet buffer, skips, playlist positions and player events."
+msgstr ""
+
+msgctxt "#30711"
+msgid "Saved-mix checks"
+msgstr ""
+
+msgctxt "#30712"
+msgid "The background check of saved mixes: missing files, the library's state, repair candidates with their scores, and every repair made."
 msgstr ""

@@ -23,6 +23,9 @@ import xbmcaddon
 import xbmcgui
 import xbmcvfs
 
+import logs
+from logs import log_ai, log_checks, log_discovery, log_general, log_mixing, log_radio
+
 
 ADDON = xbmcaddon.Addon()
 ADDON_ID = ADDON.getAddonInfo("id")
@@ -132,7 +135,7 @@ def ensure_musicip_keymap_installed() -> None:
             with open(target, "r", encoding="utf-8") as fh:
                 current = fh.read()
     except Exception as exc:
-        log(f"Could not read existing MusicIP keymap: {exc}", xbmc.LOGWARNING)
+        log_general(f"Could not read existing MusicIP keymap: {exc}", xbmc.LOGWARNING)
 
     if current == MUSICIP_KEYMAP_CONTENT:
         return
@@ -142,29 +145,14 @@ def ensure_musicip_keymap_installed() -> None:
         with open(target, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(MUSICIP_KEYMAP_CONTENT)
         xbmc.executebuiltin("ReloadKeymaps")
-        log(f"Installed MusicIP keymap to {target} and reloaded keymaps.", xbmc.LOGINFO)
+        log_general(f"Installed MusicIP keymap to {target} and reloaded keymaps.", xbmc.LOGINFO)
     except Exception as exc:
-        log(f"Could not install MusicIP keymap to {target}: {exc}", xbmc.LOGERROR)
+        log_general(f"Could not install MusicIP keymap to {target}: {exc}", xbmc.LOGERROR)
 
 
-def is_service_extended_logging_enabled() -> bool:
-    return get_setting_bool("service_extended_logging", False)
+def log_discovery_mode(message: str, level: int = xbmc.LOGINFO) -> None:
+    log_discovery(f"Discovery mode: {message}", level)
 
-
-def log(message: str, level: int = xbmc.LOGINFO, always: bool = False) -> None:
-    # Without extended service logging, only errors (and messages marked always) reach kodi.log.
-    if not always and level < xbmc.LOGERROR and not is_service_extended_logging_enabled():
-        return
-    xbmc.log(f"[{ADDON_ID}] {message}", level)
-
-
-def log_info(message: str) -> None:
-    log(message, xbmc.LOGINFO)
-
-
-
-def log_discovery(message: str, level: int = xbmc.LOGINFO) -> None:
-    log(f"Discovery mode: {message}", level)
 
 def execute_jsonrpc(method: str, params: dict | None = None) -> dict:
     payload = {
@@ -192,7 +180,7 @@ def parse_kodi_datetime(value: object) -> int:
         text,
     )
     if not match:
-        log_info(f"Library freshness: could not parse Kodi datetime value {text!r}")
+        log_checks(f"Library freshness: could not parse Kodi datetime value {text!r}")
         return 0
 
     try:
@@ -212,10 +200,10 @@ def parse_kodi_datetime(value: object) -> int:
             tzinfo=datetime.timezone.utc,
         )
         timestamp = int(parsed.timestamp())
-        log_info(f"Library freshness: parsed Kodi datetime {text!r} as timestamp {timestamp}")
+        log_checks(f"Library freshness: parsed Kodi datetime {text!r} as timestamp {timestamp}")
         return timestamp
     except Exception as exc:
-        log_info(f"Library freshness: failed to convert Kodi datetime {text!r}: {exc}")
+        log_checks(f"Library freshness: failed to convert Kodi datetime {text!r}: {exc}")
         return 0
 
 
@@ -233,7 +221,7 @@ def get_audio_library_freshness() -> dict:
             {"properties": properties},
         )
     except Exception as exc:
-        log(f"Library freshness: could not read Kodi audio library properties: {exc}", xbmc.LOGERROR)
+        log_checks(f"Library freshness: could not read Kodi audio library properties: {exc}", xbmc.LOGERROR)
         return {
             "properties": {},
             "timestamps": {},
@@ -244,7 +232,7 @@ def get_audio_library_freshness() -> dict:
     timestamps = {}
     for key in properties:
         timestamps[key] = parse_kodi_datetime(result.get(key))
-        log_info(
+        log_checks(
             f"Library freshness: Kodi library property {key}="
             f"{str(result.get(key) or '')!r}, parsed_ts={timestamps[key]}"
         )
@@ -268,7 +256,7 @@ def get_repair_readiness_for_consistency(consistency: dict, mix_label: str = "",
     # The rule lives in the plugin module; the service only logs with its own setting.
     plugin = load_plugin_module()
     readiness = plugin.evaluate_repair_readiness(consistency, search)
-    log_info(plugin.format_repair_readiness_log(readiness, mix_label))
+    log_checks(plugin.format_repair_readiness_log(readiness, mix_label))
     return readiness
 
 
@@ -328,7 +316,7 @@ def load_json_file(path: str) -> dict:
             return {}
         return json.loads(raw)
     except Exception as exc:
-        log(f"Could not load JSON file {path!r}: {exc}", xbmc.LOGWARNING)
+        log_general(f"Could not load JSON file {path!r}: {exc}", xbmc.LOGWARNING)
         return {}
 
 
@@ -340,7 +328,7 @@ def save_json_file(path: str, payload: dict) -> None:
         with xbmcvfs.File(path, "w") as handle:
             handle.write(json.dumps(payload or {}, indent=2, ensure_ascii=False))
     except Exception as exc:
-        log(f"Could not save JSON file {path!r}: {exc}", xbmc.LOGERROR)
+        log_general(f"Could not save JSON file {path!r}: {exc}", xbmc.LOGERROR)
 
 def get_music_playlist() -> xbmc.PlayList:
     return xbmc.PlayList(xbmc.PLAYLIST_MUSIC)
@@ -349,7 +337,7 @@ def get_music_playlist() -> xbmc.PlayList:
 class DiscoveryPlaybackMonitor(xbmc.Player):
     def _stop_discovery_from_player_event(self, event_name: str) -> None:
         if discovery_internal_player_change_active():
-            log_info(f"Discovery mode: ignored {event_name} during internal player change.")
+            log_discovery(f"Discovery mode: ignored {event_name} during internal player change.")
             return
 
         state = load_discovery_state()
@@ -363,11 +351,11 @@ class DiscoveryPlaybackMonitor(xbmc.Player):
         state["ui_refresh_requested"] = True
         state["ui_refresh_ts"] = int(time.time())
         save_discovery_state(state)
-        log_info(f"Discovery mode stopped because Kodi player event occurred: {event_name}.")
+        log_discovery(f"Discovery mode stopped because Kodi player event occurred: {event_name}.")
 
     def onPlayBackStopped(self) -> None:
         if discovery_internal_player_change_active():
-            log_info("Discovery mode: ignored player_stop during internal player change.")
+            log_discovery("Discovery mode: ignored player_stop during internal player change.")
             return
 
         state = load_discovery_state()
@@ -378,11 +366,11 @@ class DiscoveryPlaybackMonitor(xbmc.Player):
         state["pending_player_stop_ts"] = int(time.time())
         state["pending_player_stop_reason"] = "player_stop_event"
         save_discovery_state(state)
-        log_info("Discovery mode: player_stop event received; deferring classification.")
+        log_discovery("Discovery mode: player_stop event received; deferring classification.")
 
     def onPlayBackEnded(self) -> None:
         if discovery_internal_player_change_active():
-            log_info("Discovery mode: ignored player_end during internal player change.")
+            log_discovery("Discovery mode: ignored player_end during internal player change.")
             return
 
         state = load_discovery_state()
@@ -392,7 +380,7 @@ class DiscoveryPlaybackMonitor(xbmc.Player):
         state["playlist_change_pending"] = True
         state["playlist_change_pending_ts"] = int(time.time())
         save_discovery_state(state)
-        log_info("Discovery mode: player ended; playlist change pending.")
+        log_discovery("Discovery mode: player ended; playlist change pending.")
 
     def onPlayBackError(self) -> None:
         self._stop_discovery_from_player_event("player_error")
@@ -462,7 +450,7 @@ def get_song_duration_seconds(song: dict) -> int:
         details = result.get("songdetails") or {}
         return max(0, int(details.get("duration") or 0))
     except Exception as exc:
-        log_info(f"Discovery mode: could not read song duration for songid={song_id!r}: {exc}")
+        log_discovery(f"Discovery mode: could not read song duration for songid={song_id!r}: {exc}")
         return 0
 
 
@@ -515,17 +503,17 @@ def discovery_playlist_item(entry: dict) -> xbmcgui.ListItem:
 def append_discovery_entry_to_playlist(entry: dict) -> bool:
     file_path = str(entry.get("file") or "").strip()
     if not file_path:
-        log_discovery("not appending empty playlist entry.", xbmc.LOGWARNING)
+        log_discovery_mode("not appending empty playlist entry.", xbmc.LOGWARNING)
         return False
     try:
         get_music_playlist().add(file_path, discovery_playlist_item(entry))
-        log_discovery(
+        log_discovery_mode(
             f"appended playlist item: label={entry.get('label')!r}, "
             f"offset={entry.get('offset')}s, file={file_path!r}"
         )
         return True
     except Exception as exc:
-        log_discovery(f"could not append playlist item {file_path!r}: {exc}", xbmc.LOGERROR)
+        log_discovery_mode(f"could not append playlist item {file_path!r}: {exc}", xbmc.LOGERROR)
         return False
 
 
@@ -562,7 +550,7 @@ def ensure_discovery_queue(state: dict, song_cache: list[dict]) -> tuple[dict, l
     if not song_cache:
         song_cache = get_music_library_songs()
 
-    log_discovery(
+    log_discovery_mode(
         f"ensuring playlist buffer: current_queue={len(queue)}, "
         f"target={DISCOVERY_BUFFER_SIZE}, song_cache={len(song_cache)}"
     )
@@ -586,9 +574,9 @@ def ensure_discovery_queue(state: dict, song_cache: list[dict]) -> tuple[dict, l
     state["refill_threshold"] = DISCOVERY_REFILL_THRESHOLD
 
     if added:
-        log_discovery(f"playlist buffer appended {added} item(s); queue now {len(queue)}.")
+        log_discovery_mode(f"playlist buffer appended {added} item(s); queue now {len(queue)}.")
     else:
-        log_discovery(
+        log_discovery_mode(
             f"playlist buffer appended no items. attempts={attempts}, "
             f"song_cache={len(song_cache)}, queue={len(queue)}",
             xbmc.LOGWARNING,
@@ -630,7 +618,7 @@ def refill_discovery_playlist_if_needed(state: dict, song_cache: list[dict]) -> 
     state["queue"] = queue
     if added:
         save_discovery_state(state)
-        log_info(
+        log_discovery(
             f"Discovery mode: appended {added} item(s) at playlist end; "
             f"remaining_future={len(queue) - position - 1 if position >= 0 else len(queue)}."
         )
@@ -660,7 +648,7 @@ def prune_discovery_playlist_backlog(state: dict) -> dict:
             execute_jsonrpc("Playlist.Remove", {"playlistid": 0, "position": 0})
             removed += 1
         except Exception as exc:
-            log_info(f"Discovery mode: Playlist.Remove backlog prune failed: {exc}")
+            log_discovery(f"Discovery mode: Playlist.Remove backlog prune failed: {exc}")
             break
 
     if removed <= 0:
@@ -671,7 +659,7 @@ def prune_discovery_playlist_backlog(state: dict) -> dict:
     state["playlist_pruned_count"] = int(state.get("playlist_pruned_count") or 0) + removed
     save_discovery_state(state)
 
-    log_info(
+    log_discovery(
         f"Discovery mode: pruned {removed} old playlist item(s); "
         f"backlog kept={DISCOVERY_BACKLOG_SIZE}, new_position={state.get('current_playlist_position')}."
     )
@@ -707,7 +695,7 @@ def update_discovery_current_from_playlist(state: dict) -> dict:
         state["playlist_change_pending"] = False
         state["ui_refresh_requested"] = True  # the Discovery screen shows the snippet and its artwork
         save_discovery_state(state)
-        log_info(
+        log_discovery(
             f"Discovery mode: current playlist item is now position={position}, "
             f"label={state.get('current_label')!r}, offset={state.get('current_offset_seconds')}s."
         )
@@ -754,12 +742,12 @@ def correct_current_playlist_offset_if_needed(state: dict) -> dict:
             state["last_seek_correction_from"] = current_time
             state["last_seek_correction_to"] = offset_seconds
             save_discovery_state(state)
-            log_info(
+            log_discovery(
                 f"Discovery mode: corrected playlist playback position from {current_time}s "
                 f"back to offset {offset_seconds}s."
             )
         except Exception as exc:
-            log_info(f"Discovery mode: playlist offset correction failed: {exc}")
+            log_discovery(f"Discovery mode: playlist offset correction failed: {exc}")
 
     return state
 
@@ -785,15 +773,15 @@ def advance_discovery_playlist(state: dict, song_cache: list[dict], reason: str)
             state["last_next_reason"] = reason
             state["last_next_ts"] = int(time.time())
             save_discovery_state(state)
-            log_info(f"Discovery mode: advanced playlist to position {next_position} ({reason}).")
+            log_discovery(f"Discovery mode: advanced playlist to position {next_position} ({reason}).")
         except Exception as exc:
-            log_info(f"Discovery mode: Player.GoTo next failed: {exc}")
+            log_discovery(f"Discovery mode: Player.GoTo next failed: {exc}")
 
     return update_discovery_current_from_playlist(state), song_cache
 
 
 def get_music_library_songs() -> list[dict]:
-    log_discovery("loading Kodi music library songs for playlist buffer.")
+    log_discovery_mode("loading Kodi music library songs for playlist buffer.")
     params = {
         "properties": ["title", "artist", "displayartist", "album", "duration", "file"],
         "sort": {"method": "random"},
@@ -802,14 +790,14 @@ def get_music_library_songs() -> list[dict]:
     try:
         result = execute_jsonrpc("AudioLibrary.GetSongs", params)
     except Exception as exc:
-        log_discovery(f"AudioLibrary.GetSongs with random sort failed: {exc}", xbmc.LOGWARNING)
+        log_discovery_mode(f"AudioLibrary.GetSongs with random sort failed: {exc}", xbmc.LOGWARNING)
         try:
             result = execute_jsonrpc(
                 "AudioLibrary.GetSongs",
                 {"properties": ["title", "artist", "displayartist", "album", "duration", "file"]},
             )
         except Exception as exc2:
-            log_discovery(f"AudioLibrary.GetSongs fallback failed: {exc2}", xbmc.LOGERROR)
+            log_discovery_mode(f"AudioLibrary.GetSongs fallback failed: {exc2}", xbmc.LOGERROR)
             return []
 
     songs = result.get("songs") or []
@@ -819,7 +807,7 @@ def get_music_library_songs() -> list[dict]:
         if file_path:
             usable.append(song)
 
-    log_discovery(f"loaded {len(usable)} usable song(s) from Kodi music library.")
+    log_discovery_mode(f"loaded {len(usable)} usable song(s) from Kodi music library.")
     return usable
 
 
@@ -860,9 +848,9 @@ def refresh_discovery_menu_if_visible() -> None:
 
     try:
         xbmc.executebuiltin("Container.Refresh")  # a refresh keeps the focused item (Container.Update resets it)
-        log_info("Discovery mode: refreshed visible Discovery mode menu.")
+        log_discovery("Discovery mode: refreshed visible Discovery mode menu.")
     except Exception as exc:
-        log_info(f"Discovery mode: could not refresh Discovery mode menu: {exc}")
+        log_discovery(f"Discovery mode: could not refresh Discovery mode menu: {exc}")
 
 
 def stop_discovery_playback(state: dict | None = None) -> dict:
@@ -920,7 +908,7 @@ def handle_pending_discovery_player_stop(state: dict) -> dict:
         state["ui_refresh_requested"] = True
         state["ui_refresh_ts"] = int(time.time())
         save_discovery_state(state)
-        log_info("Discovery mode stopped after confirmed Kodi player stop.")
+        log_discovery("Discovery mode stopped after confirmed Kodi player stop.")
         return state
 
     # In buffered playlist mode, Kodi emits player_stop-like events for
@@ -952,17 +940,17 @@ def handle_pending_discovery_player_stop(state: dict) -> dict:
             state["last_seek_correction_from"] = current_time
             state["last_seek_correction_to"] = offset_seconds
             save_discovery_state(state)
-            log_info(
+            log_discovery(
                 f"Discovery mode: treated pending player_stop as playlist transition; "
                 f"corrected from {current_time}s to {offset_seconds}s."
             )
         except Exception as exc:
             save_discovery_state(state)
-            log_info(f"Discovery mode: pending transition seek correction failed: {exc}")
+            log_discovery(f"Discovery mode: pending transition seek correction failed: {exc}")
         return state
 
     save_discovery_state(state)
-    log_info("Discovery mode: ignored pending player_stop because playback continues.")
+    log_discovery("Discovery mode: ignored pending player_stop because playback continues.")
     return state
 
 
@@ -1052,7 +1040,7 @@ def get_current_playing_file_for_discovery() -> str:
             return ""
         return str(player.getPlayingFile() or "")
     except Exception as exc:
-        log_info(f"Discovery mode: could not read current playing file: {exc}")
+        log_discovery(f"Discovery mode: could not read current playing file: {exc}")
         return ""
 
 
@@ -1084,7 +1072,7 @@ def current_playback_belongs_to_discovery(state: dict) -> bool:
     if expected and current_norm == expected:
         return True
 
-    log_info(
+    log_discovery(
         f"Discovery mode: current playback is outside Discovery queue. "
         f"current={current_file!r}, queue_size={len(discovery_files)}."
     )
@@ -1109,11 +1097,11 @@ def stop_discovery_due_to_external_playback(state: dict) -> dict:
     state["ui_refresh_requested"] = True
     state["ui_refresh_ts"] = int(time.time())
     save_discovery_state(state)
-    log_info("Discovery mode stopped because playback changed outside MusicIP.")
+    log_discovery("Discovery mode stopped because playback changed outside MusicIP.")
     try:
         refresh_discovery_menu_if_visible()
     except Exception as exc:
-        log_info(f"Discovery mode: could not refresh menu after external playback takeover: {exc}")
+        log_discovery(f"Discovery mode: could not refresh menu after external playback takeover: {exc}")
     return state
 
 
@@ -1121,7 +1109,7 @@ def run_discovery_tick(song_cache: list[dict]) -> list[dict]:
     state = load_discovery_state()
 
     if state.get("startup_in_progress"):
-        log_info("Discovery mode: startup in progress; service maintenance skipped.")
+        log_discovery("Discovery mode: startup in progress; service maintenance skipped.")
         return song_cache
 
     if not state.get("enabled"):
@@ -1149,7 +1137,7 @@ def run_discovery_tick(song_cache: list[dict]) -> list[dict]:
         state = prune_discovery_playlist_backlog(state)
         state = update_discovery_current_from_playlist(state)
         state = correct_current_playlist_offset_if_needed(state)
-        log_info("Discovery mode: mix dialog active; auto-skip paused.")
+        log_discovery("Discovery mode: mix dialog active; auto-skip paused.")
         return song_cache
 
     state = update_discovery_current_from_playlist(state)
@@ -1170,7 +1158,7 @@ def run_discovery_tick(song_cache: list[dict]) -> list[dict]:
         state["pending_player_stop"] = False
         state["pending_player_stop_reason"] = ""
         save_discovery_state(state)
-        log_info("Discovery mode stopped because Kodi player playback was stopped.")
+        log_discovery("Discovery mode stopped because Kodi player playback was stopped.")
         return song_cache
 
     if state.get("enabled") and discovery_needs_next_song(state):
@@ -1234,8 +1222,21 @@ def end_radio(state: dict, reason: str) -> dict:
         "ui_refresh_ts": int(time.time()),
     })
     save_radio_state(state)
-    log_info(f"Radio mode stopped: {reason}.")
+    queue = state.get("queue") or []
+    log_radio(f"Radio mode stopped: {reason}. Station {state.get('name') or ''!r}, played {int(state.get('played') or 0)} "
+              f"song(s); last song {state.get('current_label') or ''!r} at position {state.get('current_position')} of "
+              f"{len(queue)} queued.")
     return state
+
+
+# The last summary of a playing station written to the log: a tick logs its summary only when it changed.
+RADIO_TICK_SUMMARY = {"text": ""}
+
+
+def log_radio_tick(summary: str) -> None:
+    if summary != RADIO_TICK_SUMMARY["text"]:
+        RADIO_TICK_SUMMARY["text"] = summary
+        log_radio(f"Radio mode: {summary}")
 
 
 def run_radio_tick() -> None:
@@ -1272,9 +1273,13 @@ def run_radio_tick() -> None:
         if since <= 0:
             state["not_playing_since"] = now
             save_radio_state(state)
+            log_radio(f"Radio mode: the player stopped playing audio; the station ends if it doesn't play again within "
+                      f"{RADIO_STOP_GRACE_SECONDS} s.")
         elif now - since >= RADIO_STOP_GRACE_SECONDS and now - int(state.get("playing_started_ts") or 0) >= RADIO_STOP_GRACE_SECONDS:
             end_radio(state, "player_stop")
         return
+    if int(state.get("not_playing_since") or 0) > 0:
+        log_radio(f"Radio mode: playing again after {now - int(state['not_playing_since'])} s.")
     state["not_playing_since"] = 0
 
     queue = [entry for entry in state.get("queue") or [] if isinstance(entry, dict) and entry.get("file")]
@@ -1284,6 +1289,7 @@ def run_radio_tick() -> None:
     just_started = now - int(state.get("playing_started_ts") or 0) < RADIO_STOP_GRACE_SECONDS
     if current_file and normalize_discovery_playback_path(current_file) not in queued and not just_started:
         # A new station may still be replacing the old one's playback during the grace period.
+        log_radio(f"Radio mode: {current_file!r} plays, which is not one of the station's {len(queue)} queued song(s).")
         end_radio(state, "external_playback")
         return
 
@@ -1297,7 +1303,7 @@ def run_radio_tick() -> None:
             state["played"] = int(state.get("played") or 0) + (1 if position > 0 else 0)
             state["ui_refresh_requested"] = True  # the Radio screen shows the song and its artwork
             add_to_station_history(state, entry["file"])
-            log_info(f"Radio mode: now playing {state['current_label']!r} (position {position}).")
+            log_radio(f"Radio mode: now playing {state['current_label']!r} (position {position}).")
 
     position = prune_radio_backlog(state, position)
 
@@ -1312,7 +1318,17 @@ def run_radio_tick() -> None:
 
     remaining = len(state["queue"]) - position - 1 if position >= 0 else len(state["queue"])
     threshold = RADIO_CHECKED_THRESHOLD if assisted else RADIO_REFILL_THRESHOLD
-    if remaining < threshold and now >= int(state.get("next_refill_ts") or 0) and not radio_check_busy():
+    next_refill = int(state.get("next_refill_ts") or 0)
+    log_radio_tick(
+        f"position {position} of {len(state['queue'])} queued, {remaining} to come (refill below {threshold}); "
+        f"AI Mix Assist {'on' if assisted else 'off'}; "
+        + (f"{RADIO_CHECK['kind']} check {'running' if radio_check_running() else 'done, waiting to be applied'}; "
+           if radio_check_busy() else "no check running; ")
+        + (f"next refill not before {time.strftime('%H:%M:%S', time.localtime(next_refill))}." if next_refill > now
+           else "refill allowed now."))
+    if remaining < threshold and now >= next_refill and not radio_check_busy():
+        log_radio(f"Radio mode: {remaining} song(s) to come, fewer than {threshold}: refilling"
+                  f"{' (checked)' if assisted else ''}.")
         refill_radio_queue(state, checked=assisted)
 
     refresh_station_artwork(state)
@@ -1379,9 +1395,11 @@ def start_radio_check(state: dict, kind: str, job, fallback=(), seed: str = "") 
             RADIO_CHECK["result"] = {"error": exc}
 
     RADIO_CHECK.update(station=radio_station_id(state), kind=kind, result=None, fallback=list(fallback), seed=seed,
-                       superseded=False)
+                       superseded=False, started=time.time())
     RADIO_CHECK["thread"] = threading.Thread(target=run, daemon=True)
     RADIO_CHECK["thread"].start()
+    log_radio(f"Radio mode: {kind} check started in the background (seed {seed!r}, {len(fallback)} unchecked song(s) "
+              f"in reserve).")
 
 
 def start_radio_start_check(state: dict, plugin) -> None:
@@ -1390,7 +1408,7 @@ def start_radio_start_check(state: dict, plugin) -> None:
     files = [str(entry["file"]) for entry in state.get("queue") or []]
     tracks = [seed] + [track for track in files if plugin.normalize_track_identity(track) != plugin.normalize_track_identity(seed)]
     if seed:
-        log_info(f"Radio mode: AI Mix Assist checks the station's first {len(tracks) - 1} song(s) and MusicIP's mix "
+        log_radio(f"Radio mode: AI Mix Assist checks the station's first {len(tracks) - 1} song(s) and MusicIP's mix "
                  f"for the picked song.")
         settings = state.get("settings") if isinstance(state.get("settings"), dict) else None
         start_radio_check(state, "start", lambda check: plugin.check_radio_start(
@@ -1416,7 +1434,7 @@ def apply_radio_start_check(state: dict, plugin, position: int, result: dict) ->
         state["name"] = result["name"]
         state["ui_refresh_requested"] = True  # the Radio screen (and the first screen) show the name
     if result.get("checked") is False:
-        log_info("Radio mode: AI Mix Assist couldn't measure the first songs; they stay unchecked.")
+        log_radio("Radio mode: AI Mix Assist couldn't measure the first songs; they stay unchecked.")
         add_radio_event(state, "start_check", unchecked=True, intent=state["intent"], profile=state["reference"],
                         name=result.get("name") or "")
         return
@@ -1436,7 +1454,7 @@ def apply_radio_start_check(state: dict, plugin, position: int, result: dict) ->
         try:
             execute_jsonrpc("Playlist.Remove", {"playlistid": 0, "position": index})
         except Exception as exc:
-            log_info(f"Radio mode: removing a song that doesn't fit failed: {exc}")
+            log_radio(f"Radio mode: removing a song that doesn't fit failed: {exc}")
             continue
         state["queue"].pop(index)
         reason = reasons.get(plugin.normalize_track_identity(str(entry["file"])), {}).get("reason", "")
@@ -1454,7 +1472,10 @@ def apply_radio_start_check(state: dict, plugin, position: int, result: dict) ->
                     skipped=[{"track": entry.get("label", ""), "reason": entry.get("reason", "")}
                              for entry in not_fitting if entry.get("label", "") not in removed_labels][:10],
                     intent=state["intent"], profile=state["reference"], name=result.get("name") or "")
-    log_info(f"Radio mode: AI Mix Assist took out {len(removed_songs)} of the first songs and added {len(new)}.")
+    log_radio(f"Radio mode: AI Mix Assist took out {len(removed_songs)} of the first songs and added {len(new)}"
+              f" (songs up to position {protected} were left alone).")
+    for entry in removed_songs:
+        log_radio(f"Radio mode:   taken out: {entry['track']!r}: {entry['reason']}")
 
 
 def keep_radio_from_running_dry(state: dict, plugin, position: int) -> None:
@@ -1465,9 +1486,25 @@ def keep_radio_from_running_dry(state: dict, plugin, position: int) -> None:
     if RADIO_CHECK["station"] != radio_station_id(state) or position < 0 or position < len(state["queue"]) - 1:
         return
     RADIO_CHECK["superseded"] = True
-    log_info("Radio mode: the refill check is taking long; adding MusicIP's songs unchecked so the music goes on.")
+    log_radio("Radio mode: the refill check is taking long; adding MusicIP's songs unchecked so the music goes on.")
     append_radio_tracks(state, plugin, RADIO_CHECK["seed"], RADIO_CHECK["fallback"],
                         event={"kind": "refill_unchecked", "reason": "the AI check took too long"})
+
+
+def log_radio_check_result(kind: str, result: dict) -> None:
+    seconds = time.time() - float(RADIO_CHECK.get("started") or time.time())
+    if result.get("error") is not None:
+        log_radio(f"Radio mode: {kind} check failed after {seconds:.0f} s.")
+        return
+    log_radio(f"Radio mode: {kind} check finished after {seconds:.0f} s: {len(result.get('chosen') or [])} song(s) "
+              f"fit, {len(result.get('not_fitting') or [])} don't; {result.get('examined') or 0} examined from "
+              f"{result.get('lists') or 1} MusicIP list(s); measured: {result.get('checked')}.")
+    if result.get("intent"):
+        log_radio(f"Radio mode: what the station is about: {result['intent']}")
+    for path in result.get("chosen") or []:
+        log_radio(f"Radio mode:   fits: {path!r}")
+    for entry in result.get("not_fitting") or []:
+        log_radio(f"Radio mode:   doesn't fit: {entry.get('label', '')!r}: {entry.get('reason', '')}")
 
 
 def apply_radio_check(state: dict, plugin, position: int) -> None:
@@ -1477,9 +1514,12 @@ def apply_radio_check(state: dict, plugin, position: int) -> None:
     kind, result, station = RADIO_CHECK["kind"], RADIO_CHECK["result"], RADIO_CHECK["station"]
     fallback, seed, superseded = RADIO_CHECK["fallback"], RADIO_CHECK["seed"], RADIO_CHECK["superseded"]
     RADIO_CHECK.update(thread=None, result=None, fallback=[], seed="", superseded=False)
+    log_radio_check_result(kind, result)
     if station != radio_station_id(state):
+        log_radio("Radio mode: the check was made for an earlier station; its result is dropped.")
         return  # the station changed meanwhile
     if superseded:
+        log_radio("Radio mode: the check's songs were replaced by unchecked ones meanwhile; only its profile is kept.")
         if result.get("reference"):
             state["reference"] = result["reference"]  # its songs were replaced by the unchecked ones
             add_radio_event(state, "profile", profile=result["reference"])
@@ -1487,7 +1527,7 @@ def apply_radio_check(state: dict, plugin, position: int) -> None:
 
     error = result.get("error")
     if error is not None:
-        log(f"Radio mode: AI Mix Assist check failed: {error}", xbmc.LOGWARNING)
+        log_radio(f"Radio mode: AI Mix Assist check failed: {error}", xbmc.LOGWARNING)
         if getattr(error, "kind", ""):
             plugin.report_automatic_mix_assist_error(error)
         if kind == "refill" and fallback:  # keep the station going, unchecked
@@ -1510,11 +1550,11 @@ def apply_radio_check(state: dict, plugin, position: int) -> None:
             "skipped_count": skipped, "examined": result.get("examined") or 0, "lists": result.get("lists") or 1,
             "skipped": [{"track": entry.get("label", ""), "reason": entry.get("reason", "")} for entry in not_fitting[:10]]})
         state["refill_seed_offset"] = 0
-        log_info(f"Radio mode: AI Mix Assist kept {len(chosen)} song(s), skipped {skipped}.")
+        log_radio(f"Radio mode: AI Mix Assist kept {len(chosen)} song(s), skipped {skipped}.")
         return
     remaining = len(state["queue"]) - position - 1 if position >= 0 else len(state["queue"])
     if remaining <= 1 and fallback:
-        log_info("Radio mode: nothing fitted and the station is about to run dry; adding MusicIP's songs unchecked.")
+        log_radio("Radio mode: nothing fitted and the station is about to run dry; adding MusicIP's songs unchecked.")
         append_radio_tracks(state, plugin, seed, fallback, event={
             "kind": "refill_unchecked", "reason": "nothing fitted and the station was about to run dry"})
         return
@@ -1523,7 +1563,7 @@ def apply_radio_check(state: dict, plugin, position: int) -> None:
                     intent=result.get("intent") or "")
     state["refill_seed_offset"] = int(state.get("refill_seed_offset") or 0) + 1
     state["next_refill_ts"] = int(time.time()) + RADIO_REFILL_RETRY_SECONDS
-    log_info(f"Radio mode: none of {skipped} song(s) fitted; trying an earlier seed.")
+    log_radio(f"Radio mode: none of {skipped} song(s) fitted; trying an earlier seed.")
 
 
 def prune_radio_backlog(state: dict, position: int) -> int:
@@ -1536,12 +1576,12 @@ def prune_radio_backlog(state: dict, position: int) -> int:
             execute_jsonrpc("Playlist.Remove", {"playlistid": 0, "position": 0})
             removed += 1
         except Exception as exc:
-            log_info(f"Radio mode: removing an old playlist entry failed: {exc}")
+            log_radio(f"Radio mode: removing an old playlist entry failed: {exc}")
             break
     if removed:
         state["queue"] = state["queue"][removed:]
         state["current_position"] = max(0, position - removed)
-        log_info(f"Radio mode: removed {removed} old song(s) from the playlist.")
+        log_radio(f"Radio mode: removed {removed} old song(s) from the playlist.")
     return position - removed
 
 
@@ -1579,7 +1619,7 @@ def refresh_station_artwork(state: dict) -> bool:
         state["ui_refresh_requested"] = True
         if state.get("favourite_id"):  # a favourite keeps its station's most recent artwork
             plugin.save_favourite_artwork(str(state["favourite_id"]), made["cover"], made["fanart"])
-        log_info(f"Radio mode: new station artwork ({os.path.basename(made['fanart'] or made['cover'])}).")
+        log_radio(f"Radio mode: new station artwork ({os.path.basename(made['fanart'] or made['cover'])}).")
         return True
     return False
 
@@ -1611,16 +1651,19 @@ def refill_radio_queue(state: dict, checked: bool = False) -> int:
     settings = state.get("settings") if isinstance(state.get("settings"), dict) else None  # a favourite's own
 
     server_error = None
-    for entry in refill_seed_entries(state, checked)[offset:offset + RADIO_REFILL_SEEDS]:
+    seed_entries = refill_seed_entries(state, checked)[offset:offset + RADIO_REFILL_SEEDS]
+    log_radio(f"Radio mode: refill seeds to try (skipping {offset} earlier choice(s)): "
+              f"{[str(entry['file']) for entry in seed_entries]!r}; {len(seen_set)} song(s) seen this session.")
+    for entry in seed_entries:
         seed = str(entry["file"])
         try:
             request_size = RADIO_CHECK_SIZE if checked else size
             tracks = plugin.fetch_mix(seed, request_size, plugin.radio_mix_parameters(request_size, settings))
         except Exception as exc:
             if isinstance(exc, plugin.MusicIPError) and "empty mix" in str(exc):
-                log_info(f"Radio mode: MusicIP returned no songs for {seed!r}.")
+                log_radio(f"Radio mode: MusicIP returned no songs for {seed!r}.")
                 continue  # try the song before it
-            log(f"Radio mode: MusicIP mix for {seed!r} failed: {exc}", xbmc.LOGWARNING)
+            log_radio(f"Radio mode: MusicIP mix for {seed!r} failed: {exc}", xbmc.LOGWARNING)
             if server_error is None:
                 server_error = exc
                 continue  # it may be this song: try the one before it, once
@@ -1632,10 +1675,12 @@ def refill_radio_queue(state: dict, checked: bool = False) -> int:
             identity = plugin.normalize_track_identity(track)
             if identity not in seen_set and identity not in {plugin.normalize_track_identity(t) for t in new_tracks}:
                 new_tracks.append(track)
+        log_radio(f"Radio mode: MusicIP's mix for {seed!r} has {len(tracks)} song(s), {len(new_tracks)} of them new to "
+                  f"the station.")
         if new_tracks:
             used_seed = seed
             break
-        log_info(f"Radio mode: mix from {seed!r} brought no new songs.")
+        log_radio(f"Radio mode: mix from {seed!r} brought no new songs.")
 
     if server_error is not None:
         musicip_outage(state, plugin, server_error)
@@ -1643,11 +1688,11 @@ def refill_radio_queue(state: dict, checked: bool = False) -> int:
     if int(state.get("musicip_failures") or 0):
         state["musicip_failures"] = 0
         add_radio_event(state, "musicip_back")
-        log_info("Radio mode: MusicIP makes mixes again.")
+        log_radio("Radio mode: MusicIP makes mixes again.")
     if not new_tracks:
         state["next_refill_ts"] = now + RADIO_REFILL_RETRY_SECONDS
         state["refill_seed_offset"] = 0
-        log_info(f"Radio mode: no new songs for the station; retrying in {RADIO_REFILL_RETRY_SECONDS} s.")
+        log_radio(f"Radio mode: no new songs for the station; retrying in {RADIO_REFILL_RETRY_SECONDS} s.")
         return 0
 
     if checked:
@@ -1659,7 +1704,7 @@ def refill_radio_queue(state: dict, checked: bool = False) -> int:
         seeds = [str(entry["file"]) for entry in refill_seed_entries(state, True)]
         more_seeds = seeds[seeds.index(str(used_entry["file"])) + 1:] if str(used_entry["file"]) in seeds else []
         seen = list(seen_set)
-        log_info(f"Radio mode: AI Mix Assist picks {RADIO_CHECKED_BATCH} song(s) from MusicIP's {len(candidates)} "
+        log_radio(f"Radio mode: AI Mix Assist picks {RADIO_CHECKED_BATCH} song(s) from MusicIP's {len(candidates)} "
                  f"suggestion(s) for {used_seed!r} (closest first, checked in groups).")
         start_radio_check(
             state, "refill",
@@ -1679,7 +1724,7 @@ def musicip_outage(state: dict, plugin, error: Exception) -> None:
     state["musicip_failures"] = failures
     state["next_refill_ts"] = int(time.time()) + wait
     state["refill_seed_offset"] = 0
-    log(f"Radio mode: MusicIP can't make mixes ({error}); trying again in {wait} s.", xbmc.LOGWARNING)
+    log_radio(f"Radio mode: MusicIP can't make mixes ({error}); trying again in {wait} s.", xbmc.LOGWARNING)
     if failures == 1:
         add_radio_event(state, "musicip_failed", error=str(error))
         try:
@@ -1715,7 +1760,10 @@ def append_radio_tracks(state: dict, plugin, used_seed: str, new_tracks: list[st
         details = dict(event)
         add_radio_event(state, details.pop("kind"), seed=seed_label,
                         added=[str(entry.get("label") or "") for entry in queue[first_new:]], **details)
-    log_info(f"Radio mode: added {len(new_tracks)} song(s) seeded from {used_seed!r}.")
+    log_radio(f"Radio mode: added {len(new_tracks)} song(s) seeded from {used_seed!r}"
+              f"{' (checked)' if checked else ''}; {len(queue)} queued now.")
+    for index, entry in enumerate(queue[first_new:], start=first_new):
+        log_radio(f"Radio mode:   {index}: {entry.get('label')!r} ({entry['file']!r})")
     return len(new_tracks)
 
 
@@ -1740,7 +1788,7 @@ def refresh_radio_menu_if_visible() -> None:
     try:
         xbmc.executebuiltin("Container.Refresh")  # a refresh keeps the focused item (Container.Update resets it)
     except Exception as exc:
-        log_info(f"Radio mode: could not refresh the Radio screen: {exc}")
+        log_radio(f"Radio mode: could not refresh the Radio screen: {exc}")
 
 
 def reset_radio_mode_on_startup() -> None:
@@ -1748,7 +1796,7 @@ def reset_radio_mode_on_startup() -> None:
     if str(state.get("phase") or "off") != "off":
         state.update({"phase": "off", "stopped_ts": int(time.time()), "stop_reason": "startup_reset"})
         save_radio_state(state)
-        log_info("Radio mode: reset at service start.")
+        log_radio("Radio mode: reset at service start.")
 
 
 def run_consistency_check() -> int:
@@ -1768,10 +1816,10 @@ def run_consistency_check() -> int:
                 continue
             meta = plugin.get_saved_mix_metadata(cache_path)
             label = str(meta.get("label") or os.path.basename(cache_path))
-            log_info(f"Consistency check: {label!r} has {consistency.get('missing_files')} missing track(s).")
+            log_checks(f"Consistency check: {label!r} has {consistency.get('missing_files')} missing track(s).")
             checked.append((cache_path, consistency, meta, label))
         except Exception as exc:
-            log(f"Consistency check failed for {cache_path!r}: {exc}", xbmc.LOGWARNING)
+            log_checks(f"Consistency check failed for {cache_path!r}: {exc}", xbmc.LOGWARNING)
 
     newly_found, newly_unscanned = update_missing_file_searches(plugin, checked)
 
@@ -1782,7 +1830,7 @@ def run_consistency_check() -> int:
             if auto_repair and readiness.get("status") == "ready":
                 repaired = plugin.repair_saved_mix_automatic_only(cache_path)
                 repaired_tracks += repaired
-                log_info(f"Consistency check: automatic repair of {label!r} replaced {repaired} track(s).")
+                log_checks(f"Consistency check: automatic repair of {label!r} replaced {repaired} track(s).")
                 if repaired:
                     meta = plugin.get_saved_mix_metadata(cache_path)
                     readiness = get_repair_readiness_for_consistency(plugin.get_consistency_status(meta), label, search)
@@ -1793,9 +1841,9 @@ def run_consistency_check() -> int:
             meta["repair_readiness"] = readiness
             save_json_file(mix_meta_path_from_cache_path(cache_path), meta)
         except Exception as exc:
-            log(f"Consistency check failed for {cache_path!r}: {exc}", xbmc.LOGWARNING)
+            log_checks(f"Consistency check failed for {cache_path!r}: {exc}", xbmc.LOGWARNING)
 
-    log_info(
+    log_checks(
         f"Consistency check: checked {len(cache_paths)} mix(es), {len(checked)} inconsistent, "
         f"automatic repair {'enabled' if auto_repair else 'disabled'}, repaired {repaired_tracks} track(s)."
     )
@@ -1822,13 +1870,13 @@ def update_missing_file_searches(plugin, checked: list[tuple[str, dict, dict, st
     if not outdated:
         return [], []
     if load_discovery_state().get("enabled") or radio_is_active():
-        log_info("Consistency check: missing-file search postponed while Discovery or Radio mode is active.")
+        log_checks("Consistency check: missing-file search postponed while Discovery or Radio mode is active.")
         return [], []
 
     try:
         sources = plugin.get_music_source_paths()
     except Exception as exc:
-        log_info(f"Consistency check: missing-file search skipped, music sources unreadable: {exc}")
+        log_checks(f"Consistency check: missing-file search skipped, music sources unreadable: {exc}")
         return [], []
 
     missing_paths = sorted({
@@ -1838,7 +1886,7 @@ def update_missing_file_searches(plugin, checked: list[tuple[str, dict, dict, st
         if isinstance(item, dict) and item.get("path")
     })
     result = plugin.search_missing_files_outside_sources(missing_paths, sources)
-    log_info(
+    log_checks(
         f"Consistency check: searched {result['folders_searched']} folder(s) below {result['roots']!r} for "
         f"{len(missing_paths)} missing file(s); found {len(result['found_outside_sources'])} outside the music sources"
         f"{'' if result['complete'] else ' (search stopped at its time limit)'}: "
@@ -1882,11 +1930,11 @@ def notify_missing_files_found_outside_sources(locations: list[str]) -> None:
         message = f"Missing file found outside of the music sources: {locations[0]}"
     else:
         message = f"{len(locations)} missing files found outside of the music sources, e.g. {locations[0]}"
-    log_info(f"Consistency check: notifying about missing files outside the music sources: {locations!r}")
+    log_checks(f"Consistency check: notifying about missing files outside the music sources: {locations!r}")
     try:
         xbmcgui.Dialog().notification(ADDON.getAddonInfo("name"), message, xbmcgui.NOTIFICATION_INFO)
     except Exception as exc:
-        log(f"Could not show notification about missing files outside the music sources: {exc}", xbmc.LOGWARNING)
+        log_checks(f"Could not show notification about missing files outside the music sources: {exc}", xbmc.LOGWARNING)
 
 
 def notify_missing_files_found_in_unscanned_sources(sources: list[str]) -> None:
@@ -1895,11 +1943,11 @@ def notify_missing_files_found_in_unscanned_sources(sources: list[str]) -> None:
         message = f"Missing file found in a music source that is not scanned into the library: {sources[0]}"
     else:
         message = f"Missing files found in {len(sources)} music sources that are not scanned into the library."
-    log_info(f"Consistency check: notifying about missing files in unscanned music sources: {sources!r}")
+    log_checks(f"Consistency check: notifying about missing files in unscanned music sources: {sources!r}")
     try:
         xbmcgui.Dialog().notification(ADDON.getAddonInfo("name"), message, xbmcgui.NOTIFICATION_INFO)
     except Exception as exc:
-        log(f"Could not show notification about unscanned music sources: {exc}", xbmc.LOGWARNING)
+        log_checks(f"Could not show notification about unscanned music sources: {exc}", xbmc.LOGWARNING)
 
 
 def notify_repair_waiting_for_library(labels: list[str], sources_blocked: bool = False) -> None:
@@ -1908,28 +1956,28 @@ def notify_repair_waiting_for_library(labels: list[str], sources_blocked: bool =
         message = f"Mix '{labels[0]}' has missing tracks. {action} to allow automatic repair."
     else:
         message = f"{len(labels)} mixes have missing tracks. {action} to allow automatic repair."
-    log_info(f"Consistency check: notifying that automatic repair is waiting for a library update: {labels!r}")
+    log_checks(f"Consistency check: notifying that automatic repair is waiting for a library update: {labels!r}")
     try:
         xbmcgui.Dialog().notification(ADDON.getAddonInfo("name"), message, xbmcgui.NOTIFICATION_WARNING)
     except Exception as exc:
-        log(f"Could not show repair notification: {exc}", xbmc.LOGWARNING)
+        log_checks(f"Could not show repair notification: {exc}", xbmc.LOGWARNING)
 
 
 def prune_statistics_on_startup() -> None:
     try:
         removed = load_plugin_module().usage_log().prune()
         if removed:
-            log_info(f"AI Mix Assist statistics: {removed} event(s) older than a year removed.")
+            log_ai(f"AI Mix Assist statistics: {removed} event(s) older than a year removed.")
     except Exception as exc:
-        log(f"Pruning the statistics failed: {exc}", xbmc.LOGWARNING)
+        log_ai(f"Pruning the statistics failed: {exc}", xbmc.LOGWARNING)
 
 
 def clear_current_mix_on_startup() -> None:
     try:
         removed = load_plugin_module().clear_current_mix_on_startup()
-        log_info(f"Current mix cleared at service start ({removed} unsaved mix(es) deleted).")
+        log_mixing(f"Current mix cleared at service start ({removed} unsaved mix(es) deleted).")
     except Exception as exc:
-        log(f"Clearing the current mix at service start failed: {exc}", xbmc.LOGWARNING)
+        log_mixing(f"Clearing the current mix at service start failed: {exc}", xbmc.LOGWARNING)
 
 
 def reset_discovery_mode_on_startup() -> None:
@@ -1968,11 +2016,11 @@ def reset_discovery_mode_on_startup() -> None:
 
     try:
         get_music_playlist().clear()
-        log_discovery("startup reset cleared Kodi music playlist.")
+        log_discovery_mode("startup reset cleared Kodi music playlist.")
     except Exception as exc:
-        log_discovery(f"startup reset could not clear Kodi music playlist: {exc}", xbmc.LOGWARNING)
+        log_discovery_mode(f"startup reset could not clear Kodi music playlist: {exc}", xbmc.LOGWARNING)
 
-    log_discovery(
+    log_discovery_mode(
         f"startup reset completed. state_path={discovery_state_path()}"
     )
 
@@ -2321,7 +2369,7 @@ def write_track_metadata_cache(path: str, metadata: dict | None) -> None:
         finally:
             connection.close()
     except Exception as exc:
-        log(f"Background metadata cache write failed for {path!r}: {exc}", xbmc.LOGWARNING)
+        log_general(f"Background metadata cache write failed for {path!r}: {exc}", xbmc.LOGWARNING)
 
 
 def audio_library_get_songs_with_metadata_properties(params: dict, context: str) -> list[dict]:
@@ -2332,7 +2380,7 @@ def audio_library_get_songs_with_metadata_properties(params: dict, context: str)
         result = execute_jsonrpc("AudioLibrary.GetSongs", request_params)
         return result.get("songs") or []
     except Exception as exc:
-        log(f"{context}: metadata lookup failed with full properties: {exc}", xbmc.LOGDEBUG)
+        log_general(f"{context}: metadata lookup failed with full properties: {exc}", xbmc.LOGDEBUG)
 
     safe_params = dict(params or {})
     safe_params["properties"] = SONG_METADATA_SAFE_PROPERTIES
@@ -2340,10 +2388,10 @@ def audio_library_get_songs_with_metadata_properties(params: dict, context: str)
     try:
         result = execute_jsonrpc("AudioLibrary.GetSongs", safe_params)
         songs = result.get("songs") or []
-        log(f"{context}: metadata lookup retried with safe properties; returned {len(songs)} song(s).", xbmc.LOGDEBUG)
+        log_general(f"{context}: metadata lookup retried with safe properties; returned {len(songs)} song(s).", xbmc.LOGDEBUG)
         return songs
     except Exception as exc:
-        log(f"{context}: metadata lookup failed with safe properties: {exc}", xbmc.LOGDEBUG)
+        log_general(f"{context}: metadata lookup failed with safe properties: {exc}", xbmc.LOGDEBUG)
         return []
 
 
@@ -2560,7 +2608,7 @@ def mark_metadata_refresh_pending_view_refresh(refreshed_count: int) -> None:
     METADATA_REFRESH_PENDING_VIEW_REFRESH = True
     METADATA_REFRESH_LAST_SELECTION_TOKEN = get_visible_selection_token()
 
-    log(
+    log_general(
         "Background metadata refresh is pending visible presentation "
         f"after selection change; refreshed={refreshed_count}, "
         f"window_id={context.get('window_id')}, folder={context.get('folder')!r}.",
@@ -2598,17 +2646,17 @@ def apply_pending_metadata_refresh_on_selection_change() -> None:
         else:
             xbmc.executebuiltin("Container.Refresh")
         METADATA_REFRESH_LAST_REFRESH_TS = now
-        log(
+        log_general(
             "Background metadata refresh presented updated metadata after selection change.",
             xbmc.LOGINFO,
         )
     except Exception as exc:
-        log(f"Selection-triggered metadata presentation refresh failed: {exc}", xbmc.LOGWARNING)
+        log_general(f"Selection-triggered metadata presentation refresh failed: {exc}", xbmc.LOGWARNING)
         try:
             xbmc.executebuiltin("Container.Refresh")
             METADATA_REFRESH_LAST_REFRESH_TS = now
         except Exception as fallback_exc:
-            log(f"Fallback selection-triggered Container.Refresh failed: {fallback_exc}", xbmc.LOGWARNING)
+            log_general(f"Fallback selection-triggered Container.Refresh failed: {fallback_exc}", xbmc.LOGWARNING)
 
     METADATA_REFRESH_PENDING_VIEW_REFRESH = False
     METADATA_REFRESH_LAST_SELECTION_TOKEN = current_token
@@ -2674,13 +2722,13 @@ def run_metadata_refresh_tick(max_items: int = METADATA_REFRESH_BATCH_SIZE) -> i
             entry["last_attempt_ts"] = now
             remaining.append(entry)
         else:
-            log(f"Background metadata refresh dropped unresolved track after {attempts} attempts: {path}", xbmc.LOGWARNING)
+            log_general(f"Background metadata refresh dropped unresolved track after {attempts} attempts: {path}", xbmc.LOGWARNING)
 
     if processed > 0:
         save_metadata_refresh_queue(remaining)
 
     if refreshed > 0:
-        log(f"Background metadata refresh processed={processed}, refreshed={refreshed}, remaining={len(remaining)}.", xbmc.LOGINFO)
+        log_general(f"Background metadata refresh processed={processed}, refreshed={refreshed}, remaining={len(remaining)}.", xbmc.LOGINFO)
         refresh_visible_mix_view_if_needed(refreshed)
 
     return refreshed
@@ -2701,7 +2749,7 @@ def run_mix_assist_tick() -> None:
     entry = plugin.pop_mix_assist_request()
     if not entry:
         return
-    log_info(f"AI Mix Assist: tidying up {entry.get('cache_path')!r} ({entry.get('mode')}).")
+    log_ai(f"AI Mix Assist: tidying up {entry.get('cache_path')!r} ({entry.get('mode')}).")
     MIX_ASSIST_WORKER = threading.Thread(target=run_mix_assist_request, args=(plugin, entry), daemon=True)
     MIX_ASSIST_WORKER.start()
 
@@ -2710,7 +2758,7 @@ def run_mix_assist_request(plugin, entry: dict) -> None:
     try:
         plugin.process_mix_assist_request(entry)
     except Exception as exc:
-        log(f"AI Mix Assist: tidying up {entry.get('cache_path')!r} failed: {exc}", xbmc.LOGERROR)
+        log_ai(f"AI Mix Assist: tidying up {entry.get('cache_path')!r} failed: {exc}", xbmc.LOGERROR)
 
 
 # --- Cover collages for saved mixes: one mix at a time, now and then, so the service loop stays quick ---------
@@ -2740,7 +2788,7 @@ def run_mix_collage_tick() -> str:
             continue
         MIX_COLLAGE_STATE["tried"][cache_path] = wanted
         path = plugin.make_mix_collage(cache_path)
-        log_info(f"Mix cover collage for {cache_path!r}: {path or 'too few covers'}.")
+        log_mixing(f"Mix cover collage for {cache_path!r}: {path or 'too few covers'}.")
         return path
     return ""
 
@@ -2774,15 +2822,15 @@ def reload_musicip_library(reason: str) -> bool:
             response.read()
     except TimeoutError:  # connected, no answer yet: MusicIP is taking in new songs
         save_json_file(musicip_reload_state_path(), {"last_ts": int(time.time())})
-        log(f"MusicIP library reload ({reason}): MusicIP is taking in new songs (no answer after "
+        log_general(f"MusicIP library reload ({reason}): MusicIP is taking in new songs (no answer after "
             f"{time.time() - started:.0f} s); it goes on by itself.", always=True)
         return True
     except Exception as exc:
-        log(f"MusicIP library reload ({reason}) failed for {url!r}: {exc}", xbmc.LOGWARNING, always=True)
+        log_general(f"MusicIP library reload ({reason}) failed for {url!r}: {exc}", xbmc.LOGWARNING, always=True)
         save_json_file(musicip_reload_state_path(), dict(record, failed_ts=int(time.time())))
         return False
     save_json_file(musicip_reload_state_path(), {"last_ts": int(time.time())})
-    log(f"MusicIP library reloaded ({reason}) in {time.time() - started:.1f} s.", always=True)
+    log_general(f"MusicIP library reloaded ({reason}) in {time.time() - started:.1f} s.", always=True)
     return True
 
 
@@ -2832,15 +2880,18 @@ def main() -> None:
     last_metadata_refresh_ts = 0
     song_cache: list[dict] = []
 
+    migrated = logs.migrate_old_switches()
     ensure_musicip_keymap_installed()
 
-    log(
+    log_general(
         f"MusicIP service started. "
         f"version={ADDON.getAddonInfo('version')}, "
         f"profile={get_profile_dir()}, "
         f"discovery_state={discovery_state_path()}, "
         f"consistency_enabled={is_consistency_service_enabled()}, "
-        f"interval={get_check_interval_seconds()} seconds.",
+        f"interval={get_check_interval_seconds()} seconds, "
+        f"logging: {logs.describe_switches()}"
+        + (" (turned on from the old extended logging switches)." if migrated else "."),
         xbmc.LOGINFO,
         always=True,
     )
@@ -2856,35 +2907,35 @@ def main() -> None:
             refresh_discovery_menu_if_visible()
             song_cache = run_discovery_tick(song_cache)
         except Exception as exc:
-            log(f"Discovery mode tick failed: {exc}", xbmc.LOGERROR)
+            log_discovery(f"Discovery mode tick failed: {exc}", xbmc.LOGERROR)
 
         try:
             run_radio_tick()
             refresh_radio_menu_if_visible()
         except Exception as exc:
-            log(f"Radio mode tick failed: {exc}", xbmc.LOGERROR)
+            log_radio(f"Radio mode tick failed: {exc}", xbmc.LOGERROR)
 
         try:
             run_mix_assist_tick()
         except Exception as exc:
-            log(f"AI Mix Assist tick failed: {exc}", xbmc.LOGERROR)
+            log_ai(f"AI Mix Assist tick failed: {exc}", xbmc.LOGERROR)
 
         try:
             run_mix_collage_tick()
         except Exception as exc:
-            log(f"Mix cover collage tick failed: {exc}", xbmc.LOGERROR)
+            log_mixing(f"Mix cover collage tick failed: {exc}", xbmc.LOGERROR)
 
         try:
             run_musicip_reload_tick()
         except Exception as exc:
-            log(f"MusicIP reload tick failed: {exc}", xbmc.LOGERROR)
+            log_general(f"MusicIP reload tick failed: {exc}", xbmc.LOGERROR)
 
         now_for_metadata = int(time.time())
         if last_metadata_refresh_ts <= 0 or now_for_metadata - last_metadata_refresh_ts >= METADATA_REFRESH_INTERVAL_SECONDS:
             try:
                 run_metadata_refresh_tick()
             except Exception as exc:
-                log(f"Background metadata refresh tick failed: {exc}", xbmc.LOGERROR)
+                log_general(f"Background metadata refresh tick failed: {exc}", xbmc.LOGERROR)
             last_metadata_refresh_ts = now_for_metadata
 
         if is_consistency_service_enabled():
@@ -2895,7 +2946,7 @@ def main() -> None:
                 run_consistency_check()
                 last_run_ts = now
         else:
-            log_info("Consistency service is disabled in settings.")
+            log_checks("Consistency service is disabled in settings.")
 
         if monitor.waitForAbort(1):
             break
@@ -2907,7 +2958,7 @@ def main() -> None:
     except Exception:
         pass
 
-    log_info("MusicIP service stopped.")
+    log_general("MusicIP service stopped.")
 
 
 if __name__ == "__main__":

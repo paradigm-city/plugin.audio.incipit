@@ -13,7 +13,7 @@ them with fitting ones, automatically for new mixes, Radio and "More like this",
 
 | Place | Wording |
 |---|---|
-| Settings category | **AI Mix Assist** |
+| Settings category | **AI Mix Assist** (mixes, Claude Code); the station settings are under **Radio** (since 2026-10-24) |
 | Settings | "Keep new mixes on track", "Keep 'More like this' on track" (later: "Keep Radio on track"): on/off (default: on). "Show only" was dropped on 2026-10-15: it only listed misfits and left the listener to act; the mix history and Undo cover "what did the AI do". |
 | Notification | "AI Mix Assist: 3 tracks didn't fit and were replaced" |
 | Context menu of a saved mix | "Tidy up with AI Mix Assist" |

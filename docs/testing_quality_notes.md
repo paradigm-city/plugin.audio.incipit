@@ -33,6 +33,7 @@ GitHub Actions runs them on every push and pull request (`.github/workflows/test
 | `test_service_discovery.py` | Discovery mode in the service: commands, playlist buffer, auto-skip, player events, main loop |
 | `test_service_metadata.py` | background consistency check and automatic repair, background metadata refresh, delayed view refresh, service repair readiness |
 | `test_service_musicip_reload.py` | MusicIP library reload in the background: schedule, after Kodi's library scan, not while Radio or Discovery plays, a long reload is not a failure, retry after a failure, none before mixes |
+| `test_logs.py` | logging by area: each switch, warnings and errors always, the area tag, the old switches' migration, what Mixing, Radio and AI Mix Assist write |
 | `test_shared_helpers.py` | helpers duplicated in `main.py` and `service.py` behave the same |
 | `test_context_mix.py` | the "Create MusicIP mix" library context menu entry |
 | `test_context_radio.py` | the "Start MusicIP radio" library context menu entry |
