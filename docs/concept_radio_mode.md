@@ -42,6 +42,13 @@ The Radio screen then offers:
 - If scanning stops (player stop, other playback), the radio switches off too. The service allows 3 seconds after scanning starts before checking, while the plugin starts the snippets.
 - A Kodi restart switches the radio off.
 
+## Possible improvements
+
+**Carry on when the station's own playlist plays again.** After the radio has stopped, Kodi can go on playing the station's songs that are still in the playlist, while the radio stays off and adds nothing. To the listener it looks like a station that stopped refilling. Seen on 2026-10-24: station "Cold Precision Electro" stopped at 13:33 (`player_stop`) when Kodi lost its display and audio device; when the device came back at 16:41, Kodi played the remaining two songs and then fell silent. Options:
+
+- When playback resumes on the stopped station's playlist (same files, same order) after a `player_stop`, carry on with the station.
+- Or, at least, tell the listener in a notification that the station has ended.
+
 ## Not included
 
 - Radio sessions are not mixes: they are neither the current mix nor listed under **Saved mixes**.
