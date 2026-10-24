@@ -74,6 +74,14 @@ Not solved. Still to find out: whether MusicIP can be made to read a file's tags
 
 ## Resolved
 
+### F32 · A favourite station's artwork could stay without its number
+
+Found by the user on 2026-10-24: station 10's artwork had no number. While it played on 2026-10-23, the background service was still running the add-on code from before favourites had numbers (the service loads `main.py` once, at Kodi's start) and saved the station's newest collage without the number. The check for artwork to (re)draw only compared the stored look of the number (`artwork_mark`), which that save had left in place, so the unnumbered picture was taken as done.
+
+Fixed on 2026-10-24: a favourite's picture counts as numbered only when its original (without the number) is the one saved with it (`plain_favourite_artwork_path`); any other picture gets the number on the next load. Station 10 was redrawn that way.
+
+**Test:** `test_radio_favourites.FavouriteNumberTest.test_artwork_saved_without_the_number_by_older_code_gets_it`
+
 ### F30 · Tests wrote a usage.db into the working directory
 
 Found on 2026-10-22: after a full test run from `tests/`, an untracked `tests/profile/addon_data/plugin.audio.musicip/mixassist/usage.db` appeared (from the repository root it lands in `profile/`, which `.gitignore` had been hiding). The mixassist tests report usage events (`mixassist.usage.emit`) while no test Kodi is set up; importing `main.py` had registered its sink, and the fake Kodi then translated `special://profile` with an empty root, into a relative path.
