@@ -1,4 +1,5 @@
-"""Radio with AI Mix Assist: the station's first songs are checked, refills are checked before they are queued."""
+"""Radio with AI Mix Assist: the station's first songs are checked ("More like this" for the picked song), refills
+are checked before they are queued and seeded from songs that passed a check."""
 
 import os
 import threading
@@ -7,10 +8,11 @@ from unittest import mock
 
 from fake_kodi import kodi
 from support import main, service
-from test_radio_mode import RadioTestCase as RadioBase
+from test_radio_mode import SONGS, RadioTestCase as RadioBase
 
 REFERENCE = {"energy": 5, "sounding_year": 1983}
-CHECK_RADIO_REFILL = main.check_radio_refill  # the real one; the tests below replace it
+CHECK_RADIO_REFILL = main.check_radio_refill  # the real ones; the tests below replace them
+CHECK_RADIO_START = main.check_radio_start
 
 
 class RadioMixAssistTest(RadioBase):
@@ -21,7 +23,7 @@ class RadioMixAssistTest(RadioBase):
         patcher = mock.patch.object(main, "mix_assist_available", return_value=True)
         patcher.start()
         self.addCleanup(patcher.stop)
-        self.start_check = mock.Mock(return_value={"remove": [], "intent": "dark metal", "reference": REFERENCE})
+        self.start_check = mock.Mock(side_effect=self.all_first_songs_fit)
         self.refill_check = mock.Mock(side_effect=self.choose_every_other)
         for name, fake in (("check_radio_start", self.start_check), ("check_radio_refill", self.refill_check)):
             patcher = mock.patch.object(main, name, fake)
@@ -29,7 +31,20 @@ class RadioMixAssistTest(RadioBase):
             self.addCleanup(patcher.stop)
 
     @staticmethod
-    def choose_every_other(reference_song, candidates, count, reference, neighbours, check=None, settings=None):
+    def all_first_songs_fit(tracks, count, check=None, settings=None):
+        return {"chosen": tracks[1:][:count], "not_fitting": [], "intent": "dark metal", "reference": REFERENCE,
+                "name": "", "checked": True}
+
+    def start_result(self, chosen, not_fitting=(), **extra):
+        self.start_check.side_effect = None
+        self.start_check.return_value = dict({"chosen": list(chosen), "intent": "dark metal", "reference": REFERENCE,
+                                              "checked": True, "name": "",
+                                              "not_fitting": [{"path": path, "label": os.path.basename(path), "reason": "no"}
+                                                              for path in not_fitting]}, **extra)
+
+    @staticmethod
+    def choose_every_other(reference_song, candidates, count, reference, neighbours, check=None, settings=None,
+                           name=False):
         return {"chosen": candidates[::2][:count], "reference": {"energy": 6, "sounding_year": 1984},
                 "not_fitting": [{"path": path, "label": path, "reason": "no"} for path in candidates[1::2]]}
 
@@ -38,10 +53,11 @@ class RadioMixAssistTest(RadioBase):
         if thread is not None:
             thread.join(5)
 
-    def started_station(self):
+    def started_station(self, started=False):
         """A station (5 songs) whose start check is done, nothing removed, playing its third song: 2 songs are
         left, so the first refill check starts."""
-        self.start()
+        if not started:
+            self.start()
         self.tick()  # starts the check of the first songs
         self.finish_check()
         self.tick()  # applies it
@@ -55,21 +71,95 @@ class RadioMixAssistTest(RadioBase):
         self.start()
         self.assertEqual(self.musicip.mix_requests()[0]["size"], str(main.RADIO_ASSISTED_START_SIZE))
 
-    def test_the_first_songs_lose_the_ones_that_dont_fit(self):
+    def new_songs(self, count):
+        """Library songs the station hasn't queued."""
+        queued = set(self.files())
+        return [song for song in SONGS if song not in queued][:count]
+
+    def test_the_first_songs_are_held_to_more_like_this_for_the_picked_song(self):
         self.start()
         queue = self.files()
-        self.start_check.return_value = {"remove": [queue[1], queue[3]], "intent": "dark metal", "reference": REFERENCE}
+        new = self.new_songs(3)
+        self.start_result([queue[2], queue[4]] + new, not_fitting=[queue[1], queue[3]])
         self.tick()
         self.finish_check()
         radio = self.tick()
-        tracks = self.start_check.call_args[0][0]
-        self.assertEqual(tracks[0], radio["seed"])  # the picked song first
-        self.assertEqual(self.files(), [queue[0], queue[1], queue[2], queue[4]])  # the next song stays
+        tracks, count = self.start_check.call_args[0][:2]
+        self.assertEqual(tracks, queue)  # the picked song first, then the first songs
+        self.assertEqual(count, service.RADIO_CHECKED_BATCH)
+        self.assertEqual(self.files(), [queue[0], queue[2], queue[4]] + new)  # the next song left too
         self.assertEqual(kodi.playlist_files(), self.files())
+        self.assertEqual([entry.get("checked", False) for entry in radio["queue"]], [False, True, True, True, True, True])
         self.assertEqual((radio["intent"], radio["reference"]), ("dark metal", REFERENCE))
+        event = radio["events"][-1]
+        self.assertEqual(([entry["reason"] for entry in event["removed"]], event["kept"], len(event["added"])),
+                         (["no", "no"], 2, 3))
+        history = dict(main.radio_info_pages(radio))[f"History ({len(radio['events'])})"]
+        self.assertIn("AI Mix Assist checked the first songs: 2 taken out, 3 added", history)
         self.finish_check()
         self.tick()
         self.assertEqual(self.start_check.call_count, 1)
+
+    def test_the_next_song_stays_when_the_playing_song_is_about_to_end(self):
+        self.start()
+        queue = self.files()
+        self.start_result([queue[2]], not_fitting=[queue[1], queue[3], queue[4]])
+        self.tick()
+        self.finish_check()
+        kodi.player.time = kodi.player.total_time - service.RADIO_START_KEEP_NEXT_SECONDS + 1
+        self.tick()
+        self.assertEqual(self.files(), [queue[0], queue[1], queue[2]])
+        self.assertNotIn("checked", self.radio()["queue"][1])  # it stays, unchecked
+
+    def test_without_a_measurement_the_first_songs_stay(self):
+        self.start()
+        queue = self.files()
+        self.start_result(queue[1:3], checked=False)
+        self.tick()
+        self.finish_check()
+        radio = self.tick()
+        self.assertEqual(self.files(), queue)
+        self.assertFalse(any(entry.get("checked") for entry in radio["queue"]))
+        self.assertTrue(radio["events"][-1]["unchecked"])
+
+    def test_refills_seed_from_the_last_song_that_passed_a_check(self):
+        self.start()
+        queue = self.files()
+        self.start_result([queue[1], queue[2]], not_fitting=[queue[3], queue[4]])  # the last two leave
+        self.tick()
+        self.finish_check()
+        self.tick()  # applies it; 2 songs left: the first refill
+        self.assertEqual(self.musicip.mix_requests()[-1]["song"], queue[2])
+        self.finish_check()
+        self.tick()
+        unchecked = self.new_songs(1)
+        service.append_radio_tracks(self.radio(), main, queue[2], unchecked)  # e.g. queued unchecked to keep playing
+        state = self.radio()
+        state = dict(state, queue=state["queue"] + [{"file": unchecked[0], "label": "x"}])
+        self.assertNotEqual(service.refill_seed_entries(state, True)[0]["file"], unchecked[0])
+        self.assertEqual(service.refill_seed_entries(state, True)[-1]["file"], state["seed"])  # at last the picked song
+        self.assertEqual(service.refill_seed_entries(state, False)[0]["file"], unchecked[0])  # AI Mix Assist off
+
+    def test_without_checked_songs_refills_seed_from_the_picked_song(self):
+        self.start()
+        queue = self.files()
+        self.start_result(queue[1:3], checked=False)
+        self.tick()
+        self.finish_check()
+        self.tick()
+        kodi.go_to(2)
+        self.tick()
+        self.assertEqual(self.musicip.mix_requests()[-1]["song"], queue[0])
+
+    def test_the_real_start_check_takes_the_first_songs_then_musicips_mix(self):
+        seed, first, mix = SONGS[0], SONGS[1:4], [SONGS[2], SONGS[0], SONGS[7], SONGS[8]]
+        with mock.patch.object(main, "fetch_mix", return_value=mix) as fetch, \
+                mock.patch.object(main, "check_radio_refill", return_value={"chosen": []}) as refill:
+            CHECK_RADIO_START([seed] + first, 6, settings={"openness": 0})
+        self.assertEqual(fetch.call_args[0], (seed, main.mix_assist.MUSICIP_MAX_MIX))
+        args, kwargs = refill.call_args
+        self.assertEqual(args, (seed, first + [SONGS[7], SONGS[8]], 6, None, [seed]))  # each once, the seed not
+        self.assertEqual((kwargs["name"], kwargs["settings"]), (True, {"openness": 0}))
 
     def test_refills_are_checked_before_they_are_queued(self):
         self.start()
@@ -147,7 +237,7 @@ class RadioMixAssistTest(RadioBase):
     def test_results_for_an_earlier_station_are_dropped(self):
         self.start()
         queue = self.files()
-        self.start_check.return_value = {"remove": [queue[3]], "intent": "x", "reference": REFERENCE}
+        self.start_result(queue[1:3] + queue[4:], not_fitting=[queue[3]])
         self.tick()
         self.finish_check()
         main.save_radio_state(dict(self.radio(), playing_started_ts=self.radio()["playing_started_ts"] + 1))
@@ -237,9 +327,9 @@ class RadioMixAssistTest(RadioBase):
         self.assertIn("Drift is measured when", drift["text"])
 
     def test_the_first_check_names_the_station(self):
-        self.start_check.return_value = {"remove": [], "intent": "x", "reference": REFERENCE,
-                                         "name": "Bombastic Heroic Metal"}
-        radio = self.started_station()
+        self.start()
+        self.start_result(self.files()[1:], name="Bombastic Heroic Metal")
+        radio = self.started_station(started=True)
         self.assertEqual(radio["name"], "Bombastic Heroic Metal")
         self.assertTrue(radio["ui_refresh_requested"])  # the visible Radio screen is redrawn with the name
         self.assertIn(("setPluginCategory", "Radio: Bombastic Heroic Metal"), self.menu_calls())
@@ -249,7 +339,7 @@ class RadioMixAssistTest(RadioBase):
         self.start()
         main.save_radio_favourites([{"id": "f1", "name": "Night Drive", "seed": self.radio()["seed"]}])
         main.save_radio_state(dict(self.radio(), favourite_id="f1", name="Night Drive"))
-        self.start_check.return_value = {"remove": [], "intent": "x", "reference": REFERENCE, "name": "Other"}
+        self.start_result(self.files()[1:], name="Other")
         self.tick()
         self.finish_check()
         self.assertEqual(self.tick()["name"], "Night Drive")

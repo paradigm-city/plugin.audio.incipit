@@ -326,6 +326,20 @@ class AssistTest(unittest.TestCase):
         self.assertEqual([entry["path"] for entry in result["not_fitting"]], ["candbad"])
         self.assertEqual((result["intent"], result["checked"]), ("abstract, instrumental", True))
 
+    def test_more_like_this_can_name_what_the_selected_song_is_about(self):
+        prompts = []
+
+        def ask(system, schema, message):
+            prompts.append(system)
+            return dict(self.ask(system, schema, message), name="Abstract Night Music")
+
+        result = assist.choose_additions("seed", ["candbad", "cand3", "cand1", "cand2"], 2, self.store, ask,
+                                         self.resolve, artist_window=0, name=True)
+        self.assertEqual((result["name"], result["chosen"]), ("Abstract Night Music", ["cand3", "cand1"]))
+        self.assertIn(checks.NAME_NOTE, prompts[-1])  # in the same call that states the intent
+        self.assertEqual(assist.choose_additions("seed", ["cand1"], 1, self.store, self.ask, self.resolve,
+                                                 artist_window=0)["name"], "")
+
     def test_more_like_this_respects_the_artist_window(self):
         result = assist.choose_additions("seed", ["fit3", "cand1", "cand2", "cand3", "cand4"], 2, self.store,
                                          self.ask, self.resolve, neighbours=["fit1", "fit2"], artist_window=5)

@@ -208,6 +208,7 @@ class PlayerState:
         self.position = -1
         self.file = ""
         self.time = 0.0
+        self.total_time = 240.0  # the playing song's length
         self.tag = None
         self.calls = []
 
@@ -476,6 +477,11 @@ class Player:
         if not kodi.player.playing:
             raise RuntimeError("Kodi is not playing any media file")
         return kodi.player.time
+
+    def getTotalTime(self):
+        if not kodi.player.playing:
+            raise RuntimeError("Kodi is not playing any media file")
+        return kodi.player.total_time
 
     def seekTime(self, seconds):
         kodi.player.calls.append(("seekTime", seconds))
