@@ -1608,14 +1608,14 @@ def refill_radio_queue(state: dict, checked: bool = False) -> int:
     used_seed = ""
     size = plugin.get_playlist_size()
     offset = int(state.get("refill_seed_offset") or 0) if checked else 0
+    settings = state.get("settings") if isinstance(state.get("settings"), dict) else None  # a favourite's own
 
     server_error = None
     for entry in refill_seed_entries(state, checked)[offset:offset + RADIO_REFILL_SEEDS]:
         seed = str(entry["file"])
         try:
             request_size = RADIO_CHECK_SIZE if checked else size
-            tracks = plugin.fetch_mix(seed, request_size,
-                                      plugin.get_effective_mix_parameters(size_override=request_size))
+            tracks = plugin.fetch_mix(seed, request_size, plugin.radio_mix_parameters(request_size, settings))
         except Exception as exc:
             if isinstance(exc, plugin.MusicIPError) and "empty mix" in str(exc):
                 log_info(f"Radio mode: MusicIP returned no songs for {seed!r}.")
@@ -1651,7 +1651,6 @@ def refill_radio_queue(state: dict, checked: bool = False) -> int:
         return 0
 
     if checked:
-        settings = state.get("settings") if isinstance(state.get("settings"), dict) else None  # a favourite's own
         drifting = plugin.get_radio_drift_half_life(settings) > 0
         reference_song = used_seed if drifting else str(state.get("seed") or used_seed)
         reference = state.get("reference") if isinstance(state.get("reference"), dict) else None

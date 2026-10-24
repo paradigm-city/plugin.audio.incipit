@@ -5256,7 +5256,7 @@ def describe_station_start(params: dict, favourite: dict | None, assisted: bool)
 
 def open_radio_station(seed: str, favourite: dict | None, progress) -> bool:
     size = RADIO_ASSISTED_START_SIZE if mix_assist_for_radio() else get_playlist_size()
-    params = get_effective_mix_parameters(size_override=size)
+    params = radio_mix_parameters(size, favourite_settings(favourite))
     try:
         tracks = fetch_mix(seed, size, params, progress=progress)
     except Exception as exc:
@@ -5293,7 +5293,7 @@ def open_radio_station(seed: str, favourite: dict | None, progress) -> bool:
     assisted = mix_assist_for_radio()
     started_event = {
         "kind": "started", "ts": now, "seed": queue[0]["label"],
-        "parameters": describe_mix_parameters(compact_mix_generation_parameters(get_effective_mix_parameters())),
+        "parameters": describe_mix_parameters(compact_mix_generation_parameters(params)),
         "assisted": assisted,
         "openness": MIX_OPENNESS_LABELS[max(0, min(4, station_setting_index(favourite_settings(favourite), "openness")))],
         "drift": RADIO_DRIFT_LABELS[max(0, min(2, station_setting_index(favourite_settings(favourite), "drift")))],
@@ -7940,28 +7940,42 @@ def radio_check_progress(check=None):
 # station's earlier seeds, until enough songs fit (2026-10-24).
 RADIO_CHECK_BATCHES = (6, 4, 2, 2, 2)
 RADIO_CHECK_LISTS = 3
+# A station that stays close to its picked song asks MusicIP about that song again and again; MusicIP's variety
+# keeps those mixes from repeating (variety 0: the same 75 songs every time; 1: about half of them new; measured
+# 2026-10-24).
+RADIO_STAY_CLOSE_MIN_VARIETY = 2
+
+
+def radio_mix_parameters(size: int, settings: dict | None = None) -> dict:
+    """MusicIP's parameters for a station's mixes: the configured ones; a station that stays close to the picked
+    song gets at least RADIO_STAY_CLOSE_MIN_VARIETY."""
+    params = get_effective_mix_parameters(size_override=size)
+    if get_radio_drift_half_life(settings) == 0:
+        params["variety"] = max(int(params.get("variety") or 0), RADIO_STAY_CLOSE_MIN_VARIETY)
+    return params
 
 
 def radio_check_batches(settings: dict | None = None) -> int:
     return RADIO_CHECK_BATCHES[max(0, min(len(RADIO_CHECK_BATCHES) - 1, station_setting_index(settings, "openness")))]
 
 
-def radio_more_candidates(seeds: list[str], seen):
+def radio_more_candidates(seeds: list[str], seen, settings: dict | None = None, picked: str = ""):
     """more() for a Radio check: the next MusicIP list, from the songs chosen so far (the newest first), then from
-    seeds, without the station's songs (seen: identities); [] when the lists are used up."""
+    seeds, without the station's songs (seen: identities); [] when the lists are used up. A station that stays
+    close asks about its picked song first, once more (its mixes vary, see radio_mix_parameters)."""
     used, seen = set(), set(seen)
     lists = {"left": RADIO_CHECK_LISTS - 1}
+    again = [picked] if picked and get_radio_drift_half_life(settings) == 0 else []
 
     def more(chosen: list[str]) -> list[str]:
-        for seed in list(reversed(chosen)) + list(seeds):
-            if lists["left"] <= 0:
+        while lists["left"] > 0:
+            seed = again.pop() if again else next(
+                (song for song in list(reversed(chosen)) + list(seeds) if normalize_track_identity(song) not in used), "")
+            if not seed:
                 return []
-            identity = normalize_track_identity(seed)
-            if identity in used:
-                continue
-            used.add(identity)
+            used.add(normalize_track_identity(seed))
             try:
-                mix = fetch_mix(seed, mix_assist.MUSICIP_MAX_MIX)
+                mix = fetch_mix(seed, mix_assist.MUSICIP_MAX_MIX, radio_mix_parameters(mix_assist.MUSICIP_MAX_MIX, settings))
             except MusicIPError as exc:
                 log(f"Radio mode: MusicIP's mix for {seed!r} failed: {exc}", xbmc.LOGWARNING)
                 continue
@@ -7981,7 +7995,7 @@ def check_radio_start(tracks: list[str], count: int, check=None, settings: dict 
     plus the station's name (from the same AI call)."""
     seed = tracks[0]
     try:
-        mix = fetch_mix(seed, mix_assist.MUSICIP_MAX_MIX)
+        mix = fetch_mix(seed, mix_assist.MUSICIP_MAX_MIX, radio_mix_parameters(mix_assist.MUSICIP_MAX_MIX, settings))
     except MusicIPError as exc:
         log(f"Radio mode: MusicIP's mix for the start check failed: {exc}", xbmc.LOGWARNING)
         mix = []
@@ -8018,7 +8032,8 @@ def check_radio_refill(reference_song: str, candidates: list[str], count: int, r
             accept_borderline=borderline,
             name=name,
             max_batches=radio_check_batches(settings),
-            more=radio_more_candidates(list(more_seeds), seen),
+            more=radio_more_candidates(list(more_seeds), seen, settings,
+                                       picked=reference_song if get_radio_drift_half_life(settings) == 0 else ""),
         )
     finally:
         store.close()
