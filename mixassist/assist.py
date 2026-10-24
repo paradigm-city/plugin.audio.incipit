@@ -315,7 +315,7 @@ def choose_additions(selected: str, candidates: Sequence[str], count: int, cache
                      resolve: Resolve, neighbours: Sequence[str] = (), strictness: float = DEFAULT_STRICTNESS,
                      artist_window: int = ARTIST_WINDOW, model: str = "",
                      progress: Optional[Callable[..., None]] = None, reference: Optional[dict] = None,
-                     accept_borderline: bool = False) -> dict:
+                     accept_borderline: bool = False, name: bool = False) -> dict:
     """"More like this" (and Radio refills): the selected song and MusicIP's candidates for it form a small mix with the selected song
     as its seed. New tracks are held to the same rule as replacements: both signals must say a candidate fits what
     the selected song is about. The first `count` fitting candidates (closest first) are chosen, without repeating
@@ -327,13 +327,15 @@ def choose_additions(selected: str, candidates: Sequence[str], count: int, cache
 
     Returns intent (the selected song's), chosen (paths), entries (the chosen tracks' ratings by path), seed_entry
     (the selected song's rating), not_fitting ([{path, label, reason}]) and checked (False if the candidates
-    couldn't be measured; then the first ones are taken unchecked)."""
+    couldn't be measured; then the first ones are taken unchecked). With name, also a name for what the selected
+    song is about (2 to 4 words, from the same AI call)."""
     def step(text: str, fraction: Optional[float] = None) -> None:
         if progress:
             progress(text) if fraction is None else progress(text, fraction)
 
     candidates = list(candidates)
-    result = {"intent": "", "chosen": [], "entries": {}, "seed_entry": None, "not_fitting": [], "checked": False}
+    result = {"intent": "", "name": "", "chosen": [], "entries": {}, "seed_entry": None, "not_fitting": [],
+              "checked": False}
     step("Looking up the tracks")
     selected_unit = resolve([selected])[0]
     blocked = set()
@@ -353,6 +355,8 @@ def choose_additions(selected: str, candidates: Sequence[str], count: int, cache
         if result["intent"]:  # a second batch is judged against the intent stated for the first
             judged = checks.judge(result["intent"], units[0], entries[0], units[1:], entries[1:], ask)
             verdicts = {number + 1: verdict for number, verdict in judged.items()}
+        elif name:
+            result["intent"], verdicts, result["name"] = checks.describe(units, entries, ask)
         else:
             result["intent"], verdicts = checks.state_intent(units, entries, ask)
         result["seed_entry"] = result["seed_entry"] or entries[0]

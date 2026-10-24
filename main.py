@@ -7892,10 +7892,13 @@ def process_mix_assist_request(entry: dict) -> None:
 
 
 # --- AI Mix Assist for Radio: the service checks a station's songs in a background thread ------------------
-# The station's first songs (a plain MusicIP mix) lose the ones that clearly don't fit the picked song. Refills are
-# checked before they are queued: against a profile that starts as the picked song and drifts with the station
-# ("Station drift": how far), and by the AI against the song the refill is seeded from, or the picked song when the
-# station stays close ("Station openness": how surprising each song may be).
+# A station starts with a plain MusicIP mix, so it plays at once. Right away, its first songs and MusicIP's largest
+# mix for the picked song are held to the "More like this" rule for the picked song: what fits becomes the station's
+# next songs, the rest leaves (2026-10-24; before, only songs that clearly didn't fit left, and the next song
+# always stayed). Refills are seeded from the last song that passed a check (else the picked song) and checked
+# before they are queued: against a profile that starts as the picked song and drifts with the station ("Station
+# drift": how far), and by the AI against the song the refill is seeded from, or the picked song when the station
+# stays close ("Station openness": how surprising each song may be).
 
 # "Station drift": the profile has moved half the way to where the station went after this many songs.
 RADIO_DRIFT_HALF_LIFE = (0, 60, 20)  # stay close to the picked song, drift slowly (~4 h), wander freely (~1 h 20)
@@ -7931,33 +7934,27 @@ def radio_check_progress(check=None):
     return report
 
 
-def check_radio_start(tracks: list[str], check=None, settings: dict | None = None) -> dict:
-    """Which of a new station's songs (tracks[0] = the picked song) clearly don't fit it: both signals agree, as in
-    a tidy-up. Returns remove (paths), intent and reference (the picked song's rating, the station's first profile)."""
-    store = mix_assist_cache.RatingCache(mix_assist_cache_path())
+def check_radio_start(tracks: list[str], count: int, check=None, settings: dict | None = None) -> dict:
+    """A new station's first check: "More like this" for the picked song (tracks[0]). The candidates are its first
+    songs (tracks[1:], a plain MusicIP mix), then MusicIP's largest mix for it; up to count songs that fit are
+    chosen, in that order. As check_radio_refill, plus the station's name (from the same AI call)."""
+    seed = tracks[0]
     try:
-        plan = mix_assist.tidy_up(
-            tracks, store, mix_assist_ask(),
-            resolve=lambda paths: mix_assist_library.resolve(paths, execute_jsonrpc, {}),
-            fetch_mix=lambda *_args: [],
-            strictness=get_station_strictness(settings)[0],
-            artist_window=get_mix_reject_size() or mix_assist.ARTIST_WINDOW,
-            model=mix_assist_claude.DEFAULT_MODEL,
-            progress=radio_check_progress(check),
-            find_replacements=False,
-        )
-    finally:
-        store.close()
-    rows = plan["rows"]
-    removed = [{"path": tracks[position - 1], "label": rows[position - 1]["unit"]["label"],
-                "reason": rows[position - 1].get("reason") or rows[position - 1].get("why", "")}
-               for position in plan["outliers"]]
-    return {"remove": [entry["path"] for entry in removed], "removed": removed, "intent": plan["intent"],
-            "name": plan.get("name") or "", "reference": rows[0].get("entry") if rows else None}
+        mix = fetch_mix(seed, mix_assist.MUSICIP_MAX_MIX)
+    except MusicIPError as exc:
+        log(f"Radio mode: MusicIP's mix for the start check failed: {exc}", xbmc.LOGWARNING)
+        mix = []
+    candidates, known = [], {normalize_track_identity(seed)}
+    for track in list(tracks[1:]) + mix:
+        identity = normalize_track_identity(track)
+        if identity not in known:
+            known.add(identity)
+            candidates.append(track)
+    return check_radio_refill(seed, candidates, count, None, [seed], check=check, settings=settings, name=True)
 
 
 def check_radio_refill(reference_song: str, candidates: list[str], count: int, reference: dict | None,
-                       neighbours: list[str], check=None, settings: dict | None = None) -> dict:
+                       neighbours: list[str], check=None, settings: dict | None = None, name: bool = False) -> dict:
     """Choose a refill's songs from MusicIP's candidates (closest first): both signals must say they fit. Adds
     "reference": the station's profile after this refill (drifted towards the chosen songs)."""
     store = mix_assist_cache.RatingCache(mix_assist_cache_path())
@@ -7974,6 +7971,7 @@ def check_radio_refill(reference_song: str, candidates: list[str], count: int, r
             progress=radio_check_progress(check),
             reference=reference,
             accept_borderline=borderline,
+            name=name,
         )
     finally:
         store.close()
@@ -8562,11 +8560,12 @@ def format_radio_event(event: dict) -> list[str]:
     if kind == "started":
         return [f"Station picked: {event.get('seed', '?')}"]
     if kind == "start_check":
-        removed = event.get("removed") or []
-        if not removed:
+        removed, added = event.get("removed") or [], event.get("added") or []
+        if not removed and not added:
             return ["AI Mix Assist checked the first songs: all fit"]
-        return [f"AI Mix Assist took out {len(removed)} of the first songs:"] + \
-            [f"- {entry.get('track', '?')} ({entry.get('reason', '')})" for entry in removed]
+        lines = [f"AI Mix Assist checked the first songs: {len(removed)} taken out, {len(added)} added"]
+        lines += [f"- {entry.get('track', '?')} ({entry.get('reason', '')})" for entry in removed]
+        return lines + [f"+ {label}" for label in added]
     if kind == "refill":
         added = event.get("added") or []
         how = "checked" if event.get("checked") else "unchecked (AI Mix Assist off)"
