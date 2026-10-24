@@ -140,6 +140,37 @@ class RadioMixAssistTest(RadioBase):
         self.assertEqual(service.refill_seed_entries(state, True)[-1]["file"], state["seed"])  # at last the picked song
         self.assertEqual(service.refill_seed_entries(state, False)[0]["file"], unchecked[0])  # AI Mix Assist off
 
+    def test_songs_turned_down_are_not_checked_again_while_the_station_plays(self):
+        self.started_station()  # the first refill check: every other candidate is turned down
+        self.finish_check()
+        radio = self.tick()
+        turned_down = self.refill_check.call_args[0][1][1::2]
+        self.assertTrue(turned_down)
+        self.assertEqual(set(radio["rejected"]), {main.normalize_track_identity(path) for path in turned_down})
+        seed = service.refill_seed_entries(radio, True)[0]["file"]
+        fresh = [song for song in self.new_songs(len(SONGS)) if song not in turned_down][:2]
+        self.musicip.set_mix(seed, turned_down + fresh)
+        service.refill_radio_queue(radio, checked=True)
+        self.finish_check()
+        args, kwargs = self.refill_check.call_args
+        self.assertEqual(args[1], fresh)
+        self.assertTrue({main.normalize_track_identity(path) for path in turned_down} <= set(kwargs["seen"]))
+        self.assertEqual(service.RADIO_CHECK["fallback"], turned_down + fresh)  # they may still keep it playing
+
+    def test_the_station_forgets_them_when_it_stops_or_its_settings_change(self):
+        first, second = (main.normalize_track_identity(song) for song in SONGS[1:3])
+        state = {"settings": {}}
+        service.remember_rejected(state, main, {"not_fitting": [{"path": SONGS[1]}, {"path": SONGS[1]}]})
+        self.assertEqual((state["rejected"], service.rejected_songs(state, main)), ([first], {first}))
+        kodi.settings["mix_assist_station_perspective"] = "2"  # judged differently from now on
+        self.assertEqual(service.rejected_songs(state, main), set())
+        service.remember_rejected(state, main, {"not_fitting": [{"path": SONGS[2]}]})
+        self.assertEqual(service.rejected_songs(state, main), {second})
+        state["settings"] = {"openness": 4}  # a favourite's own, changed while it plays
+        self.assertEqual(service.rejected_songs(state, main), set())
+        service.end_radio(state, "player_stop")
+        self.assertNotIn("rejected", state)
+
     def test_without_checked_songs_refills_seed_from_the_picked_song(self):
         self.start()
         queue = self.files()
