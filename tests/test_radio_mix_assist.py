@@ -44,7 +44,7 @@ class RadioMixAssistTest(RadioBase):
 
     @staticmethod
     def choose_every_other(reference_song, candidates, count, reference, neighbours, check=None, settings=None,
-                           name=False):
+                           **_more):
         return {"chosen": candidates[::2][:count], "reference": {"energy": 6, "sounding_year": 1984},
                 "not_fitting": [{"path": path, "label": path, "reason": "no"} for path in candidates[1::2]]}
 
@@ -151,6 +151,36 @@ class RadioMixAssistTest(RadioBase):
         self.tick()
         self.assertEqual(self.musicip.mix_requests()[-1]["song"], queue[0])
 
+    def test_a_stricter_station_examines_more(self):
+        self.assertEqual([main.radio_check_batches({"openness": level}) for level in range(5)], [6, 4, 2, 2, 2])
+        with mock.patch.object(main.mix_assist, "choose_additions", return_value={"chosen": [], "entries": {}}) as choose, \
+                mock.patch.object(main, "mix_assist_ask", return_value=lambda *args: {}):
+            CHECK_RADIO_REFILL("a", ["b"], 6, REFERENCE, ["x"], settings={"openness": 0})
+        self.assertEqual(choose.call_args[1]["max_batches"], 6)
+        self.assertTrue(callable(choose.call_args[1]["more"]))
+
+    def test_more_candidates_come_from_the_songs_that_fit_then_earlier_seeds(self):
+        mixes = {"chosen2": ["chosen2", "known", "n1"], "chosen1": ["n2"], "older": ["n3"]}
+        requested = []
+
+        def fetch(seed, size):
+            requested.append(seed)
+            return mixes[seed]
+
+        with mock.patch.object(main, "fetch_mix", side_effect=fetch):
+            more = main.radio_more_candidates(["older"], [main.normalize_track_identity("known")])
+            self.assertEqual(more(["chosen1", "chosen2"]), ["chosen2", "n1"])  # the newest song that fits first
+            self.assertEqual(more(["chosen1", "chosen2"]), ["n2"])
+            self.assertEqual(more(["chosen1", "chosen2"]), [])  # RADIO_CHECK_LISTS: the first list and 2 more
+        self.assertEqual(requested, ["chosen2", "chosen1"])
+
+    def test_a_refill_may_look_further_from_earlier_checked_songs_and_the_picked_song(self):
+        radio = self.started_station()
+        kwargs = self.refill_check.call_args[1]
+        files = [entry["file"] for entry in radio["queue"]]
+        self.assertEqual(kwargs["more_seeds"], list(reversed(files[1:-1])) + [files[0]])  # after the refill's seed
+        self.assertTrue(set(main.normalize_track_identity(path) for path in files) <= set(kwargs["seen"]))
+
     def test_the_real_start_check_takes_the_first_songs_then_musicips_mix(self):
         seed, first, mix = SONGS[0], SONGS[1:4], [SONGS[2], SONGS[0], SONGS[7], SONGS[8]]
         with mock.patch.object(main, "fetch_mix", return_value=mix) as fetch, \
@@ -160,6 +190,7 @@ class RadioMixAssistTest(RadioBase):
         args, kwargs = refill.call_args
         self.assertEqual(args, (seed, first + [SONGS[7], SONGS[8]], 6, None, [seed]))  # each once, the seed not
         self.assertEqual((kwargs["name"], kwargs["settings"]), (True, {"openness": 0}))
+        self.assertEqual(kwargs["seen"], [main.normalize_track_identity(track) for track in [seed] + first])
 
     def test_refills_are_checked_before_they_are_queued(self):
         self.start()

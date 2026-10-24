@@ -5,6 +5,7 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 from fake_kodi import ADDON_DIR
 
@@ -339,6 +340,26 @@ class AssistTest(unittest.TestCase):
         self.assertIn(checks.NAME_NOTE, prompts[-1])  # in the same call that states the intent
         self.assertEqual(assist.choose_additions("seed", ["cand1"], 1, self.store, self.ask, self.resolve,
                                                  artist_window=0)["name"], "")
+
+    def test_more_like_this_looks_in_more_lists_until_enough_fit(self):
+        asked = []
+
+        def more(chosen):
+            asked.append(list(chosen))
+            return ["fit1", "cand1", "cand2", "cand3", "cand4"] if len(asked) == 1 else []
+
+        result = assist.choose_additions("seed", ["candbad", "bad1", "bad2", "fit1"], 2, self.store, self.ask,
+                                         self.resolve, artist_window=0, max_batches=3, more=more)
+        self.assertEqual(result["chosen"], ["fit1", "cand1"])
+        self.assertEqual(asked, [["fit1"]])  # with the songs chosen so far; fit1 is not examined twice
+        self.assertEqual((result["examined"], result["lists"]), (8, 2))
+
+    def test_more_like_this_examines_at_most_max_batches(self):
+        more = mock.Mock(return_value=["cand1", "cand2", "cand3", "cand4"])
+        result = assist.choose_additions("seed", ["candbad", "bad1", "bad2", "fit1"], 2, self.store, self.ask,
+                                         self.resolve, artist_window=0, max_batches=1, more=more)
+        self.assertEqual((result["chosen"], result["examined"], result["lists"]), (["fit1"], 4, 1))
+        more.assert_not_called()
 
     def test_more_like_this_respects_the_artist_window(self):
         result = assist.choose_additions("seed", ["fit3", "cand1", "cand2", "cand3", "cand4"], 2, self.store,
