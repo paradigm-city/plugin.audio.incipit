@@ -26,6 +26,7 @@ The service keeps the station running:
 
 - When fewer than 3 songs are left, it requests a new mix seeded from the **last song in the queue**, so the station drifts gradually, like a radio programme. If that mix brings nothing new, it tries the two songs before it. After a failed or empty request it waits a minute before trying again.
 - Songs already played or queued in this session are skipped, so nothing repeats.
+- With AI Mix Assist, songs a check turned down are not checked again while the station plays (decided by the user, 2026-10-24). The station forgets them when it stops, and when its openness or perspective changes, since they might fit then. They can still be queued unchecked when the station would otherwise run dry.
 - The playlist keeps the last 10 played songs; older ones are removed.
 
 The Radio screen then offers:
@@ -62,6 +63,7 @@ The plugin and the service share `radio_mode_state.json` in the add-on profile:
 - `started_ts`: when the radio was turned on (kept across **Scan again**); `tuning_started_ts`: when scanning last started
 - `queue`: the station's playlist entries (`file`, `label`)
 - `seen`: songs already played or queued in this session (up to 5000)
+- `rejected`: songs the station's checks turned down (up to 5000), with `rejected_with`, the openness and perspective they were judged with; removed when the station stops
 - `seeds`: the songs that seeded the station's mixes
 - `current_*`: the song playing now
 - `stop_reason`: why the radio stopped (`manual_stop`, `player_stop`, `external_playback`, `startup_reset`, …)

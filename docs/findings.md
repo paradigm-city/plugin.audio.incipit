@@ -73,7 +73,9 @@ Two things in the search make it worse:
 - **Balanced examines fewer songs than Close.** `RADIO_CHECK_BATCHES` gives Focused 6 batches of 18, Close 4 and Balanced 2, because a stricter station needs more to choose from. When the list is mostly misfits, a station set to Balanced examines 36 songs and finds nothing, where the same station at Close examines 72.
 - **The check stays on the first list.** `radio_more_candidates` brings MusicIP's lists for the songs that fit only when the first list runs out. That list has more than 70 candidates, so the batch limit always ends the check first ("2 batch(es) and 1 list(s)"). The songs that did fit, for example Fred und Luna's "Monotonikum", would seed better lists. With "Stay close", every refill asks MusicIP about "Vitamin" again and gets much the same list.
 
-Possible fix: move on to the next list when a batch brings almost nothing (for example 0 or 1 of 18), and give a check that keeps choosing too little more batches. Not decided yet.
+The same misfits were also judged again and again: that evening, 797 rejections were of only 534 different songs (Jazz Liberatorz' "Always Something" 7 times). Since 2026-10-24 a playing station remembers the songs its checks turned down and leaves them out of later checks, so a check reaches new songs sooner (see `concept_radio_mode.md`).
+
+Still open: move on to the next list when a batch brings almost nothing (for example 0 or 1 of 18), and give a check that keeps choosing too little more batches. Not decided yet.
 
 ### F31 · MusicIP doesn't notice changed tags
 

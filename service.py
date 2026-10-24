@@ -1187,6 +1187,7 @@ RADIO_REFILL_RETRY_SECONDS = 60  # wait after a failed or empty top-up
 RADIO_OUTAGE_MAX_WAIT_SECONDS = 600  # MusicIP failing again and again: the wait doubles up to this
 RADIO_STOP_GRACE_SECONDS = 3     # playback must be stopped this long (gaps between songs are shorter)
 RADIO_MAX_SEEN = 5000            # songs remembered per session to avoid repeats
+RADIO_MAX_REJECTED = 5000        # songs the station's checks turned down, remembered while it plays
 RADIO_CHECKED_THRESHOLD = 3      # with AI Mix Assist: top up when fewer songs remain (the check takes 1-2 minutes)
 RADIO_CHECK_SIZE = 75            # MusicIP candidates per checked refill (MusicIP's maximum)
 RADIO_CHECKED_BATCH = 6          # songs per checked refill (15-40 minutes): small steps for a smooth meander; 6 is an experiment (was 8)
@@ -1214,6 +1215,8 @@ def radio_is_active() -> bool:
 
 
 def end_radio(state: dict, reason: str) -> dict:
+    state.pop("rejected", None)  # only the playing station remembers what its checks turned down
+    state.pop("rejected_with", None)
     state.update({
         "phase": "off",
         "stopped_ts": int(time.time()),
@@ -1507,6 +1510,34 @@ def log_radio_check_result(kind: str, result: dict) -> None:
         log_radio(f"Radio mode:   doesn't fit: {entry.get('label', '')!r}: {entry.get('reason', '')}")
 
 
+def rejection_settings(state: dict, plugin) -> str:
+    """The settings a station's checks judged with; the songs they turned down are remembered only under these."""
+    settings = state.get("settings") if isinstance(state.get("settings"), dict) else None
+    return (f"openness {plugin.station_setting_index(settings, 'openness')}, "
+            f"perspective {plugin.station_setting_index(settings, 'perspective')}")
+
+
+def rejected_songs(state: dict, plugin) -> set:
+    """The songs the playing station's checks turned down (identities); later checks leave them out. Forgotten when
+    the station stops, and when its openness or perspective changed since (they might fit now)."""
+    if state.get("rejected_with") != rejection_settings(state, plugin):
+        return set()
+    return set(state.get("rejected") or [])
+
+
+def remember_rejected(state: dict, plugin, result: dict) -> None:
+    settings = rejection_settings(state, plugin)
+    rejected = list(state.get("rejected") or []) if state.get("rejected_with") == settings else []
+    known = set(rejected)
+    for entry in result.get("not_fitting") or []:
+        identity = plugin.normalize_track_identity(str(entry.get("path", "")))
+        if identity and identity not in known:
+            known.add(identity)
+            rejected.append(identity)
+    state["rejected"] = rejected[-RADIO_MAX_REJECTED:]
+    state["rejected_with"] = settings
+
+
 def apply_radio_check(state: dict, plugin, position: int) -> None:
     """Apply a finished check to the station it was made for."""
     if radio_check_running() or RADIO_CHECK.get("result") is None:
@@ -1518,6 +1549,8 @@ def apply_radio_check(state: dict, plugin, position: int) -> None:
     if station != radio_station_id(state):
         log_radio("Radio mode: the check was made for an earlier station; its result is dropped.")
         return  # the station changed meanwhile
+    if result.get("error") is None:  # what it turned down stays out of the station's later checks
+        remember_rejected(state, plugin, result)
     if superseded:
         log_radio("Radio mode: the check's songs were replaced by unchecked ones meanwhile; only its profile is kept.")
         if result.get("reference"):
@@ -1700,10 +1733,16 @@ def refill_radio_queue(state: dict, checked: bool = False) -> int:
         reference_song = used_seed if drifting else str(state.get("seed") or used_seed)
         reference = state.get("reference") if isinstance(state.get("reference"), dict) else None
         neighbours = [str(entry["file"]) for entry in queue]
-        candidates, fallback = list(new_tracks), list(new_tracks[:RADIO_CHECKED_BATCH])
+        # Songs the station turned down before aren't judged again; they may still keep it from running dry.
+        rejected = rejected_songs(state, plugin)
+        candidates = [track for track in new_tracks if plugin.normalize_track_identity(track) not in rejected]
+        fallback = list(new_tracks[:RADIO_CHECKED_BATCH])
         seeds = [str(entry["file"]) for entry in refill_seed_entries(state, True)]
         more_seeds = seeds[seeds.index(str(used_entry["file"])) + 1:] if str(used_entry["file"]) in seeds else []
-        seen = list(seen_set)
+        seen = list(seen_set | rejected)
+        if len(candidates) < len(new_tracks):
+            log_radio(f"Radio mode: {len(new_tracks) - len(candidates)} of MusicIP's suggestions were turned down "
+                      f"earlier on this station ({len(rejected)} so far); they aren't checked again.")
         log_radio(f"Radio mode: AI Mix Assist picks {RADIO_CHECKED_BATCH} song(s) from MusicIP's {len(candidates)} "
                  f"suggestion(s) for {used_seed!r} (closest first, checked in groups).")
         start_radio_check(
