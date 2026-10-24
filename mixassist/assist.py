@@ -153,7 +153,8 @@ def rating_progress(progress: Optional[Callable[..., None]], text: str, share: f
 def score_candidates(candidate_paths: Sequence[str], units: Sequence[dict], entries: Sequence[Optional[dict]],
                      intent: str, analysis: Dict[str, object], cache: RatingCache, ask: Ask, resolve: Resolve,
                      model: str = "", progress: Optional[Callable[..., None]] = None,
-                     label: str = "Checking the replacements") -> Dict[str, dict]:
+                     label: str = "Checking the replacements",
+                     perspective: str = checks.DEFAULT_PERSPECTIVE) -> Dict[str, dict]:
     """Both signals for candidate tracks, measured against the master mix (one AI call for all of them).
     Keyed by path: label, artist, the AI's verdict and reason, and the relative misfit if the track is rated.
     progress(text, fraction) reports the parts of this step (`label`)."""
@@ -163,7 +164,7 @@ def score_candidates(candidate_paths: Sequence[str], units: Sequence[dict], entr
     candidate_entries = [cache.get(unit["key"]) for unit in candidates]
     if progress:
         progress(f"{label}: asking the AI about {len(candidates)} tracks", 0.75)
-    verdicts = checks.judge(intent, units[0], entries[0], candidates, candidate_entries, ask)
+    verdicts = checks.judge(intent, units[0], entries[0], candidates, candidate_entries, ask, perspective)
     scored: Dict[str, dict] = {}
     for number, (unit, entry) in enumerate(zip(candidates, candidate_entries), start=1):
         verdict = verdicts.get(number, {})
@@ -192,10 +193,12 @@ def passes(candidate: Optional[dict], strictness: float, accept_borderline: bool
 def tidy_up(paths: Sequence[str], cache: RatingCache, ask: Ask, resolve: Resolve, fetch_mix: FetchMix,
             intent: str = "", strictness: float = DEFAULT_STRICTNESS, artist_window: int = ARTIST_WINDOW,
             model: str = "", progress: Optional[Callable[..., None]] = None,
-            find_replacements: bool = True, accept_borderline: bool = False) -> dict:
+            find_replacements: bool = True, accept_borderline: bool = False,
+            perspective: str = checks.DEFAULT_PERSPECTIVE) -> dict:
     """A plan for the mix: the intent, every track's status, and the replacements to make.
 
-    With find_replacements=False only the tracks that don't fit are found ("show only")."""
+    With find_replacements=False only the tracks that don't fit are found ("show only"). The intent is stated and the
+    tracks are judged from the listening perspective (checks.PERSPECTIVES)."""
     def step(text: str, fraction: Optional[float] = None) -> None:
         """progress(text) at the start of a step, progress(text, fraction) within it."""
         if progress:
@@ -210,21 +213,22 @@ def tidy_up(paths: Sequence[str], cache: RatingCache, ask: Ask, resolve: Resolve
 
     step("Working out what this mix is about")
     if intent:
-        judged, name = checks.judge_named(intent, units[0], entries[0], units[1:], entries[1:], ask)
+        judged, name = checks.judge_named(intent, units[0], entries[0], units[1:], entries[1:], ask, perspective)
         verdicts = {position + 1: verdict for position, verdict in judged.items()}
         verdicts[1] = {"verdict": "fits", "reason": ""}
         intent_source = "listener"
     else:
-        intent, verdicts, name = checks.describe(units, entries, ask)
+        intent, verdicts, name = checks.describe(units, entries, ask, perspective)
         intent_source = "ai"
 
-    trace.say(f"What the mix is about ({intent_source}): {intent}" + (f"; name: {name}" if name else ""))
+    trace.say(f"What the mix is about ({intent_source}, {perspective} perspective): {intent}"
+              + (f"; name: {name}" if name else ""))
     analysis = analyze(units, entries, verdicts, cache.library(), strictness)
     rows = analysis["rows"]
     outliers = [row["position"] for row in rows if row.get("status") == "outlier"]
     trace.say(f"Tidy-up: {len(outliers)} of {len(rows) - 1} track(s) don't fit by both checks: {outliers}"
               + ("" if analysis["ready"] else " (too few rated tracks to measure)"))
-    plan = {"intent": intent, "intent_source": intent_source, "name": name, "rows": rows, "outliers": outliers, "changes": [],
+    plan = {"intent": intent, "intent_source": intent_source, "perspective": perspective, "name": name, "rows": rows, "outliers": outliers, "changes": [],
             "removed": [], "paths": paths, "rebuild_suggested": False}
     if not analysis["ready"] or not outliers or not find_replacements:
         return plan
@@ -262,7 +266,7 @@ def tidy_up(paths: Sequence[str], cache: RatingCache, ask: Ask, resolve: Resolve
             return {}
         step("Checking the replacements")
         return score_candidates(candidate_paths, units, entries, intent, analysis, cache, ask, resolve, model,
-                                progress=step)
+                                progress=step, perspective=perspective)
 
     taken = {path_key(path) for path in paths}
     artists = [unit.get("artist", "") for unit in units]
@@ -343,7 +347,8 @@ def choose_additions(selected: str, candidates: Sequence[str], count: int, cache
                      artist_window: int = ARTIST_WINDOW, model: str = "",
                      progress: Optional[Callable[..., None]] = None, reference: Optional[dict] = None,
                      accept_borderline: bool = False, name: bool = False, max_batches: int = 2,
-                     more: Optional[Callable[[List[str]], Sequence[str]]] = None) -> dict:
+                     more: Optional[Callable[[List[str]], Sequence[str]]] = None,
+                     perspective: str = checks.DEFAULT_PERSPECTIVE) -> dict:
     """"More like this" (and Radio refills): the selected song and MusicIP's candidates for it form a small mix with the selected song
     as its seed. New tracks are held to the same rule as replacements: both signals must say a candidate fits what
     the selected song is about. The first `count` fitting candidates (closest first) are chosen, without repeating
@@ -360,7 +365,8 @@ def choose_additions(selected: str, candidates: Sequence[str], count: int, cache
 
     Candidates are examined in batches until `count` are chosen or `max_batches` were examined (a stricter choice
     needs more to choose from). When the candidates run out first, more(chosen so far) may bring further ones
-    (another MusicIP list); [] ends the search. Also returns examined (how many) and lists (candidate lists used)."""
+    (another MusicIP list); [] ends the search. Also returns examined (how many) and lists (candidate lists used).
+    Every batch is judged from the same listening perspective (checks.PERSPECTIVES)."""
     def step(text: str, fraction: Optional[float] = None) -> None:
         if progress:
             progress(text) if fraction is None else progress(text, fraction)
@@ -397,15 +403,15 @@ def choose_additions(selected: str, candidates: Sequence[str], count: int, cache
         entries = [cache.get(unit["key"]) for unit in units]
         step(f"Checking the new tracks: asking the AI about {len(batch)} tracks", 0.1)
         if result["intent"]:  # a second batch is judged against the intent stated for the first
-            judged = checks.judge(result["intent"], units[0], entries[0], units[1:], entries[1:], ask)
+            judged = checks.judge(result["intent"], units[0], entries[0], units[1:], entries[1:], ask, perspective)
             verdicts = {number + 1: verdict for number, verdict in judged.items()}
         elif name:
-            result["intent"], verdicts, result["name"] = checks.describe(units, entries, ask)
+            result["intent"], verdicts, result["name"] = checks.describe(units, entries, ask, perspective)
         else:
-            result["intent"], verdicts = checks.state_intent(units, entries, ask)
+            result["intent"], verdicts = checks.state_intent(units, entries, ask, perspective)
         result["seed_entry"] = result["seed_entry"] or entries[0]
         if batches == 1:
-            trace.say(f"What {selected_unit['label']!r} is about: {result['intent']}"
+            trace.say(f"What {selected_unit['label']!r} is about ({perspective} perspective): {result['intent']}"
                       + (f"; name: {result['name']}" if result["name"] else ""))
         vector_entries = [reference] + entries[1:] if reference else entries
         analysis = analyze(units, vector_entries, verdicts, cache.library(), strictness)

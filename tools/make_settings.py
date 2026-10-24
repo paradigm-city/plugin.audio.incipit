@@ -10,6 +10,12 @@ root = pathlib.Path(sys.argv[1])
 WITH_AI = "--with-ai" in sys.argv
 
 OPENNESS = ["Focused", "Close", "Balanced", "Open", "Adventurous"]
+PERSPECTIVES = ["Mixed", "Technical", "Emotional", "Cultural", "Functional", "Lyrical"]  # main.PERSPECTIVE_LABELS
+PERSPECTIVE_HELP = ("Mixed: the music's intention and its qualities together, the tested default. Technical: how it "
+                    "is made (harmony, rhythm, form, musicianship), as a musician hears it. Emotional: how it feels "
+                    "and what it does to you. Cultural: where it comes from (scene, era, tradition). Functional: what "
+                    "it is for (a party, a drive, focus, falling asleep). Lyrical: what the words are about; for "
+                    "instrumental music, the story it suggests.")
 
 GENERAL = ("general", 30100, "General", [
     ("MusicIP server", [
@@ -65,6 +71,9 @@ AI = ("assist", 30400, "AI Mix Assist", [
              help="How much variety a mix welcomes when AI Mix Assist checks a new mix, tidies one up or adds tracks "
                   "with \"More like this\". Focused stays with the heart of the mix's style; Adventurous welcomes wide "
                   "variation, including tracks the AI calls borderline. Balanced is the tested default."),
+        dict(id="mix_assist_mix_perspective", type="enum", default="0", label="Mix perspective", options=PERSPECTIVES,
+             help="From which point of view AI Mix Assist works out what a mix is about and judges its tracks. "
+                  + PERSPECTIVE_HELP + " A mix can have its own, in its \"AI Mix Assist...\" menu."),
         dict(id="mix_assist_name_mixes", type="bool", default="true", label="Name mixes and stations",
              help="At its first check, AI Mix Assist gives a mix or radio station a short name of 2 to 4 words "
                   "saying what it is about, like \"Cosmic Analog Journeys\". It is shown instead of the seed song and "
@@ -109,6 +118,10 @@ RADIO = ("radio", 30600, "Radio", [
              help="How much each new song on the radio may surprise you. Focused keeps every song close to the one "
                   "before; Adventurous welcomes bold steps, including songs the AI calls borderline. Same scale as Mix "
                   "openness, set separately."),
+        dict(id="mix_assist_station_perspective", type="enum", default="0", label="Station perspective",
+             options=PERSPECTIVES,
+             help="From which point of view AI Mix Assist works out what a station is about and chooses its songs. "
+                  + PERSPECTIVE_HELP + " A favourite station can have its own."),
     ]),
 ])
 LOGGING = ("logging", 30700, "Logging", [

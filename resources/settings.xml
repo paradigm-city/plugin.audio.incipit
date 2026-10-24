@@ -98,26 +98,41 @@
                     </constraints>
                     <control type="spinner" format="string"/>
                 </setting>
-                <setting id="mix_assist_name_mixes" type="boolean" label="30413" help="30414">
+                <setting id="mix_assist_mix_perspective" type="integer" label="30413" help="30414">
+                    <level>0</level>
+                    <default>0</default>
+                    <constraints>
+                        <options>
+                            <option label="30415">0</option>
+                            <option label="30416">1</option>
+                            <option label="30417">2</option>
+                            <option label="30418">3</option>
+                            <option label="30419">4</option>
+                            <option label="30420">5</option>
+                        </options>
+                    </constraints>
+                    <control type="spinner" format="string"/>
+                </setting>
+                <setting id="mix_assist_name_mixes" type="boolean" label="30421" help="30422">
                     <level>0</level>
                     <default>true</default>
                     <control type="toggle"/>
                 </setting>
             </group>
-            <group id="2" label="30415">
-                <setting id="mix_assist_cli_path" type="string" label="30416" help="30417">
+            <group id="2" label="30423">
+                <setting id="mix_assist_cli_path" type="string" label="30424" help="30425">
                     <level>0</level>
                     <default/>
                     <constraints><allowempty>true</allowempty></constraints>
-                    <control type="edit" format="string"><heading>30416</heading></control>
+                    <control type="edit" format="string"><heading>30424</heading></control>
                 </setting>
-                <setting id="mix_assist_statistics" type="action" label="30418" help="30419">
+                <setting id="mix_assist_statistics" type="action" label="30426" help="30427">
                     <level>0</level>
                     <data>RunPlugin(plugin://plugin.audio.musicip/?action=mix_assist_statistics)</data>
                     <constraints><allowempty>true</allowempty></constraints>
                     <control type="button" format="action"><close>true</close></control>
                 </setting>
-                <setting id="mix_assist_statistics_reset" type="action" label="30420" help="30421">
+                <setting id="mix_assist_statistics_reset" type="action" label="30428" help="30429">
                     <level>0</level>
                     <data>RunPlugin(plugin://plugin.audio.musicip/?action=mix_assist_statistics_reset)</data>
                     <constraints><allowempty>true</allowempty></constraints>
@@ -154,6 +169,21 @@
                             <option label="30613">2</option>
                             <option label="30614">3</option>
                             <option label="30615">4</option>
+                        </options>
+                    </constraints>
+                    <control type="spinner" format="string"/>
+                </setting>
+                <setting id="mix_assist_station_perspective" type="integer" label="30616" help="30617">
+                    <level>0</level>
+                    <default>0</default>
+                    <constraints>
+                        <options>
+                            <option label="30618">0</option>
+                            <option label="30619">1</option>
+                            <option label="30620">2</option>
+                            <option label="30621">3</option>
+                            <option label="30622">4</option>
+                            <option label="30623">5</option>
                         </options>
                     </constraints>
                     <control type="spinner" format="string"/>

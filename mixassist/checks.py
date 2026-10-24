@@ -53,6 +53,135 @@ in the field "character".
 
 """ + TRACK_LINES_NOTE
 
+# Listening perspectives: from which point of view the seed's intent is stated and the tracks are judged. "mixed" is
+# the prompt above (C of 2026-10-24) and stays as it is; the others share its frame and differ in what the intent
+# describes and what a track must share to fit.
+PERSPECTIVES = ("mixed", "technical", "emotional", "cultural", "functional", "lyrical")
+DEFAULT_PERSPECTIVE = "mixed"
+
+SEED_INTENT_HEAD = """You judge whether the tracks of a music mix serve the listener's intent.
+The listener started the mix from the first track (the seed); MusicIP then added tracks by comparing audio.
+The seed carries the intent of the mix.
+"""
+
+SEED_INTENT_TAIL = """The rest of the mix is context only: a track does not fit just because similar tracks are in the mix too.
+Verdicts: fits, borderline or outlier. For borderline and outlier tracks give a reason of at most 12 words, naming
+what clashes. Give the seed itself the verdict fits.
+
+""" + TRACK_LINES_NOTE
+
+# perspective: (the view, what the intent describes, what a fitting track must share)
+PERSPECTIVE_TEXTS = {
+    "technical": (
+        "the view of an educated musician: what the musicians are doing, and how",
+        """First, state that intent (field "character") as an educated musician hears the seed. Begin with one sentence
+on the craft at the centre of the music: what the musicians are doing, and how (for example virtuoso improvisation
+over shifting harmony, tight interlocking grooves, songcraft built on hooks, a sound built layer by layer in the
+studio). Then give 5 to 8 qualities of that craft that a fitting track should share: harmony (its vocabulary, how
+far it moves from the conventional), rhythm and metre (straight, odd, shifting, swung, grooving), form (song,
+through-composed, open improvisation, build and release), melody and phrasing, the level and kind of musicianship,
+how the sound is made (played, programmed, produced) and the lineage the craft builds on. Name instruments and
+techniques where the craft depends on them.
+End with "Not:" and 2 or 3 kinds of music that sound similar but are made differently.""",
+        """Then judge every other track against that intent. A track fits only if it shares the craft: what the musicians do
+with harmony, rhythm and form, and how well. Matching mood, energy, genre or era alone is not enough; a track can
+fit with a different mood, genre or era if it shares the craft."""),
+    "emotional": (
+        "the listener's own view: what I experience, and how I react",
+        """First, state that intent (field "character") as the listener experiences the seed. Begin with one sentence on
+what the music does to the listener: the feeling it creates and how one reacts (for example lifted and restless,
+held and consoled, pulled into a trance, unsettled, wanting to move, wanting to sing along). Then give 5 to 8
+qualities of that experience that a fitting track should share: the mood and its colour (bright, dark,
+bittersweet, tense, serene), the energy and how it moves, intensity and closeness (intimate or overwhelming),
+tension and release, the pull of the rhythm on the body, and the place or moment the music takes one to.
+Leave out technique, genre, era and instrumentation unless they shape the feeling.
+End with "Not:" and 2 or 3 kinds of music that change the core feeling (for example relaxing instead of
+driving, or menacing instead of joyful). Don't name the shades that still fit: the "Not:" list must not contradict
+the qualities above.""",
+        """Then judge every other track against that intent. A track fits if the listener would come away with the same
+core feeling and reaction. Judge the whole experience, not each quality one by one: a different shade of the
+feeling still fits (a little warmer, darker, more playful or more restless). A track doesn't fit if it changes the
+feeling at its core (relaxing instead of driving, consoling instead of unsettling). A track can fit with a different
+genre, era or craft if it feels the same; a track of the same style does not fit if it feels different. The "Not:"
+list marks the opposite of the core feeling; a track is not an outlier just because it resembles one of its kinds on
+the surface."""),
+    "cultural": (
+        "the view of a music historian: where the music comes from and what it stands for",
+        """First, state that intent (field "character") as a music historian places the seed. Begin with one sentence on
+where the music comes from and what it stands for: its scene, era, tradition or movement, and its place in it (for
+example founding it, its mainstream, its underground, a revival, a crossover). Then give 5 to 8 qualities of that
+background that a fitting track should share: the scene and where it lived, the era (when the music was made and
+when it sounds like), the tradition and lineage, the audience and setting it was made for, the scene's attitude
+and values, and the sound that marks it. Artists may be named as reference points of the scene.
+End with "Not:" and 2 or 3 kinds of music that sound similar but come from another scene, tradition or time.""",
+        """Then judge every other track against that intent. A track fits only if it comes from the same scene, tradition and
+time, or stands in a direct line with them (its roots, its successors, kindred scenes). Matching sound, mood or
+energy alone is not enough."""),
+    "functional": (
+        "the view of what the music is for: the situation or activity it serves",
+        """First, state that intent (field "character") as the moment the seed serves. Begin with one sentence on what a
+listener would choose the seed for: the situation, activity or moment it works in (for example a party at its peak,
+a long night drive, focused work, a workout, winding down, falling asleep, close listening with full attention).
+Then give 5 to 8 qualities that make it work there and that a fitting track should share: the energy level and how
+steady it is, tempo and pulse, how much attention it asks for (foreground or background), how smooth or abrupt it
+is, how prominent the voice and the words are, how far surprises would disturb the moment, length and flow.
+Leave out genre, era and craft unless they matter for the moment.
+End with "Not:" and 2 or 3 kinds of music that share the seed's style but would break the moment.""",
+        """Then judge every other track against that intent. A track fits only if it serves the same moment without breaking
+it: a listener in that moment would not reach for the skip button. A track can fit with a different genre, era or
+craft if it serves the moment; a track of the same style does not fit if it would break it."""),
+    "lyrical": (
+        "the view of the words: what the songs are about and how they speak",
+        """First, state that intent (field "character") from the seed's words. Begin with one sentence on what the words
+are about and how they speak: the subject, and the singer's stance towards it (for example confession, protest,
+storytelling, celebration, longing, irony). Then give 5 to 8 qualities of the words that a fitting track should
+share: themes and subject, point of view and voice, tone (earnest, ironic, bitter, playful, tender), the language
+(plain, poetic, abstract, slang), how central the words are to the song, and how they are delivered. If the seed is
+instrumental or you don't know its words, say so, and describe instead what the music says without words: the
+story, image or idea its title and sound suggest.
+End with "Not:" and 2 or 3 kinds of songs that share the seed's sound but say something else.""",
+        """Then judge every other track against that intent. A track fits only if its words share the subject or the stance,
+and the tone; for an instrumental seed, if the track tells a similar story without words. A track can fit with a
+different genre, era or sound if its words fit. If you don't know a track's words exactly, judge by what you know of
+the song and its artist's writing, and by what its title, its description and its tone suggest; not knowing the
+words is no reason for borderline."""),
+}
+
+
+def seed_intent_prompt(perspective: str = DEFAULT_PERSPECTIVE) -> str:
+    """The seed-intent check from a perspective; "mixed" (and any unknown perspective) is SEED_INTENT_PROMPT."""
+    if perspective not in PERSPECTIVE_TEXTS:
+        return SEED_INTENT_PROMPT
+    _view, intent, judging = PERSPECTIVE_TEXTS[perspective]
+    return SEED_INTENT_HEAD + "\n" + intent + "\n\n" + judging + "\n" + SEED_INTENT_TAIL
+
+
+def intent_prompt(perspective: str = DEFAULT_PERSPECTIVE) -> str:
+    """The intent check from a perspective: the intent was stated from it, so the tracks are judged from it too."""
+    if perspective not in PERSPECTIVE_TEXTS:
+        return INTENT_PROMPT
+    view, _intent, judging = PERSPECTIVE_TEXTS[perspective]
+    rule = judging.replace("Then judge every other track against that intent. ", "")
+    return f"""You judge tracks for a music mix against the listener's intent, from {view}.
+The listener started the mix from a seed track. The intent is given below together with the seed; it is either
+stated earlier from the seed or written by the listener.
+
+Judge every track against that intent only. {rule}
+Verdicts: fits, borderline or outlier. For borderline and outlier tracks give a reason of at most 12 words, naming
+what clashes. Put a one-sentence summary of the intent in the field "character".
+
+""" + TRACK_LINES_NOTE
+
+
+def perspective_of(system_prompt: str) -> Optional[Tuple[str, str]]:
+    """(purpose, perspective) of a check's system prompt, purpose "describing" or "judging"; None for other prompts."""
+    for perspective in PERSPECTIVES:
+        if system_prompt.startswith(seed_intent_prompt(perspective)):
+            return "describing", perspective
+        if system_prompt.startswith(intent_prompt(perspective)):
+            return "judging", perspective
+    return None
+
 
 def schema(with_name: bool = False) -> dict:
     result = {
@@ -105,32 +234,35 @@ def parse_verdicts(payload: Optional[dict], count: int) -> Dict[int, dict]:
     return verdicts
 
 
-def state_intent(units: Sequence[dict], entries: Sequence[Optional[dict]], ask: Ask) -> Tuple[str, Dict[int, dict]]:
+def state_intent(units: Sequence[dict], entries: Sequence[Optional[dict]], ask: Ask,
+                 perspective: str = DEFAULT_PERSPECTIVE) -> Tuple[str, Dict[int, dict]]:
     """The seed's intent and a verdict per position (1 = the seed)."""
     lines = [track_line(number, unit, entry) for number, (unit, entry) in enumerate(zip(units, entries), start=1)]
-    payload = ask(SEED_INTENT_PROMPT, schema(), "\n".join(lines))
+    payload = ask(seed_intent_prompt(perspective), schema(), "\n".join(lines))
     return str((payload or {}).get("character", "")), parse_verdicts(payload, len(units))
 
 
 def judge(intent: str, seed: dict, seed_entry: Optional[dict], units: Sequence[dict],
-          entries: Sequence[Optional[dict]], ask: Ask) -> Dict[int, dict]:
+          entries: Sequence[Optional[dict]], ask: Ask, perspective: str = DEFAULT_PERSPECTIVE) -> Dict[int, dict]:
     """A verdict per track (numbered from 1) against a known intent."""
     lines = [f"Intent: {intent}", "", "Seed: " + track_line(0, seed, seed_entry)[3:], "", "Tracks:"]
     lines += [track_line(number, unit, entry) for number, (unit, entry) in enumerate(zip(units, entries), start=1)]
-    return parse_verdicts(ask(INTENT_PROMPT, schema(), "\n".join(lines)), len(units))
+    return parse_verdicts(ask(intent_prompt(perspective), schema(), "\n".join(lines)), len(units))
 
 
-def describe(units: Sequence[dict], entries: Sequence[Optional[dict]], ask: Ask) -> Tuple[str, Dict[int, dict], str]:
+def describe(units: Sequence[dict], entries: Sequence[Optional[dict]], ask: Ask,
+             perspective: str = DEFAULT_PERSPECTIVE) -> Tuple[str, Dict[int, dict], str]:
     """As state_intent, plus a short name for the mix (2 to 4 words), in the same call."""
     lines = [track_line(number, unit, entry) for number, (unit, entry) in enumerate(zip(units, entries), start=1)]
-    payload = ask(SEED_INTENT_PROMPT + "\n\n" + NAME_NOTE, schema(with_name=True), "\n".join(lines))
+    payload = ask(seed_intent_prompt(perspective) + "\n\n" + NAME_NOTE, schema(with_name=True), "\n".join(lines))
     return str((payload or {}).get("character", "")), parse_verdicts(payload, len(units)), parse_name(payload)
 
 
 def judge_named(intent: str, seed: dict, seed_entry: Optional[dict], units: Sequence[dict],
-                entries: Sequence[Optional[dict]], ask: Ask) -> Tuple[Dict[int, dict], str]:
+                entries: Sequence[Optional[dict]], ask: Ask,
+                perspective: str = DEFAULT_PERSPECTIVE) -> Tuple[Dict[int, dict], str]:
     """As judge, plus a short name for the mix taken from the intent, in the same call."""
     lines = [f"Intent: {intent}", "", "Seed: " + track_line(0, seed, seed_entry)[3:], "", "Tracks:"]
     lines += [track_line(number, unit, entry) for number, (unit, entry) in enumerate(zip(units, entries), start=1)]
-    payload = ask(INTENT_PROMPT + "\n\n" + NAME_NOTE, schema(with_name=True), "\n".join(lines))
+    payload = ask(intent_prompt(perspective) + "\n\n" + NAME_NOTE, schema(with_name=True), "\n".join(lines))
     return parse_verdicts(payload, len(units)), parse_name(payload)

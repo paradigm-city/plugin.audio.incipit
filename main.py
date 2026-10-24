@@ -5227,7 +5227,7 @@ def describe_station_start(params: dict, favourite: dict | None, assisted: bool)
     if not assisted:
         return f"{station} | mix: {mix} | AI Mix Assist: off"
     settings = favourite_settings(favourite)
-    source = {key: "favourite's own" if key in settings else "setting" for key in ("openness", "drift")}
+    source = {key: "favourite's own" if key in settings else "setting" for key in ("openness", "drift", "perspective")}
     openness = max(0, min(4, station_setting_index(settings, "openness")))
     limit, borderline = get_station_strictness(settings)
     drift = max(0, min(2, station_setting_index(settings, "drift")))
@@ -5235,7 +5235,8 @@ def describe_station_start(params: dict, favourite: dict | None, assisted: bool)
     return (f"{station} | mix: {mix} | AI Mix Assist: on, model {mix_assist_claude.DEFAULT_MODEL}, effort "
             f"{mix_assist_claude.DEFAULT_EFFORT} | openness {MIX_OPENNESS_LABELS[openness]} ({source['openness']}; "
             f"limit {limit}, borderline {'accepted' if borderline else 'rejected'}) | drift {RADIO_DRIFT_LABELS[drift]} "
-            f"({source['drift']}; {f'half-life {half_life} songs' if half_life else 'no drift'})")
+            f"({source['drift']}; {f'half-life {half_life} songs' if half_life else 'no drift'}) | perspective "
+            f"{perspective_label(station_setting_index(settings, 'perspective'))} ({source['perspective']})")
 
 
 def open_radio_station(seed: str, favourite: dict | None, progress) -> bool:
@@ -5281,6 +5282,7 @@ def open_radio_station(seed: str, favourite: dict | None, progress) -> bool:
         "assisted": assisted,
         "openness": MIX_OPENNESS_LABELS[max(0, min(4, station_setting_index(favourite_settings(favourite), "openness")))],
         "drift": RADIO_DRIFT_LABELS[max(0, min(2, station_setting_index(favourite_settings(favourite), "drift")))],
+        "perspective": perspective_label(station_setting_index(favourite_settings(favourite), "perspective")),
     }
     save_radio_state({
         "events": [started_event],
@@ -5949,6 +5951,8 @@ def format_history_intent_edited(event: dict) -> list[str]:
 
 def format_history_assist_settings(event: dict) -> list[str]:
     parts = [f"openness {event['openness']}"] if event.get("openness") else []
+    if event.get("perspective"):
+        parts.append(f"the {str(event['perspective']).lower()} perspective")
     if event.get("intent"):
         parts.append(f"about \"{event['intent']}\"")
     who = "When you created the mix, you set AI Mix Assist to" if event.get("at_creation") else "You set AI Mix Assist to"
@@ -6154,10 +6158,9 @@ def usage_log() -> mix_assist_usage.UsageLog:
 
 
 def ai_purpose(system_prompt: str) -> str:
-    if system_prompt.startswith(mix_assist_checks.SEED_INTENT_PROMPT):
-        return "describing"
-    if system_prompt.startswith(mix_assist_checks.INTENT_PROMPT):
-        return "judging"
+    check = mix_assist_checks.perspective_of(system_prompt)  # describing or judging, from any perspective
+    if check:
+        return check[0]
     return "rating" if system_prompt == mix_assist_dimensions.build_system_prompt() else "other"
 
 
@@ -6536,10 +6539,16 @@ def mix_info_parts(cache_path: str) -> dict:
     if intent or section.get("checked_ts") or "openness" in section:
         if intent:
             about.append(str(intent))
-            about.append("(in your words)" if section.get("listener_intent") else "(as the AI put it)")
+            stated = str(section.get("intent_perspective") or mix_assist_checks.DEFAULT_PERSPECTIVE)
+            about.append("(in your words)" if section.get("listener_intent") else
+                         "(as the AI put it)" if stated == mix_assist_checks.DEFAULT_PERSPECTIVE else
+                         f"(as the AI put it, from the {stated} perspective)")
         index = mix_openness_index(meta)
         state = (f"off for this mix" if index == MIX_OPENNESS_OFF else
                  f"openness {mix_openness_label(index)}" + (" (chosen for this mix)" if "openness" in section else ""))
+        if index != MIX_OPENNESS_OFF and mix_perspective_index(meta) != 0:
+            state += f", {perspective_label(mix_perspective_index(meta)).lower()} perspective" + (
+                " (chosen for this mix)" if "perspective" in section else "")
         checked = f", last checked {format_sidecar_ts(section.get('checked_ts'))}" if section.get("checked_ts") else ""
         about.append(f"AI Mix Assist: {state}{checked}")
     info["about"] = about
@@ -7338,11 +7347,13 @@ def get_station_strictness(settings: dict | None = None) -> tuple[float, bool]:
 
 
 def station_setting_index(settings: dict | None, key: str) -> int:
-    """A station's own "openness" or "drift" (a favourite's), else the global setting."""
+    """A station's own "openness", "drift" or "perspective" (a favourite's), else the global setting."""
     if isinstance(settings, dict) and isinstance(settings.get(key), int):
         return settings[key]
     if key == "openness":
         return get_setting_int("mix_assist_station_strictness", 2)
+    if key == "perspective":
+        return get_setting_int("mix_assist_station_perspective", 0)
     return get_setting_int("mix_assist_radio_drift", 1)
 
 
@@ -7407,6 +7418,7 @@ def compute_mix_assist_plan(tracks: list[str], meta: dict, progress=None, find_r
             progress=progress,
             find_replacements=find_replacements,
             accept_borderline=mix_strictness_for(meta)[1],
+            perspective=perspective_key(mix_perspective_index(meta)),
         )
     finally:
         store.close()
@@ -7426,6 +7438,7 @@ def record_mix_assist_result(cache_path: str, original: list[str], plan: dict, a
         "checked_ts": int(time.time()),
         "intent": plan["intent"],
         "intent_source": plan["intent_source"],
+        "intent_perspective": plan.get("perspective", mix_assist_checks.DEFAULT_PERSPECTIVE),
         "replaced": [
             {"old": change["old"], "old_label": change["old_label"], "new": change["new"],
              "new_label": change["new_label"], "reason": change["reason"]}
@@ -7457,6 +7470,7 @@ def record_mix_assist_result(cache_path: str, original: list[str], plan: dict, a
         record_mix_history(cache_path, "named", name=plan["name"])
     record_mix_history(
         cache_path, "ai_tidy_up", automatic=automatic, intent=plan["intent"], judged=len(plan["rows"]),
+        perspective=plan.get("perspective", mix_assist_checks.DEFAULT_PERSPECTIVE),
         replaced=[{"old": change["old_label"], "new": change["new_label"], "reason": change["reason"]}
                   for change in plan["changes"]],
         removed=[{"track": row["unit"]["label"], "reason": row.get("reason") or row.get("why", "")} for row in removed],
@@ -7573,6 +7587,7 @@ def check_more_like_this(cache_path: str, tracks: list[str], selected: int, cand
                 model=mix_assist_claude.DEFAULT_MODEL,
                 progress=mix_assist_step_reporter(progress, MORE_LIKE_THIS_STEPS, start=60),
                 accept_borderline=mix_strictness_for(meta)[1],
+                perspective=perspective_key(mix_perspective_index(meta)),
             )
         finally:
             store.close()
@@ -7609,6 +7624,50 @@ def mix_openness_index(meta: dict) -> int:
     return index if index == MIX_OPENNESS_OFF else max(0, min(len(MIX_OPENNESS_LABELS) - 1, index))
 
 
+# Listening perspectives: from which point of view the AI states what a mix or station is about and judges its
+# tracks (mixassist.checks.PERSPECTIVES, in this order). Settings "Mix perspective" and "Station perspective"; a mix
+# or a favourite station can have its own.
+PERSPECTIVE_LABELS = ("Mixed", "Technical", "Emotional", "Cultural", "Functional", "Lyrical")
+PERSPECTIVE_HINTS = ("intention and qualities", "how it is made", "how it feels", "where it comes from",
+                     "what it is for", "what the words say")
+
+
+def perspective_index(index) -> int:
+    try:
+        return max(0, min(len(PERSPECTIVE_LABELS) - 1, int(index)))
+    except (TypeError, ValueError):
+        return 0
+
+
+def perspective_label(index) -> str:
+    return PERSPECTIVE_LABELS[perspective_index(index)]
+
+
+def perspective_key(index) -> str:
+    """mixassist's name of a perspective ("mixed", "technical", ...)."""
+    return mix_assist_checks.PERSPECTIVES[perspective_index(index)]
+
+
+def default_mix_perspective() -> int:
+    return perspective_index(get_setting_int("mix_assist_mix_perspective", 0))
+
+
+def mix_perspective_index(meta: dict) -> int:
+    """This mix's perspective: its own choice, else the "Mix perspective" setting."""
+    section = get_mix_assist_section(meta)
+    return perspective_index(section["perspective"]) if "perspective" in section else default_mix_perspective()
+
+
+def select_perspective(heading: str, current: int, default: int) -> int | None:
+    """One of the perspectives; None when cancelled."""
+    labels = [f"{label}: {hint}" + (" (default)" if index == default else "")
+              for index, (label, hint) in enumerate(zip(PERSPECTIVE_LABELS, PERSPECTIVE_HINTS))]
+    choice = xbmcgui.Dialog().select(heading, labels, preselect=perspective_index(current))
+    if choice is None or choice < 0 or choice >= len(labels):
+        return None
+    return choice
+
+
 def mix_strictness_for(meta: dict) -> tuple[float, bool]:
     """(limit, accept borderline) for a mix; when it is off, a tidy-up you start uses the default level."""
     index = mix_openness_index(meta)
@@ -7618,7 +7677,9 @@ def mix_strictness_for(meta: dict) -> tuple[float, bool]:
 def mix_assist_dialog_lines(params: dict) -> list[str]:
     openness = int(params.get("assist_openness", default_mix_openness()))
     intent = str(params.get("assist_intent") or "").strip()
+    perspective = perspective_index(params.get("assist_perspective", default_mix_perspective()))
     return [f"AI Mix Assist: {mix_openness_label(openness)}",
+            f"Perspective: {perspective_label(perspective)}",
             plain(f"What this mix is about: {shorten(intent, 50) if intent else '<worked out by the AI>'}")]
 
 
@@ -7633,6 +7694,11 @@ def edit_mix_assist_dialog_choice(params: dict, line: int) -> dict:
         choice = select_mix_openness("AI Mix Assist for this mix", current)
         if choice is not None:
             updated["assist_openness"] = choice
+    elif line == 1:
+        current = perspective_index(updated.get("assist_perspective", default_mix_perspective()))
+        choice = select_perspective("Perspective of this mix", current, default_mix_perspective())
+        if choice is not None:
+            updated["assist_perspective"] = choice
     else:
         value = ask_text("What is this mix about?", str(updated.get("assist_intent") or ""))
         if value is not None:
@@ -7657,6 +7723,8 @@ def remember_mix_assist_choices(key: str, params: dict) -> None:
     choices = {}
     if "assist_openness" in params and int(params["assist_openness"]) != default_mix_openness():
         choices["openness"] = int(params["assist_openness"])
+    if "assist_perspective" in params and perspective_index(params["assist_perspective"]) != default_mix_perspective():
+        choices["perspective"] = perspective_index(params["assist_perspective"])
     if str(params.get("assist_intent") or "").strip():
         choices["listener_intent"] = str(params["assist_intent"]).strip()
     if choices:
@@ -7677,6 +7745,7 @@ def apply_mix_assist_choices(cache_path: str, tracks: list[str]) -> None:
     save_json_file(mix_meta_path_from_cache_path(cache_path), meta)
     record_mix_history(cache_path, "assist_settings", at_creation=True,
                        openness=mix_openness_label(choices["openness"]) if "openness" in choices else "",
+                       perspective=perspective_label(choices["perspective"]) if "perspective" in choices else "",
                        intent=choices.get("listener_intent", ""))
 
 
@@ -7688,6 +7757,7 @@ def choose_from_mix_assist_menu(cache_path: str) -> str:
     entries = [
         (f"What this mix is about: {shorten(intent, 50) if intent else '<not worked out yet>'}", "mix_assist_edit_intent"),
         (f"Openness: {mix_openness_label(mix_openness_index(meta))}", "mix_assist_openness"),
+        (f"Perspective: {perspective_label(mix_perspective_index(meta))}", "mix_assist_perspective"),
     ] + ([(f"Name: {mix_name(meta) or '<given at the first check>'}", "mix_assist_rename")]
          if mix_naming_enabled() and is_mix_saved(meta) else []) + [
         ("Run AI Mix Assist", "mix_assist_tidy_up"),
@@ -7711,6 +7781,20 @@ def choose_mix_openness(cache_path: str) -> bool:
     meta[MIX_ASSIST_SECTION] = section
     save_json_file(mix_meta_path_from_cache_path(cache_path), meta)
     record_mix_history(cache_path, "assist_settings", openness=mix_openness_label(choice))
+    return True
+
+
+def choose_mix_perspective(cache_path: str) -> bool:
+    meta = get_saved_mix_metadata(cache_path, load_mix_by_cache_path(cache_path))
+    current = mix_perspective_index(meta)
+    choice = select_perspective("Perspective of this mix", current, default_mix_perspective())
+    if choice is None or choice == current:
+        return False
+    section = get_mix_assist_section(meta)
+    section["perspective"] = choice
+    meta[MIX_ASSIST_SECTION] = section
+    save_json_file(mix_meta_path_from_cache_path(cache_path), meta)
+    record_mix_history(cache_path, "assist_settings", perspective=perspective_label(choice))
     return True
 
 
@@ -8007,9 +8091,11 @@ def check_radio_refill(reference_song: str, candidates: list[str], count: int, r
     try:
         window = get_mix_reject_size() or mix_assist.ARTIST_WINDOW
         strictness, borderline = get_station_strictness(settings)
+        perspective = perspective_key(station_setting_index(settings, "perspective"))
         profile = "the station's drifting profile" if reference else "the song's own profile"
         log_radio(f"Radio mode: checking {len(candidates)} candidate(s) for {reference_song!r}: {count} wanted, "
-                  f"strictness {strictness}{', borderline accepted' if borderline else ''}, at most "
+                  f"strictness {strictness}{', borderline accepted' if borderline else ''}, {perspective} "
+                  f"perspective, at most "
                   f"{radio_check_batches(settings)} batch(es), drift half-life {get_radio_drift_half_life(settings)} "
                   f"song(s), measured against {profile}, artists blocked within {window}.")
         result = mix_assist.choose_additions(
@@ -8026,6 +8112,7 @@ def check_radio_refill(reference_song: str, candidates: list[str], count: int, r
             max_batches=radio_check_batches(settings),
             more=radio_more_candidates(list(more_seeds), seen, settings,
                                        picked=reference_song if get_radio_drift_half_life(settings) == 0 else ""),
+            perspective=perspective,
         )
     finally:
         store.close()
@@ -8262,6 +8349,7 @@ def save_station_as_favourite() -> None:
         "number": next_favourite_number(stations),
         "openness": station_setting_index(settings, "openness"),
         "drift": station_setting_index(settings, "drift"),
+        "perspective": station_setting_index(settings, "perspective"),
         "name": station_name(state) or picked or path_to_label(seed),
         "seed": seed,
         "seed_label": picked or path_to_label(seed),
@@ -8299,6 +8387,8 @@ def show_radio_favourites() -> None:
              f"RunPlugin({addon_url(action='radio_favourite_setting', id=station['id'], setting='openness', nonce=new_nonce())})"),
             (f"Drift: {drift}",
              f"RunPlugin({addon_url(action='radio_favourite_setting', id=station['id'], setting='drift', nonce=new_nonce())})"),
+            (f"Perspective: {favourite_perspective_label(station)}",
+             f"RunPlugin({addon_url(action='radio_favourite_setting', id=station['id'], setting='perspective', nonce=new_nonce())})"),
             ("Rename", f"RunPlugin({addon_url(action='radio_rename_favourite', id=station['id'], nonce=new_nonce())})"),
             ("Remove from favourites",
              f"RunPlugin({addon_url(action='radio_remove_favourite', id=station['id'], nonce=new_nonce())})"),
@@ -8322,6 +8412,7 @@ def show_radio_favourite_info(favourite_id: str) -> None:
         f"Picked song: {picked}{album_suffix(station.get('seed'))}",
         f"Station openness: {openness}",
         f"Station drift: {drift}",
+        f"Station perspective: {favourite_perspective_label(station)}",
         f"Saved: {format_sidecar_ts(station.get('saved_ts'))}",
         "",
         "A favourite always starts fresh from its picked song; its name and settings stay.",
@@ -8336,7 +8427,8 @@ def show_radio_favourite_info(favourite_id: str) -> None:
 
 def favourite_settings(favourite: dict | None) -> dict:
     """A favourite's own station settings ({} for favourites saved before they had any: the global ones apply)."""
-    return {key: favourite[key] for key in ("openness", "drift") if isinstance((favourite or {}).get(key), int)}
+    return {key: favourite[key] for key in ("openness", "drift", "perspective")
+            if isinstance((favourite or {}).get(key), int)}
 
 
 def favourite_setting_labels(favourite: dict) -> tuple[str, str]:
@@ -8346,18 +8438,25 @@ def favourite_setting_labels(favourite: dict) -> tuple[str, str]:
     return openness, drift
 
 
+def favourite_perspective_label(favourite: dict) -> str:
+    return perspective_label(station_setting_index(favourite_settings(favourite), "perspective"))
+
+
 def change_favourite_setting(favourite_id: str, key: str) -> None:
-    """Openness or drift of a favourite; a playing favourite uses it from its next check on."""
-    if key not in ("openness", "drift"):
+    """Openness, drift or perspective of a favourite; a playing favourite uses it from its next check on."""
+    if key not in ("openness", "drift", "perspective"):
         return
     stations = load_radio_favourites()
     station = next((entry for entry in stations if entry.get("id") == favourite_id), None)
     if not station:
         return
-    labels = MIX_OPENNESS_LABELS if key == "openness" else RADIO_DRIFT_LABELS
     current = station_setting_index(favourite_settings(station), key)
-    heading = f"{'Openness' if key == 'openness' else 'Drift'} of {plain(favourite_title(station))}"
-    choice = xbmcgui.Dialog().select(heading, list(labels), preselect=current)
+    heading = f"{key.capitalize()} of {plain(favourite_title(station))}"
+    if key == "perspective":
+        choice = select_perspective(heading, current, perspective_index(get_setting_int("mix_assist_station_perspective", 0)))
+    else:
+        labels = MIX_OPENNESS_LABELS if key == "openness" else RADIO_DRIFT_LABELS
+        choice = xbmcgui.Dialog().select(heading, list(labels), preselect=current)
     if choice is None or choice < 0 or choice == current:
         return
     station[key] = choice
@@ -8470,7 +8569,8 @@ def build_radio_overview(state: dict, events: list[dict]) -> str:
     ]
     if started.get("assisted"):
         lines.append(f"AI Mix Assist: on | Station openness: {started.get('openness')} | "
-                     f"Station drift: {started.get('drift')}")
+                     f"Station drift: {started.get('drift')}"
+                     + (f" | Station perspective: {started['perspective']}" if started.get("perspective") else ""))
     else:
         lines.append("AI Mix Assist: off for this station")
     lines.append(f"Refills: {len(refills)} ({len(checked)} checked, {len(refills) - len(checked)} unchecked)")
@@ -8887,6 +8987,9 @@ def router(params: dict[str, str] | None = None) -> None:
             if action == "mix_assist_openness":
                 if choose_mix_openness(cache_path):
                     notify("Saved. AI Mix Assist uses it for this mix from now on.")
+            elif action == "mix_assist_perspective":
+                if choose_mix_perspective(cache_path):
+                    notify("Saved. Tidy up the mix to see it from the new perspective.")
             elif action == "mix_assist_rename":
                 rename_mix(cache_path)
             elif action == "mix_assist_tidy_up":
