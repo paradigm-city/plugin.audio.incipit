@@ -179,6 +179,22 @@ class FavouriteNumberTest(RadioBase):
             self.assertAlmostEqual((bottom - top) / image.height, 0.1, delta=0.02)  # once, the new height
             self.assertEqual(main.load_radio_favourites()[0]["fanart"], after["fanart"])  # not again
 
+    def test_artwork_saved_without_the_number_by_older_code_gets_it(self):
+        self.use_font()
+        main.save_radio_favourites([{"id": "f1", "name": "Night Drive", "seed": "D:\\a.mp3", "number": 10}])
+        main.save_favourite_artwork("f1", self.picture("c", (800, 800)), "")
+        stations = main.load_radio_favourites()
+        newer = os.path.join(main.get_profile_dir(), "covers", "favourite_f1_99.jpg")  # what a service still running
+        os.replace(self.picture("n", (800, 800)), newer)  # the code from before the numbers saved: no number, no
+        stations[0]["cover"] = newer  # original, the look of the number unchanged
+        main.save_json_file(main.radio_favourites_path(), {"stations": stations})
+        (favourite,) = main.load_radio_favourites()
+        from PIL import Image
+        self.assertNotEqual(favourite["cover"], newer)
+        self.assertIsNotNone(Image.open(favourite["cover"]).convert("L").point(lambda v: 255 if v > 40 else 0).getbbox())
+        self.assertEqual(favourite["cover_plain"], main.plain_favourite_artwork_path(favourite["cover"]))
+        self.assertEqual(main.load_radio_favourites()[0]["cover"], favourite["cover"])  # once
+
     def test_the_playing_favourites_name_has_its_number(self):
         main.save_radio_favourites([{"id": "f1", "name": "Night Drive", "seed": "D:\\a.mp3", "number": 4}])
         self.assertEqual(main.station_name({"favourite_id": "f1", "name": "Night Drive"}), "4. Night Drive")
