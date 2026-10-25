@@ -557,6 +557,43 @@ class AssistTest(unittest.TestCase):
         self.assertEqual(result["chosen"], ["cand1"])
         self.assertEqual([entry["path"] for entry in result["not_fitting"]], ["odd1"])
 
+    def test_a_song_the_ai_would_take_is_turned_down_with_the_profiles_reason(self):
+        self.add("odd1", exploration=9, form=1, energy=0)  # the AI says it fits; its energy is clearly off
+        said = self.traced()
+        result = assist.choose_additions("seed", ["odd1", "candbad", "cand1", "cand2", "cand3", "cand4"], 1,
+                                         self.store, self.ask, self.resolve, artist_window=0)
+        reasons = {entry["path"]: entry["reason"] for entry in result["not_fitting"]}
+        self.assertRegex(reasons["odd1"], r"^the AI says it fits, but its profile is clearly off in energy \(energy: ")
+        self.assertEqual(reasons["candbad"], "clashes")  # the AI's own reason when the AI turned it down
+        self.assertIn(f"  passed over 'odd1': doesn't fit ({reasons['odd1']}).", said)
+        row = {"verdict": "borderline", "relative": 1.5, "single": "", "why": ""}
+        self.assertEqual(assist.turned_down_reason(row, 1.2, accept_borderline=True),
+                         "the AI says it is borderline, but its profile is too far from the seed's (relative 1.50, "
+                         "at most 1.20)")
+        self.assertEqual(assist.turned_down_reason({"verdict": "fits"}, 1.2),
+                         "the AI says it fits, but it has no rating to compare")
+
+    def test_emotional_leaves_production_out_of_the_profile(self):
+        self.assertNotIn("production", assist.profile_keys("emotional"))
+        for perspective in checks.PERSPECTIVES:
+            if perspective != "emotional":
+                self.assertEqual(assist.profile_keys(perspective), dimensions.ALL_KEYS)
+        seed = vector(production=9)
+        self.assertEqual(assist.single_dimension_miss(vector(production=2), seed), "production")
+        self.assertEqual(assist.single_dimension_miss(vector(production=2), seed, assist.profile_keys("emotional")), "")
+        self.add("glossless", exploration=9, form=1, production=10)  # like the seed, but its production is far off
+        paths = ["seed"] + [f"fit{i}" for i in range(1, 9)] + ["glossless"]
+        units = self.resolve(paths)
+        entries = [self.store.get(unit["key"]) for unit in units]
+        verdicts = {position: {"verdict": "fits", "reason": ""} for position in range(1, len(paths) + 1)}
+        rows = {p: assist.analyze(units, entries, verdicts, self.store.library(), 1.2, p)["rows"][-1]
+                for p in ("mixed", "emotional")}
+        self.assertEqual((rows["mixed"]["single"], rows["mixed"]["status"]), ("production", "flagged"))
+        self.assertEqual((rows["emotional"]["single"], rows["emotional"]["status"]), ("", "fits"))
+        result = assist.choose_additions("seed", ["glossless", "cand1"], 1, self.store, self.ask, self.resolve,
+                                         artist_window=0, perspective="emotional")
+        self.assertEqual(result["chosen"], ["glossless"])
+
     def test_a_fitting_mix_is_left_alone(self):
         paths = ["seed"] + [f"fit{i}" for i in range(1, 9)]
         plan = assist.tidy_up(paths, self.store, self.ask, self.resolve, self.fetch_mix)
