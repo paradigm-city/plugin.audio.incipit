@@ -79,15 +79,7 @@ The same misfits were also judged again and again: that evening, 797 rejections 
 
 Still open: move on to the next list when a batch brings almost nothing (for example 0 or 1 of 18), and give a check that keeps choosing too little more batches. Not decided yet.
 
-On 2026-10-25, with Emotional from the artist's side, the same station got 7 songs from 4 checks (2, 1, 1 and 3 of about 70 examined each, always from 1 list). The user reproduced the thin suggestions in MusicIP itself, and added compilations and fringe music to the library in the hope of better lists. A second limit showed in that log: see F35.
-
-### F35 · Radio gives the AI's "fits" reason for songs the profile check turned down
-
-Seen on 2026-10-25 in the log of "Cold Precision Electro" (Emotional). A song is added only when both signals say it fits (`assist.passes`). When the AI says "fits" but the profile check doesn't, `choose_additions` records the AI's reason in `not_fitting`, so the Radio log shows `doesn't fit: 'Jeff Mills - DNA': Stripped hypnotic techno, machine precision and repetition`, which reads like a fit. The `[ai]` trace has the real cause ("clearly off in production"), the Radio lines don't. The station's memory of turned-down songs also keeps these songs, so they are not checked again while it plays, even if the station drifts towards them.
-
-In that session the profile check overruled 5 of the AI's 14 fits, all for one dimension clearly off in production (the single-dimension rule): Cinephile "One", Human League "All I Ever Wanted (Minimal Demo)", Symboter "Silent Storm", Jeff Mills "DNA" and "Solid Sleep". Emotional's prompt says production doesn't matter unless it carries the statement; the profile check weighed it the same for every perspective.
-
-Fixed on 2026-10-25 (not committed yet): `assist.turned_down_reason` gives the profile's reason when the AI would have taken the song ("the AI says it fits, but its profile is clearly off in production (production: natural vs. glossy; …)"), in the Radio log, the trace and the station's skipped songs. Emotional leaves production out of the profile check (`assist.PROFILE_LEAVES_OUT`); replayed on that session, 3 of the 5 songs pass (see `concept_ai_mix_assist.md`, *Emotional leaves production out of the profile check*). Tested in `test_mixassist_tidy_up` (`test_a_song_the_ai_would_take_is_turned_down_with_the_profiles_reason`, `test_emotional_leaves_production_out_of_the_profile`). Moves to **Resolved** with the commit.
+On 2026-10-25, with Emotional from the artist's side, the same station got 7 songs from 4 checks (2, 1, 1 and 3 of about 70 examined each, always from 1 list). The user reproduced the thin suggestions in MusicIP itself, and added compilations and fringe music to the library in the hope of better lists. A second limit showed in that log: see F35. MusicIP was then scanning the new folders, so later lists for this seed may differ; the counts above are from before.
 
 ### F31 · MusicIP doesn't notice changed tags
 
@@ -98,6 +90,16 @@ Why it matters: good tags make good mixes. MusicIP uses its own copy of the tags
 Not solved. Still to find out: whether MusicIP can be made to read a file's tags again (an API call, a setting, or removing the song from its library and taking it in again), and how the add-on could find the songs whose tags changed (for example Kodi's library dates against the time of the last reload). Taking in a song takes MusicIP minutes, one song at a time, so any fix has to touch only the changed songs and wait while Radio or Discovery plays.
 
 ## Resolved
+
+### F35 · Radio gives the AI's "fits" reason for songs the profile check turned down
+
+Seen on 2026-10-25 in the log of "Cold Precision Electro" (Emotional). A song is added only when both signals say it fits (`assist.passes`). When the AI says "fits" but the profile check doesn't, `choose_additions` records the AI's reason in `not_fitting`, so the Radio log shows `doesn't fit: 'Jeff Mills - DNA': Stripped hypnotic techno, machine precision and repetition`, which reads like a fit. The `[ai]` trace has the real cause ("clearly off in production"), the Radio lines don't. The station's memory of turned-down songs also keeps these songs, so they are not checked again while it plays, even if the station drifts towards them.
+
+In that session the profile check overruled 5 of the AI's 14 fits, all for one dimension clearly off in production (the single-dimension rule): Cinephile "One", Human League "All I Ever Wanted (Minimal Demo)", Symboter "Silent Storm", Jeff Mills "DNA" and "Solid Sleep". Emotional's prompt says production doesn't matter unless it carries the statement; the profile check weighed it the same for every perspective.
+
+Fixed in 476c940 (2026-10-25): `assist.turned_down_reason` gives the profile's reason when the AI would have taken the song ("the AI says it fits, but its profile is clearly off in production (production: natural vs. glossy; …)"), in the Radio log, the trace and the station's skipped songs. Emotional leaves production out of the profile check (`assist.PROFILE_LEAVES_OUT`); replayed on that session, 3 of the 5 songs pass (see `concept_ai_mix_assist.md`, *Emotional leaves production out of the profile check*).
+
+**Test:** `test_mixassist_tidy_up.AssistTest.test_a_song_the_ai_would_take_is_turned_down_with_the_profiles_reason`, `test_mixassist_tidy_up.AssistTest.test_emotional_leaves_production_out_of_the_profile`
 
 ### F32 · A favourite station's artwork could stay without its number
 
