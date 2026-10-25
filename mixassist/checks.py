@@ -87,24 +87,32 @@ End with "Not:" and 2 or 3 kinds of music that sound similar but are made differ
 with harmony, rhythm and form, and how well. Matching mood, energy, genre or era alone is not enough; a track can
 fit with a different mood, genre or era if it shares the craft."""),
     "emotional": (
-        "the listener's own view: what I experience, and how I react",
-        """First, state that intent (field "character") as the listener experiences the seed. Begin with one sentence on
-what the music does to the listener: the feeling it creates and how one reacts (for example lifted and restless,
-held and consoled, pulled into a trance, unsettled, wanting to move, wanting to sing along). Then give 5 to 8
-qualities of that experience that a fitting track should share: the mood and its colour (bright, dark,
-bittersweet, tense, serene), the energy and how it moves, intensity and closeness (intimate or overwhelming),
-tension and release, the pull of the rhythm on the body, and the place or moment the music takes one to.
-Leave out technique, genre, era and instrumentation unless they shape the feeling.
-End with "Not:" and 2 or 3 kinds of music that change the core feeling (for example relaxing instead of
-driving, or menacing instead of joyful). Don't name the shades that still fit: the "Not:" list must not contradict
-the qualities above.""",
-        """Then judge every other track against that intent. A track fits if the listener would come away with the same
-core feeling and reaction. Judge the whole experience, not each quality one by one: a different shade of the
-feeling still fits (a little warmer, darker, more playful or more restless). A track doesn't fit if it changes the
-feeling at its core (relaxing instead of driving, consoling instead of unsettling). A track can fit with a different
-genre, era or craft if it feels the same; a track of the same style does not fit if it feels different. The "Not:"
-list marks the opposite of the core feeling; a track is not an outlier just because it resembles one of its kinds on
-the surface."""),
+        "the artist's view: the emotion the music sets out to express, and how it means it",
+        """First, state that intent (field "character") from the artist's side, as a skilled DJ hears the seed when
+building a mix into one whole experience. Begin with one sentence on the emotional statement at the heart of the
+music: what its makers feel and want to convey, and the stance they take towards it (for example earnest longing,
+cool fascination with machines and modern life, defiant joy, grief held back, ironic distance, release). Go by what
+the artist means, not by how an average listener might use the music: a hypnotic pulse can serve contemplation
+rather than dancing.
+Then give the qualities in two parts. "Core:" 3 to 5 qualities a fitting track must share: the stance and how
+seriously and deeply it is meant (a considered statement, or light, pretty and merely pleasant), what the makers are
+after (their own artistic idea, or pop appeal: hooks, sing-along, romantic drama, glamour), whether the feeling is
+the music's own or borrowed (nostalgia for an earlier style, pastiche), sincere or ironic. Describe the core in terms
+other music can share; leave out the seed's subject. How openly the feeling is shown is not its depth: restrained
+music can mean a great deal, and wit or play can be meant seriously. "Colour:" 2 or 3 qualities of the seed's own
+shade of the feeling (for example cool, warm, dark, sensual, playful, restrained) and the inner world it takes one
+to; other tracks may differ in these. Leave out technique, genre, era and instrumentation unless they carry the
+statement.
+End with "Not:" and 2 or 3 kinds of music that feel similar on the surface but are after something else, or mean it
+less. Don't name other colours of the same core: the "Not:" list must not contradict the qualities above.""",
+        """Then judge every other track against that intent. A track fits if it shares the core, in its own way and
+in its own colour: a darker, warmer, more sensual, more playful or more restrained track fits, and so does one with a
+different subject, genre, era or craft. A track is an outlier if its makers are after something else (for example
+pop appeal where the seed follows its own idea), or if it only borrows the surface of the feeling: matching the
+pulse, the energy or the sound is not enough, and a track that is lighter, prettier or more nostalgic in intent than
+the seed changes the statement. Borderline is for a track that shares the core only in part, not for a different
+colour. The "Not:" list marks what changes the statement; a track is not an outlier just because it resembles one of
+its kinds on the surface."""),
     "cultural": (
         "the view of a music historian: where the music comes from and what it stands for",
         """First, state that intent (field "character") as a music historian places the seed. Begin with one sentence on

@@ -173,7 +173,7 @@ msgid "Mix perspective"
 msgstr ""
 
 msgctxt "#30414"
-msgid "From which point of view AI Mix Assist works out what a mix is about and judges its tracks. Mixed: the music's intention and its qualities together, the tested default. Technical: how it is made (harmony, rhythm, form, musicianship), as a musician hears it. Emotional: how it feels and what it does to you. Cultural: where it comes from (scene, era, tradition). Functional: what it is for (a party, a drive, focus, falling asleep). Lyrical: what the words are about; for instrumental music, the story it suggests. A mix can have its own, in its \"AI Mix Assist...\" menu."
+msgid "From which point of view AI Mix Assist works out what a mix is about and judges its tracks. Mixed: the music's intention and its qualities together, the tested default. Technical: how it is made (harmony, rhythm, form, musicianship), as a musician hears it. Emotional: the emotion the artist sets out to express, and how seriously it is meant. Cultural: where it comes from (scene, era, tradition). Functional: what it is for (a party, a drive, focus, falling asleep). Lyrical: what the words are about; for instrumental music, the story it suggests. A mix can have its own, in its \"AI Mix Assist...\" menu."
 msgstr ""
 
 msgctxt "#30415"
@@ -305,7 +305,7 @@ msgid "Station perspective"
 msgstr ""
 
 msgctxt "#30617"
-msgid "From which point of view AI Mix Assist works out what a station is about and chooses its songs. Mixed: the music's intention and its qualities together, the tested default. Technical: how it is made (harmony, rhythm, form, musicianship), as a musician hears it. Emotional: how it feels and what it does to you. Cultural: where it comes from (scene, era, tradition). Functional: what it is for (a party, a drive, focus, falling asleep). Lyrical: what the words are about; for instrumental music, the story it suggests. A favourite station can have its own."
+msgid "From which point of view AI Mix Assist works out what a station is about and chooses its songs. Mixed: the music's intention and its qualities together, the tested default. Technical: how it is made (harmony, rhythm, form, musicianship), as a musician hears it. Emotional: the emotion the artist sets out to express, and how seriously it is meant. Cultural: where it comes from (scene, era, tradition). Functional: what it is for (a party, a drive, focus, falling asleep). Lyrical: what the words are about; for instrumental music, the story it suggests. A favourite station can have its own."
 msgstr ""
 
 msgctxt "#30618"

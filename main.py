@@ -7628,7 +7628,7 @@ def mix_openness_index(meta: dict) -> int:
 # tracks (mixassist.checks.PERSPECTIVES, in this order). Settings "Mix perspective" and "Station perspective"; a mix
 # or a favourite station can have its own.
 PERSPECTIVE_LABELS = ("Mixed", "Technical", "Emotional", "Cultural", "Functional", "Lyrical")
-PERSPECTIVE_HINTS = ("intention and qualities", "how it is made", "how it feels", "where it comes from",
+PERSPECTIVE_HINTS = ("intention and qualities", "how it is made", "what the artist expresses", "where it comes from",
                      "what it is for", "what the words say")
 
 

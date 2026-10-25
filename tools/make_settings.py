@@ -12,8 +12,8 @@ WITH_AI = "--with-ai" in sys.argv
 OPENNESS = ["Focused", "Close", "Balanced", "Open", "Adventurous"]
 PERSPECTIVES = ["Mixed", "Technical", "Emotional", "Cultural", "Functional", "Lyrical"]  # main.PERSPECTIVE_LABELS
 PERSPECTIVE_HELP = ("Mixed: the music's intention and its qualities together, the tested default. Technical: how it "
-                    "is made (harmony, rhythm, form, musicianship), as a musician hears it. Emotional: how it feels "
-                    "and what it does to you. Cultural: where it comes from (scene, era, tradition). Functional: what "
+                    "is made (harmony, rhythm, form, musicianship), as a musician hears it. Emotional: the emotion "
+                    "the artist sets out to express, and how seriously it is meant. Cultural: where it comes from (scene, era, tradition). Functional: what "
                     "it is for (a party, a drive, focus, falling asleep). Lyrical: what the words are about; for "
                     "instrumental music, the story it suggests.")
 
