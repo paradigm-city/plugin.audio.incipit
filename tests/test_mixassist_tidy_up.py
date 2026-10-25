@@ -245,6 +245,21 @@ class PerspectiveTest(unittest.TestCase):
         self.assertEqual([checks.perspective_of(system) for system in systems],
                          [("describing", "emotional")] * 2 + [("judging", "emotional")] * 2)
 
+    def test_emotional_judges_what_the_artist_expresses(self):
+        seed = " ".join(checks.seed_intent_prompt("emotional").split())
+        judging = " ".join(checks.intent_prompt("emotional").split())
+        self.assertIn("from the artist's side", seed)
+        self.assertIn("not by how an average listener might use the music", seed)
+        self.assertIn('"Core:" 3 to 5 qualities a fitting track must share', seed)
+        self.assertIn('"Colour:" 2 or 3 qualities', seed)
+        self.assertIn("other tracks may differ in these", seed)
+        for prompt in (seed, judging):
+            with self.subTest(prompt=prompt[:40]):
+                self.assertIn("A track fits if it shares the core, in its own way and in its own colour", prompt)
+                self.assertIn("A track is an outlier if its makers are after something else", prompt)
+                self.assertIn("Borderline is for a track that shares the core only in part", prompt)
+        self.assertIn("from the artist's view", judging)
+
 
 class AssistTest(unittest.TestCase):
     """A seed with a clear profile, fitting tracks, and two tracks that clearly don't fit."""
