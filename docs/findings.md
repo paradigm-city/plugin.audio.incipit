@@ -21,6 +21,8 @@ Kodi crashed (access violation) twice while the add-on was building a folder lis
 
 - 2026-10-17, opening a stored mix (`browse_mix`, "Loaded stored mix from cache"), about 0.1 s into adding its tracks: again in `xbmcplugin.addDirectoryItem()` → `CPluginDirectory::AddItem` → `CFileItemList::Add`, this time while inserting into the list's lookup map. No mix was being generated, so the listing itself was fast.
 
+- 2026-10-25, during Radio playback: `kodi.old.log` ends at 09:58:18, right after a song change ("now playing 'Extrawelt - Zu Fuss'", no check running, no listing being built). Kodi left no crash dump this time, so the cause is unknown and may not be this pattern.
+
 All three stacks were resolved with Kodi 21.3's debug symbols (`kodi-21.3-Omega-x64.pdb` from mirrors.kodi.tv matches the installed build). In all cases Kodi's object for the pending folder request was no longer valid when the add-on called into it. This happens when Kodi gives up a folder request while the add-on is still working on it, for example when the screen changes (`Container.Update`, `Container.Refresh`, Back) during a slow listing. Generating a mix inside a listing takes several seconds (MusicIP reload, the confirmation dialog, the mix itself), which leaves a wide window. F8 is the same pattern from the other side: actions run as folder requests that switch screens instead of returning a listing.
 
 The add-on can't check whether Kodi still waits for a listing. The 2026-10-17 crash shows that a slow listing is not required: the add-on adds tracks one call at a time (40 calls for a 40-track mix), and the crash hits during that loop. Adding all items in one call (`xbmcplugin.addDirectoryItems`) would shrink that window to a single call. A likely fix is to stop doing slow work and dialogs inside folder requests: generate mixes in a `RunPlugin` action, then show the stored mix with `Container.Update`, whose listing is fast.
@@ -76,6 +78,16 @@ Two things in the search make it worse:
 The same misfits were also judged again and again: that evening, 797 rejections were of only 534 different songs (Jazz Liberatorz' "Always Something" 7 times). Since 2026-10-24 a playing station remembers the songs its checks turned down and leaves them out of later checks, so a check reaches new songs sooner (see `concept_radio_mode.md`).
 
 Still open: move on to the next list when a batch brings almost nothing (for example 0 or 1 of 18), and give a check that keeps choosing too little more batches. Not decided yet.
+
+On 2026-10-25, with Emotional from the artist's side, the same station got 7 songs from 4 checks (2, 1, 1 and 3 of about 70 examined each, always from 1 list). The user reproduced the thin suggestions in MusicIP itself, and added compilations and fringe music to the library in the hope of better lists. A second limit showed in that log: see F35.
+
+### F35 · Radio gives the AI's "fits" reason for songs the profile check turned down
+
+Seen on 2026-10-25 in the log of "Cold Precision Electro" (Emotional). A song is added only when both signals say it fits (`assist.passes`). When the AI says "fits" but the profile check doesn't, `choose_additions` records the AI's reason in `not_fitting`, so the Radio log shows `doesn't fit: 'Jeff Mills - DNA': Stripped hypnotic techno, machine precision and repetition`, which reads like a fit. The `[ai]` trace has the real cause ("clearly off in production"), the Radio lines don't. The station's memory of turned-down songs also keeps these songs, so they are not checked again while it plays, even if the station drifts towards them.
+
+In that session the profile check overruled 5 of the AI's 14 fits, all for one dimension clearly off in production (the single-dimension rule): Cinephile "One", Human League "All I Ever Wanted (Minimal Demo)", Symboter "Silent Storm", Jeff Mills "DNA" and "Solid Sleep". Emotional's prompt says production doesn't matter unless it carries the statement; the profile check weighed it the same for every perspective.
+
+Fixed on 2026-10-25 (not committed yet): `assist.turned_down_reason` gives the profile's reason when the AI would have taken the song ("the AI says it fits, but its profile is clearly off in production (production: natural vs. glossy; …)"), in the Radio log, the trace and the station's skipped songs. Emotional leaves production out of the profile check (`assist.PROFILE_LEAVES_OUT`); replayed on that session, 3 of the 5 songs pass (see `concept_ai_mix_assist.md`, *Emotional leaves production out of the profile check*). Tested in `test_mixassist_tidy_up` (`test_a_song_the_ai_would_take_is_turned_down_with_the_profiles_reason`, `test_emotional_leaves_production_out_of_the_profile`). Moves to **Resolved** with the commit.
 
 ### F31 · MusicIP doesn't notice changed tags
 

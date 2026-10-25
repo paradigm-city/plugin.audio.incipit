@@ -28,6 +28,10 @@ REBUILD_SHARE = 1 / 3
 # user's, and flagged 2 of 70 fitting tracks (1 without); at 4 points / 20 years it flagged 26 fitting tracks.
 SINGLE_DIMENSION_POINTS = 5  # on the 0-10 scales
 SINGLE_DIMENSION_YEARS = 25  # sounding year
+# Dimensions the profile check leaves out for a listening perspective whose prompt says they don't matter. Emotional
+# judges what the artist expresses, with production left out "unless it carries the statement"; on a Kraftwerk
+# station the production rating alone overruled 5 of the AI's 14 fits (F35).
+PROFILE_LEAVES_OUT = {"emotional": ("production",)}
 
 Resolve = Callable[[Sequence[str]], List[dict]]
 FetchMix = Callable[[str, int], List[str]]
@@ -42,10 +46,15 @@ def artist_key(artist: str) -> str:
     return " ".join(word for word in normalize(artist).split() if word not in ("and", "the"))
 
 
-def single_dimension_miss(entry: dict, reference: dict) -> str:
+def profile_keys(perspective: str = checks.DEFAULT_PERSPECTIVE) -> tuple:
+    """The dimensions the profile check compares for a listening perspective."""
+    return tuple(key for key in dimensions.ALL_KEYS if key not in PROFILE_LEAVES_OUT.get(perspective, ()))
+
+
+def single_dimension_miss(entry: dict, reference: dict, keys: Sequence[str] = dimensions.ALL_KEYS) -> str:
     """The dimension on which entry is clearly off from reference (the largest such), "" if none."""
     misses = []
-    for key in dimensions.ALL_KEYS:
+    for key in keys:
         if not isinstance(entry.get(key), (int, float)) or not isinstance(reference.get(key), (int, float)):
             continue
         gap = abs(float(entry[key]) - float(reference[key]))
@@ -56,24 +65,27 @@ def single_dimension_miss(entry: dict, reference: dict) -> str:
 
 
 def analyze(units: Sequence[dict], entries: Sequence[Optional[dict]], verdicts: Dict[int, dict],
-            library: List[dict], strictness: float = DEFAULT_STRICTNESS) -> Dict[str, object]:
-    """Per track: weighted misfit against the seed, relative to the mix's median, the AI's verdict and a status."""
+            library: List[dict], strictness: float = DEFAULT_STRICTNESS,
+            perspective: str = checks.DEFAULT_PERSPECTIVE) -> Dict[str, object]:
+    """Per track: weighted misfit against the seed, relative to the mix's median, the AI's verdict and a status.
+    The profile compares the dimensions that matter for the listening perspective (profile_keys)."""
     seed = entries[0]
     vectors = [entry for entry in entries if entry]
+    keys = profile_keys(perspective)
     if not seed or len(vectors) < 5:
-        return {"rows": [], "weights": {}, "spreads": {}, "typical": 1.0, "ready": False}
-    spreads = fit.mix_spreads(vectors)
-    weights = fit.seed_weights(seed, library)
+        return {"rows": [], "weights": {}, "spreads": {}, "typical": 1.0, "ready": False, "keys": keys}
+    spreads = fit.mix_spreads(vectors, keys)
+    weights = fit.seed_weights(seed, library, keys)
     weighted = fit.weighted_spreads(spreads, weights)
-    inverse = fit.inverse_correlation(library)
+    inverse = fit.inverse_correlation(library, keys)
     rows = []
     for position, (unit, entry) in enumerate(zip(units, entries), start=1):
         row = {"position": position, "unit": unit, "entry": entry}
         row.update(verdicts.get(position, {"verdict": "", "reason": ""}))
         if entry:
-            row["misfit"], deviations = fit.misfit(entry, seed, weighted, inverse)
+            row["misfit"], deviations = fit.misfit(entry, seed, weighted, inverse, keys)
             row["why"] = fit.reason(entry, seed, deviations)
-            row["single"] = single_dimension_miss(entry, seed) if position > 1 else ""
+            row["single"] = single_dimension_miss(entry, seed, keys) if position > 1 else ""
             row["guessed"] = entry.get("familiarity", 1) == 0
         rows.append(row)
     typical = max(MIN_TYPICAL_MISFIT, median([row["misfit"] for row in rows[1:] if "misfit" in row]))
@@ -97,7 +109,7 @@ def analyze(units: Sequence[dict], entries: Sequence[Optional[dict]], verdicts: 
     if trace.active():
         trace_rows(rows, typical, strictness, weights)
     return {"rows": rows, "weights": weights, "spreads": weighted, "inverse": inverse, "typical": typical,
-            "ready": True}
+            "ready": True, "keys": keys}
 
 
 def trace_rows(rows: Sequence[dict], typical: float, strictness: float, weights: Dict[str, float]) -> None:
@@ -171,9 +183,10 @@ def score_candidates(candidate_paths: Sequence[str], units: Sequence[dict], entr
         candidate = {"path": unit["path"], "label": unit["label"], "artist": unit.get("artist", ""),
                      "verdict": verdict.get("verdict", ""), "reason": verdict.get("reason", "")}
         if entry:
-            misfit, _ = fit.misfit(entry, entries[0], analysis["spreads"], analysis["inverse"])
+            keys = analysis.get("keys", dimensions.ALL_KEYS)
+            misfit, _ = fit.misfit(entry, entries[0], analysis["spreads"], analysis["inverse"], keys)
             candidate["relative"] = misfit / analysis["typical"]
-            candidate["single"] = single_dimension_miss(entry, entries[0])
+            candidate["single"] = single_dimension_miss(entry, entries[0], keys)
             candidate["entry"] = entry
         scored[unit["path"]] = candidate
         trace.say(f"  candidate {unit['label']!r}: relative {trace.number(candidate.get('relative'))}"
@@ -188,6 +201,20 @@ def passes(candidate: Optional[dict], strictness: float, accept_borderline: bool
     verdicts = ("fits", "borderline") if accept_borderline else ("fits",)
     return bool(candidate) and candidate.get("relative") is not None and candidate["relative"] <= strictness \
         and not candidate.get("single") and candidate.get("verdict") in verdicts
+
+
+def turned_down_reason(row: dict, strictness: float, accept_borderline: bool = False) -> str:
+    """Why a candidate doesn't pass: the AI's reason, or the profile's when the AI would have taken it (F35)."""
+    if row.get("verdict") not in (("fits", "borderline") if accept_borderline else ("fits",)):
+        return row.get("reason") or row.get("why", "")
+    said = "fits" if row["verdict"] == "fits" else "is borderline"
+    profile = f" ({row['why']})" if row.get("why") else ""
+    if row.get("relative") is None:
+        return f"the AI says it {said}, but it has no rating to compare"
+    if row.get("single"):
+        return f"the AI says it {said}, but its profile is clearly off in {row['single']}{profile}"
+    return (f"the AI says it {said}, but its profile is too far from the seed's (relative "
+            f"{trace.number(row['relative'])}, at most {trace.number(strictness)}){profile}")
 
 
 def tidy_up(paths: Sequence[str], cache: RatingCache, ask: Ask, resolve: Resolve, fetch_mix: FetchMix,
@@ -223,7 +250,7 @@ def tidy_up(paths: Sequence[str], cache: RatingCache, ask: Ask, resolve: Resolve
 
     trace.say(f"What the mix is about ({intent_source}, {perspective} perspective): {intent}"
               + (f"; name: {name}" if name else ""))
-    analysis = analyze(units, entries, verdicts, cache.library(), strictness)
+    analysis = analyze(units, entries, verdicts, cache.library(), strictness, perspective)
     rows = analysis["rows"]
     outliers = [row["position"] for row in rows if row.get("status") == "outlier"]
     trace.say(f"Tidy-up: {len(outliers)} of {len(rows) - 1} track(s) don't fit by both checks: {outliers}"
@@ -414,7 +441,7 @@ def choose_additions(selected: str, candidates: Sequence[str], count: int, cache
             trace.say(f"What {selected_unit['label']!r} is about ({perspective} perspective): {result['intent']}"
                       + (f"; name: {result['name']}" if result["name"] else ""))
         vector_entries = [reference] + entries[1:] if reference else entries
-        analysis = analyze(units, vector_entries, verdicts, cache.library(), strictness)
+        analysis = analyze(units, vector_entries, verdicts, cache.library(), strictness, perspective)
         if not analysis["ready"]:
             trace.say("Candidates: too few rated tracks to measure"
                       + ("; the first ones are taken unchecked." if not result["checked"] else "; the search ends."))
@@ -428,9 +455,9 @@ def choose_additions(selected: str, candidates: Sequence[str], count: int, cache
                 break
             path = row["unit"]["path"]
             if not passes(row, strictness, accept_borderline):
-                result["not_fitting"].append({"path": path, "label": row["unit"]["label"],
-                                              "reason": row.get("reason") or row.get("why", "")})
-                trace.say(f"  passed over {row['unit']['label']!r}: doesn't fit ({row.get('reason') or row.get('why', '')}).")
+                reason = turned_down_reason(row, strictness, accept_borderline)
+                result["not_fitting"].append({"path": path, "label": row["unit"]["label"], "reason": reason})
+                trace.say(f"  passed over {row['unit']['label']!r}: doesn't fit ({reason}).")
                 continue
             artist = artist_key(row["unit"].get("artist", ""))
             if artist in blocked:

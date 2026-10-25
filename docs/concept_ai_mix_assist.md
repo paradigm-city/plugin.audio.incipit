@@ -244,7 +244,7 @@ When the AI first describes a mix or a station, it also names it in 2 to 4 words
 
 ### Listening perspectives (2026-10-24)
 
-The listener chooses the point of view from which the AI states what a mix or station is about and judges its tracks. The 8 dimensions stay neutral. Only the two AI prompts change; the vector check is the same for every perspective.
+The listener chooses the point of view from which the AI states what a mix or station is about and judges its tracks. The 8 dimensions stay neutral. The two AI prompts change; the vector check is the same for every perspective, except that Emotional leaves production out of it (see *Emotional from the artist's side*).
 
 | Perspective | The intent describes | A track fits if it shares |
 |---|---|---|
@@ -297,7 +297,9 @@ Playful and dark or sensual shades fit, pop appeal and borrowed nostalgia don't.
 
 E3 has Boy Harsher and Pyrolator fit and keeps synthwave and Juliet out. Its other fits form a line from Kraftwerk: Fred und Luna, Extrawelt, Thomas Fehlmann, New Musik, early Depeche Mode, Yazoo "State Farm", Cinephile. It differs from the user on Marsheaux (outlier, read as an eighties revival; letting it in would let synthwave back), on Daniel Wang (borderline), on Human League, OMD and Yazoo "Situation" (borderline, so only Adventurous takes them), and on Camouflage (fits). With only about 1 in 9 of MusicIP's suggestions fitting at the usual openness, such a station depends more on moving on to the next MusicIP list (F34). The hint in the menus is now "what the artist expresses".
 
-Not built: a perspective could also shift the seed weights (technical towards exploration, making, form and production; emotional towards mood, energy and danceability), and more are possible. Both wait until listening shows the need. The intent check of each perspective was not tested on its own; it shares its rule with the seed-intent check.
+**Emotional leaves production out of the profile check (2026-10-25).** The first session with E3 (4 checks, 7 songs) showed a second limit: the profile check overruled 5 of the AI's 14 fits, all for production alone ("clearly off in production": Jeff Mills, Cinephile, Human League's minimal demo, Symboter), against a seed rated glossy. Emotional's prompt leaves production out unless it carries the statement, so the profile check now does too (`assist.PROFILE_LEAVES_OUT`): for Emotional, the misfit, the seed weights, the spreads and the single-dimension rule use the other seven dimensions. The session's 16 batches replayed with the logged AI verdicts and the cached ratings: 3 of the 5 now pass (Human League "All I Ever Wanted (Minimal Demo)", Symboter "Silent Storm", Jeff Mills "Solid Sleep"); Jeff Mills "DNA" stays just over the limit (relative 1.10 at 1.10), Cinephile's rating wasn't found; no song that passed before fails. The other perspectives keep every dimension. Radio now also says why the profile check turned a song down when the AI would have taken it ("the AI says it fits, but its profile is clearly off in production (…)") instead of repeating the AI's reason (F35).
+
+Not built: a perspective could also shift the seed weights (technical towards exploration, making, form and production; emotional towards mood, energy and danceability), beyond Emotional leaving production out, and more are possible. Both wait until listening shows the need. The intent check of each perspective was not tested on its own; it shares its rule with the seed-intent check.
 
 ## Drift
 
