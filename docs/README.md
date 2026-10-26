@@ -14,6 +14,7 @@ Feature baseline: **1.0.87**
 - `concept_sidecar_metadata.md`
 - `concept_ai_mix_assist.md`: AI Mix Assist, which keeps mixes true to their seed (being built)
 - `glossary_ai_mix_assist.md`: terms used for AI Mix Assist
+- `concept_suggestion_engine.md`: suggestions from a map of related artists instead of MusicIP (draft)
 - `testing_quality_notes.md`
 - `findings.md`: known problems in the code and their status
 
