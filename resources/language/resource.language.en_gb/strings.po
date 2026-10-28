@@ -361,7 +361,7 @@ msgid "General"
 msgstr ""
 
 msgctxt "#30702"
-msgid "Detailed messages in Kodi's log (kodi.log) about menus and screens, keymaps, track details and artwork, MusicIP library reloads and the service's start. Errors and warnings are always logged, whatever these switches say."
+msgid "Detailed messages in Kodi's log (kodi.log) about menus and screens, keymaps, track details and artwork, MusicIP library reloads, the sound engine's set-up and analyses, and the service's start. Errors and warnings are always logged, whatever these switches say."
 msgstr ""
 
 msgctxt "#30703"
@@ -369,7 +369,7 @@ msgid "Mixing"
 msgstr ""
 
 msgctxt "#30704"
-msgid "Every request to MusicIP (seed, parameters, address) with the songs it returned and how long it took, and every mix created, opened, refreshed or changed."
+msgid "Every request to MusicIP or the sound engine (seed, parameters, address) with the songs it returned and how long it took (the sound engine also with each song's similarity, artist and title), and every mix created, opened, refreshed or changed."
 msgstr ""
 
 msgctxt "#30705"
@@ -402,4 +402,92 @@ msgstr ""
 
 msgctxt "#30712"
 msgid "The background check of saved mixes: missing files, the library's state, repair candidates with their scores, and every repair made."
+msgstr ""
+
+msgctxt "#30800"
+msgid "Sound engine"
+msgstr ""
+
+msgctxt "#30801"
+msgid "Suggestions"
+msgstr ""
+
+msgctxt "#30802"
+msgid "Mixes come from"
+msgstr ""
+
+msgctxt "#30803"
+msgid "Where the songs for mixes, Radio and AI Mix Assist come from. MusicIP: the MusicIP server (Settings > General). Sound engine: sound prints made on this computer from a few 10-second snippets of every song, by sound alone (no tags), so unknown artists come along too. Set it up and let it analyse the library first (below)."
+msgstr ""
+
+msgctxt "#30804"
+msgid "MusicIP"
+msgstr ""
+
+msgctxt "#30805"
+msgid "Sound engine"
+msgstr ""
+
+msgctxt "#30806"
+msgid "Sound engine"
+msgstr ""
+
+msgctxt "#30807"
+msgid "Songs per artist in a mix"
+msgstr ""
+
+msgctxt "#30808"
+msgid "At most this many songs of one artist in a sound engine mix (0: any number). An album's songs are often each other's nearest by sound. The same song on another album is taken only once either way. Variety (Settings > Mixing) also applies: above 0, a mix is a random choice from more of the nearest songs."
+msgstr ""
+
+msgctxt "#30809"
+msgid "Analyse new songs by itself"
+msgstr ""
+
+msgctxt "#30810"
+msgid "Gives songs new to Kodi's library their sound prints after Kodi's library scan and every 8 hours. The analysis runs in the background at low priority, and goes on even when Kodi is closed. A song not analysed yet is analysed when it is a seed."
+msgstr ""
+
+msgctxt "#30811"
+msgid "Status"
+msgstr ""
+
+msgctxt "#30812"
+msgid "How many songs have sound prints, and how far a running analysis is."
+msgstr ""
+
+msgctxt "#30813"
+msgid "Analyse new songs now"
+msgstr ""
+
+msgctxt "#30814"
+msgid "Starts analysing the songs of Kodi's library that have no sound print yet, or have changed. About 0.4 s per song on a 4-core PC: a large library takes a day or more. It goes on where it stopped when stopped."
+msgstr ""
+
+msgctxt "#30815"
+msgid "Stop the analysis"
+msgstr ""
+
+msgctxt "#30816"
+msgid "Stops a running analysis after the songs in hand. Nothing is lost; the next analysis goes on from there."
+msgstr ""
+
+msgctxt "#30817"
+msgid "Set-up"
+msgstr ""
+
+msgctxt "#30818"
+msgid "Set up the sound engine"
+msgstr ""
+
+msgctxt "#30819"
+msgid "Makes the sound engine's own Python environment in the add-on's data folder (about 200 MB: numpy, onnxruntime, PyAV) and downloads the DCLAP sound model (22 MB, licence AGPL-3.0, not part of the add-on). Needs Python 3.9 or later on this computer; Kodi's own Python can't do it. Run it again to repair or update."
+msgstr ""
+
+msgctxt "#30820"
+msgid "Python for the set-up"
+msgstr ""
+
+msgctxt "#30821"
+msgid "The Python program the set-up uses (python.exe). Empty: the first Python on the PATH."
 msgstr ""

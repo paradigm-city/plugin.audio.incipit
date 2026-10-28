@@ -10,7 +10,6 @@ songs in hand (the next run picks up where it stopped). Every song gets a line i
 
 from __future__ import annotations
 
-import json
 import logging
 import logging.handlers
 import multiprocessing
@@ -20,9 +19,9 @@ import time
 from typing import Dict, List, Sequence, Tuple
 
 from soundprint import analysis_version
+from soundprint.state import LOG_FILE, STOP_FILE, read_status, running, write_status
 from soundprint.store import Store
 
-STATUS_FILE, STOP_FILE, LOG_FILE = "status.json", "stop", "analysis.log"
 STATUS_EVERY = 5.0  # s
 COMMIT_EVERY = 25  # songs
 
@@ -104,33 +103,24 @@ def logger_for(folder: str) -> logging.Logger:
     return log
 
 
-def write_status(folder: str, status: dict) -> None:
-    status["updated"] = time.time()
-    target = os.path.join(folder, STATUS_FILE)
-    with open(target + ".part", "w", encoding="utf-8") as handle:
-        json.dump(status, handle, indent=1)
-    os.replace(target + ".part", target)
-
-
-def read_status(folder: str) -> dict:
-    try:
-        with open(os.path.join(folder, STATUS_FILE), encoding="utf-8") as handle:
-            return json.load(handle)
-    except (OSError, ValueError):
-        return {}
-
-
-def request_stop(folder: str) -> None:
-    open(os.path.join(folder, STOP_FILE), "w").close()
-
-
 def run(paths: Sequence[str], folder: str, model_folder: str, snippets: int, workers: int, threads: int,
         low: bool = True, prune: bool = False, limit: int = 0, say=print) -> dict:
-    """Analyse what's new or changed among paths; returns the final status."""
+    """Analyse what's new or changed among paths; returns the final status ("busy" when another analysis of this
+    data folder is running: two would write the same store)."""
+    os.makedirs(folder, exist_ok=True)
+    log = logger_for(folder)
+    other = running(folder)
+    if other and int(other.get("pid") or 0) != os.getpid():
+        line = f"an analysis is running already (process {other.get('pid')}); this one doesn't start"
+        log.info(line)
+        say(line)
+        return {"state": "busy", "pid": other.get("pid")}
     if low:
         lower_priority()
-    log = logger_for(folder)
     version = analysis_version(snippets)
+    # running from now on, while the files are looked at (that takes a while for a large library)
+    write_status(folder, {"state": "running", "phase": "planning", "pid": os.getpid(), "started": time.time(),
+                          "version": version, "songs": len(paths)})
     store = Store(folder)
     stop = os.path.join(folder, STOP_FILE)
     if os.path.exists(stop):

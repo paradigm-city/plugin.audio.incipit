@@ -10,7 +10,7 @@ import glob
 import os
 import re
 import sqlite3
-from typing import Iterable, List, Sequence, Tuple
+from typing import Dict, Iterable, List, Sequence, Tuple
 
 
 def kodi_database(userdata: str) -> str:
@@ -29,6 +29,36 @@ def from_kodi(database: str) -> List[str]:
             "ORDER BY path.strPath, song.strFileName")]
     finally:
         connection.close()
+
+
+def split(path: str) -> Tuple[str, str]:
+    """Kodi's folder (with its trailing separator) and file name of a song's path."""
+    cut = max(path.rfind("\\"), path.rfind("/")) + 1
+    return path[:cut], path[cut:]
+
+
+class Details:
+    """Artist and title of songs in Kodi's music database, looked up one song at a time (the database has indexes
+    for both parts of the path); empty for a song it doesn't know or when there is no database."""
+
+    def __init__(self, database: str = ""):
+        self.connection = sqlite3.connect(f"file:{database}?mode=ro", uri=True) if database else None
+        self.known: Dict[str, Tuple[str, str]] = {}
+
+    def __call__(self, path: str) -> Tuple[str, str]:
+        if path not in self.known:
+            row = None
+            if self.connection is not None:
+                folder, name = split(path)
+                row = self.connection.execute(
+                    "SELECT song.strArtistDisp, song.strTitle FROM song JOIN path ON path.idPath = song.idPath "
+                    "WHERE path.strPath = ? AND song.strFileName = ? LIMIT 1", (folder, name)).fetchone()
+            self.known[path] = (row[0] or "", row[1] or "") if row else ("", "")
+        return self.known[path]
+
+    def close(self) -> None:
+        if self.connection is not None:
+            self.connection.close()
 
 
 def from_list(filename: str) -> List[str]:

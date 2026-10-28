@@ -17,6 +17,11 @@ MODEL_NAME = "dclap-v1"
 DEFAULT_SNIPPETS = 6
 PREROLL_SECONDS = 1.0
 
+MODEL_FILES = {  # release v1 of DCLAP: name -> sha256
+    "model_epoch_36.onnx": "17860403f8fc90aff8ac0632a0741eb5e58d8c0b0ad2fce5ced967274b0ea971",
+    "model_epoch_36.onnx.data": "2a735b23c2aad7b12d9ffc85334cebcc659c07696d2ff60e2e378da28b6df657",
+}
+
 
 def analysis_version(snippets: int) -> str:
     return f"{MODEL_NAME}/snippets-{snippets}/preroll-{PREROLL_SECONDS:g}"

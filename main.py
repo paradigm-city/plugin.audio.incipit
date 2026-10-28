@@ -38,6 +38,7 @@ from mixassist import checks as mix_assist_checks
 from mixassist import library as mix_assist_library
 from mixassist import trace as mix_assist_trace
 from mixassist import usage as mix_assist_usage
+from soundprint import client as soundprint
 
 import logs
 from logs import log_ai, log_checks, log_discovery, log_general, log_mixing, log_radio
@@ -222,7 +223,7 @@ class BackgroundProgress:
     MusicIP mix, an AI call) visibly keeps going.
 
         with BackgroundProgress("More like this") as progress:
-            progress(30, "Asking MusicIP")
+            progress(30, "Asking the suggestion engine")
     """
 
     TICK_SECONDS = 1.0
@@ -372,6 +373,27 @@ def get_mix_style_label(value: int | None = None) -> str:
 
 def get_mix_variety() -> int:
     return max(0, min(9, get_setting_int("mix_variety", 0)))
+
+
+# --- The suggestion engine: MusicIP's server, or the sound prints made on this computer (soundprint/) ---------
+def uses_sound_prints() -> bool:
+    return get_setting_int("suggestion_engine", 0) == 1  # 0: MusicIP, 1: sound prints
+
+
+def engine_name() -> str:
+    return "the sound engine" if uses_sound_prints() else "MusicIP"
+
+
+def soundprint_data() -> str:
+    return soundprint.data_folder(get_profile_dir())
+
+
+def kodi_userdata() -> str:
+    return xbmcvfs.translatePath("special://userdata")
+
+
+def get_soundprint_per_artist() -> int:
+    return max(0, min(10, get_setting_int("soundprint_per_artist", 2)))
 
 
 def get_mix_reject_size() -> int:
@@ -2548,9 +2570,44 @@ def prepend_seed_track(seed_song: str, tracks: list[str]) -> list[str]:
     return result
 
 
+def fetch_sound_mix(seed_song: str, size: int, params: dict, progress=None) -> list[str]:
+    """The sound engine's mix for a seed: the songs nearest to it by sound, at most get_soundprint_per_artist() of
+    one artist, each song once; MusicIP's variety chooses from more of the nearest (its style, filter and
+    reject size don't apply)."""
+    per_artist, variety = get_soundprint_per_artist(), int(params.get("variety") or 0)
+    if progress:
+        progress(15, "Looking for songs that sound alike")
+    log_mixing(f"Sound engine mix request: seed {seed_song!r}, size {size}, at most {per_artist or 'any number of'} "
+               f"song(s) per artist, variety {variety}; MusicIP's style {params.get('style_label', '')!r}, filter "
+               f"{params.get('filter', '')!r} and reject size {params.get('rejectsize', 0)} don't apply.")
+    started = time.time()
+    try:
+        answer = soundprint.neighbours(soundprint_data(), kodi_userdata(), seed_song, size, per_artist, variety)
+    except soundprint.SoundprintError as exc:
+        log_mixing(f"Sound engine mix for {seed_song!r} failed ({exc.kind}) after {time.time() - started:.1f} s: "
+                   f"{exc}", xbmc.LOGWARNING if exc.kind == soundprint.NOT_ANALYSED else xbmc.LOGERROR)
+        if exc.kind == soundprint.NOT_ANALYSED:
+            raise MusicIPError(f"The sound engine returned an empty mix. {exc}") from exc
+        raise MusicIPError(str(exc)) from exc
+    songs = answer["songs"]
+    left_out = answer.get("left_out") or {}
+    artist, title = (list(answer.get("seed_details") or []) + ["", ""])[:2]
+    log_mixing(f"Sound engine answered in {time.time() - started:.1f} s (search {answer.get('seconds', 0)} s; the "
+               f"seed's sound print {answer.get('seed_vector', '')}; {int(answer.get('analysed') or 0):,} song(s) "
+               f"analysed; left out on the way: {left_out.get('artist', 0)} over the artist limit, "
+               f"{left_out.get('same_song', 0)} the same song again) with {len(songs)} song(s) for {seed_song!r} "
+               f"({artist} - {title}):"
+               + "".join(f"\n  {number}. {song['path']} (similarity {song['similarity']:.3f}, {song.get('artist', '')} "
+                         f"- {song.get('title', '')})" for number, song in enumerate(songs, start=1)))
+    return prepend_seed_track(seed_song, [song["path"] for song in songs])
+
+
 def fetch_mix(seed_song: str, size: int, mix_params: dict | None = None, progress=None) -> list[str]:
-    """MusicIP's mix for a seed. progress(percent, text), if given, is told about each step."""
+    """The suggestion engine's mix for a seed (MusicIP's, or the sound engine's: uses_sound_prints). progress(percent,
+    text), if given, is told about each step."""
     params = mix_params or get_effective_mix_parameters(size_override=size)
+    if uses_sound_prints():
+        return fetch_sound_mix(seed_song, size, params, progress)
     if progress:
         progress(15, "MusicIP is mixing")
     url = build_musicip_url(seed_song, size, params)
@@ -2612,7 +2669,7 @@ def fetch_mix_confirmed(seed_song: str, size: int) -> list[str]:
 
     remember_mix_generation_parameters(seed_song, size, params)
     remember_mix_assist_choices(mix_cache_key(seed_song, size), params)
-    with BackgroundProgress("Creating a MusicIP mix") as progress:
+    with BackgroundProgress("Creating a sound engine mix" if uses_sound_prints() else "Creating a MusicIP mix") as progress:
         return fetch_mix(seed_song, int(params.get("size") or size), mix_params=params, progress=progress)
 
 
@@ -6350,6 +6407,76 @@ def reset_mix_assist_statistics() -> None:
         notify("Statistics deleted.")
 
 
+# --- The sound engine's set-up and analysis (Settings > Sound engine) ---------------------------------------------
+SOUND_ENGINE_HEADING = "Sound engine"
+
+
+def show_soundprint_status() -> None:
+    show_text_page(SOUND_ENGINE_HEADING, "\n\n".join(soundprint.status_lines(soundprint_data())))
+
+
+def start_soundprint_analysis(reason: str = "asked for in the settings", quiet: bool = False) -> bool:
+    """Start analysing the library's new and changed songs in the background; True if one started."""
+    data = soundprint_data()
+    try:
+        started = soundprint.start_analysis(data, kodi_userdata())
+    except soundprint.SoundprintError as exc:
+        log_general(f"Sound engine analysis ({reason}) not started: {exc}", xbmc.LOGWARNING, always=True)
+        if not quiet:
+            xbmcgui.Dialog().ok(SOUND_ENGINE_HEADING, plain(f"{exc}\n\nSettings > Sound engine > Set up the sound engine."))
+        return False
+    if not started["started"]:
+        log_general(f"Sound engine analysis ({reason}): one is running already (process {started['pid']}).",
+                    always=True)
+        if not quiet:
+            notify("The sound engine is analysing already.")
+        return False
+    log_general(f"Sound engine analysis started ({reason}): process {started['pid']}, command "
+                f"{started['command']!r}, data {data!r}; each song is logged in {os.path.join(data, 'analysis.log')!r}.",
+                always=True)
+    if not quiet:
+        notify("The sound engine analyses new songs in the background.")
+    return True
+
+
+def stop_soundprint_analysis() -> None:
+    if soundprint.stop_analysis(soundprint_data()):
+        log_general("Sound engine analysis: asked to stop (it goes on where it stopped next time).", always=True)
+        notify("The analysis stops after the songs in hand.")
+    else:
+        notify("No analysis is running.")
+
+
+def set_up_soundprint() -> None:
+    """Make the sound engine's own Python environment and download its model, with a Python the listener has."""
+    pythons = soundprint.base_pythons(get_setting("soundprint_base_python", "").strip())
+    if not pythons:
+        xbmcgui.Dialog().ok(SOUND_ENGINE_HEADING, "No Python was found. Install Python 3.9 or later (python.org), or "
+                                                  "enter where it is in Settings > Sound engine > Python for the set-up.")
+        return
+    if not xbmcgui.Dialog().yesno(SOUND_ENGINE_HEADING, plain(
+            f"Set up the sound engine with {pythons[0]}?\n\nIt makes its own Python environment in the add-on's data "
+            f"folder (about 200 MB: numpy, onnxruntime, PyAV) and downloads the DCLAP sound model (22 MB, licence "
+            f"AGPL-3.0, not part of the add-on). This takes a few minutes.")):
+        return
+    data = soundprint_data()
+    log_general(f"Sound engine set-up with {pythons[0]!r} in {data!r}.", always=True)
+    with BackgroundProgress("Setting up the sound engine") as progress:
+        progress(10, "Installing numpy, onnxruntime and PyAV, then the model")
+        try:
+            said = soundprint.setup(data, kodi_userdata(), pythons[0])
+        except soundprint.SoundprintError as exc:
+            log_general(f"Sound engine set-up failed: {exc} (the whole output is in "
+                        f"{os.path.join(data, 'setup.log')!r})", xbmc.LOGERROR, always=True)
+            xbmcgui.Dialog().ok(SOUND_ENGINE_HEADING, plain(f"{exc}\n\nDetails: {os.path.join(data, 'setup.log')}"))
+            return
+    log_general(f"Sound engine set up: {said}", always=True)
+    if xbmcgui.Dialog().yesno(SOUND_ENGINE_HEADING, "The sound engine is set up. Analyse the library now? It runs in "
+                                                    "the background at low priority (about 0.4 s per song on a "
+                                                    "4-core PC) and goes on where it stopped when stopped."):
+        start_soundprint_analysis("after the set-up")
+
+
 def show_info_window(heading: str, facts: str, tabs: list[dict], fallback) -> None:
     try:
         set_highlight_properties()
@@ -8972,6 +9099,22 @@ def router(params: dict[str, str] | None = None) -> None:
 
     if action == "mix_assist_statistics_reset":
         reset_mix_assist_statistics()
+        return
+
+    if action == "soundprint_setup":
+        set_up_soundprint()
+        return
+
+    if action == "soundprint_analyse":
+        start_soundprint_analysis()
+        return
+
+    if action == "soundprint_stop":
+        stop_soundprint_analysis()
+        return
+
+    if action == "soundprint_status":
+        show_soundprint_status()
         return
 
     if action in ("mix_assist_menu", "mix_assist_tidy_up", "mix_assist_undo", "mix_assist_edit_intent"):

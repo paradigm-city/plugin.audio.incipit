@@ -1767,7 +1767,9 @@ def musicip_outage(state: dict, plugin, error: Exception) -> None:
     if failures == 1:
         add_radio_event(state, "musicip_failed", error=str(error))
         try:
-            plugin.notify("MusicIP can't make mixes right now. The station plays on and tries again; if it lasts, "
+            plugin.notify("The sound engine can't make mixes right now. The station plays on and tries again; "
+                          "see Settings > Sound engine > Status." if plugin.uses_sound_prints() else
+                          "MusicIP can't make mixes right now. The station plays on and tries again; if it lasts, "
                           "restart the MusicIP server.", xbmcgui.NOTIFICATION_WARNING)
         except Exception:
             pass
@@ -2906,9 +2908,50 @@ def run_musicip_reload_tick() -> threading.Thread | None:
     return thread
 
 
+# --- The sound engine's analysis (when it makes the mixes instead of MusicIP): songs new to Kodi's library get
+# their sound prints after Kodi's music library scan and every few hours, in the same slot as MusicIP's reload. The
+# analysis runs detached at low priority (soundprint.client.start_analysis), also while Radio plays: a song it
+# hasn't reached yet is analysed when it is a seed. Not started while one runs.
+
+SOUNDPRINT_ANALYSIS_INTERVAL_SECONDS = 8 * 3600
+
+
+def soundprint_analysis_state_path() -> str:
+    return os.path.join(get_profile_dir(), "soundprint_analysis.json")
+
+
+def soundprint_analysis_due(now: float, plugin) -> str:
+    """Why the sound engine should analyse new songs now ("" if not): Kodi's music library scan has finished, or
+    the last start is SOUNDPRINT_ANALYSIS_INTERVAL_SECONDS ago."""
+    if not plugin.get_setting_bool("soundprint_auto_analyse", True):
+        return ""
+    if MUSICIP_RELOAD["scan_finished"]:
+        return "after Kodi's library scan"
+    if now - MUSICIP_RELOAD["first_tick_ts"] < MUSICIP_RELOAD_STARTUP_DELAY_SECONDS:
+        return ""
+    record = load_json_file(soundprint_analysis_state_path())
+    return "scheduled" if now - int(record.get("last_ts") or 0) >= SOUNDPRINT_ANALYSIS_INTERVAL_SECONDS else ""
+
+
+def run_library_update_tick() -> bool:
+    """New songs for the suggestion engine: MusicIP's reload, or the sound engine's analysis. True if one began."""
+    plugin = load_plugin_module()
+    if not plugin.uses_sound_prints():
+        return run_musicip_reload_tick() is not None
+    now = time.time()
+    if not MUSICIP_RELOAD["first_tick_ts"]:
+        MUSICIP_RELOAD["first_tick_ts"] = now
+    reason = soundprint_analysis_due(now, plugin)
+    if not reason:
+        return False
+    MUSICIP_RELOAD["scan_finished"] = False
+    save_json_file(soundprint_analysis_state_path(), {"last_ts": int(now), "reason": reason})
+    return plugin.start_soundprint_analysis(reason, quiet=True)
+
+
 class ServiceMonitor(xbmc.Monitor):
     def onScanFinished(self, library: str) -> None:
-        if library == "music":  # new songs in Kodi's library: MusicIP should know them too
+        if library == "music":  # new songs in Kodi's library: the suggestion engine should know them too
             MUSICIP_RELOAD["scan_finished"] = True
 
 
@@ -2965,9 +3008,9 @@ def main() -> None:
             log_mixing(f"Mix cover collage tick failed: {exc}", xbmc.LOGERROR)
 
         try:
-            run_musicip_reload_tick()
+            run_library_update_tick()
         except Exception as exc:
-            log_general(f"MusicIP reload tick failed: {exc}", xbmc.LOGERROR)
+            log_general(f"Library update tick (MusicIP reload or sound engine analysis) failed: {exc}", xbmc.LOGERROR)
 
         now_for_metadata = int(time.time())
         if last_metadata_refresh_ts <= 0 or now_for_metadata - last_metadata_refresh_ts >= METADATA_REFRESH_INTERVAL_SECONDS:

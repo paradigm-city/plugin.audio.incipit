@@ -79,22 +79,42 @@ class Store:
         return self.db.execute("SELECT COALESCE(MAX(analysed), 0) FROM songs").fetchone()[0]
 
     # --- The matrix for the search ---------------------------------------------------------------------------------
-    def matrix(self) -> Tuple[List[str], np.ndarray]:
-        """All analysed paths and their vectors (float32, one row each), from the matrix file when it is current."""
-        npy, names = os.path.join(self.folder, "vectors.npy"), os.path.join(self.folder, "vectors.json")
-        stamp = {"last_change": self.last_change(), "rows": self.counts()["analysed"]}
-        if os.path.isfile(npy) and os.path.isfile(names):
-            with open(names, encoding="utf-8") as handle:
-                saved = json.load(handle)
-            if saved.get("stamp") == stamp:
-                return saved["paths"], np.load(npy, mmap_mode="r")
+    # While an analysis runs, the store changes every few seconds; reading all of it for every search took 1.3 s
+    # at 10,000 songs (2026-10-28). So the saved matrix is used with only the rows stored since it was written,
+    # and written anew once those are many.
+    REWRITE_AFTER = 2000  # newer rows
+
+    def rows(self, where: str = "", args: tuple = ()) -> Tuple[List[str], np.ndarray]:
         paths, blobs = [], []
-        for path, blob in self.db.execute("SELECT path, vector FROM songs WHERE vector IS NOT NULL ORDER BY path"):
+        for path, blob in self.db.execute(
+                f"SELECT path, vector FROM songs WHERE vector IS NOT NULL {where} ORDER BY path", args):
             paths.append(path)
             blobs.append(blob)
         vectors = (np.frombuffer(b"".join(blobs), dtype=np.float16).reshape(-1, DIMENSIONS).astype(np.float32)
                    if blobs else np.zeros((0, DIMENSIONS), np.float32))
         vectors /= np.maximum(np.linalg.norm(vectors, axis=1, keepdims=True), 1e-9)
+        return paths, vectors
+
+    def matrix(self) -> Tuple[List[str], np.ndarray]:
+        """All analysed paths and their vectors (float32, normalised, one row each)."""
+        npy, names = os.path.join(self.folder, "vectors.npy"), os.path.join(self.folder, "vectors.json")
+        stamp = {"last_change": self.last_change(), "rows": self.counts()["analysed"]}
+        saved = {}
+        if os.path.isfile(npy) and os.path.isfile(names):
+            with open(names, encoding="utf-8") as handle:
+                saved = json.load(handle)
+            if saved.get("stamp") == stamp:
+                return saved["paths"], np.load(npy, mmap_mode="r")
+        if saved.get("stamp"):
+            newer_paths, newer = self.rows("AND analysed > ?", (saved["stamp"]["last_change"],))
+            if len(newer_paths) < self.REWRITE_AFTER:
+                again = set(newer_paths)  # analysed again since: the newer vector counts
+                kept = [index for index, path in enumerate(saved["paths"]) if path not in again]
+                if len(kept) + len(newer_paths) == stamp["rows"]:  # else songs were removed or failed since
+                    matrix = np.load(npy, mmap_mode="r")
+                    old = matrix if len(kept) == len(saved["paths"]) else matrix[kept]
+                    return [saved["paths"][index] for index in kept] + newer_paths, np.concatenate([old, newer])
+        paths, vectors = self.rows()
         np.save(npy + ".part.npy", vectors)
         os.replace(npy + ".part.npy", npy)
         with open(names + ".part", "w", encoding="utf-8") as handle:

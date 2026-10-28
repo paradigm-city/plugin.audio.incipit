@@ -7,7 +7,7 @@
   analyse       analyse the library's new and changed songs (resumes where it stopped)
   stop          ask a running analysis to stop
   status        the running or last analysis, as JSON
-  neighbours    the songs nearest to a seed by sound, as JSON
+  neighbours    the songs nearest to a seed by sound, as JSON (with artist and title from Kodi's library)
   failures      the files that could not be read
 
 The data folder defaults to Kodi's addon_data/plugin.audio.musicip/soundprint; the model lives in its "model"
@@ -21,6 +21,8 @@ import json
 import os
 import subprocess
 import sys
+
+from soundprint.state import environment_python, read_status, request_stop, running
 
 ADDON_FOLDER = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REQUIREMENTS = ("numpy>=1.24", "onnxruntime>=1.17", "av>=12")
@@ -56,16 +58,14 @@ def arguments(argv=None) -> argparse.Namespace:
     near = commands.add_parser("neighbours")
     near.add_argument("seed", help="the seed song's path, as Kodi stores it")
     near.add_argument("--count", type=int, default=100)
+    near.add_argument("--per-artist", type=int, default=0, help="at most this many songs of one artist (0: any)")
+    near.add_argument("--variety", type=int, default=0, help="0: the nearest songs; up to 9: a random choice from "
+                                                             "more of them")
     commands.add_parser("failures")
     args = parser.parse_args(argv)
     args.data = args.data or os.path.join(args.userdata, "addon_data", "plugin.audio.musicip", "soundprint")
     args.model = args.model or os.path.join(args.data, "model")
     return args
-
-
-def environment_python(data: str) -> str:
-    folder = os.path.join(data, "python")
-    return os.path.join(folder, "Scripts", "python.exe") if sys.platform == "win32" else os.path.join(folder, "bin", "python")
 
 
 def setup(args) -> int:
@@ -125,21 +125,36 @@ def analyse(args) -> int:
     workers = args.workers or max(1, (os.cpu_count() or 2) // 2)
     status = runner.run(paths, args.data, args.model, args.snippets or DEFAULT_SNIPPETS, workers, args.threads,
                         low=not args.normal_priority, prune=args.prune, limit=args.limit)
-    return 0 if status["state"] in ("finished", "stopped") else 1
+    return {"finished": 0, "stopped": 0, "busy": 3}.get(status["state"], 1)
 
 
 def neighbours(args) -> int:
+    import time
+
+    from soundprint import songs
     from soundprint.neighbours import nearest
     from soundprint.store import Store
 
+    started = time.perf_counter()
+    try:
+        database = songs.kodi_database(args.userdata)
+    except FileNotFoundError:
+        database = ""
+    details = songs.Details(database)
     store = Store(args.data)
     try:
-        found, source = nearest(store, args.seed, args.count, args.model if os.path.isdir(args.model) else "")
+        found, source, left_out = nearest(store, args.seed, args.count, args.model if os.path.isdir(args.model) else "",
+                                          details=details, per_artist=args.per_artist, variety=args.variety)
+        analysed = store.counts()["analysed"]
+        print(json.dumps({"seed": args.seed, "seed_vector": source, "seed_details": list(details(args.seed)),
+                          "library": database, "analysed": analysed, "left_out": left_out,
+                          "seconds": round(time.perf_counter() - started, 2),
+                          "songs": [{"path": path, "similarity": round(similarity, 4),
+                                     "artist": details(path)[0], "title": details(path)[1]}
+                                    for path, similarity in found]}, ensure_ascii=False))
     finally:
         store.close()
-    print(json.dumps({"seed": args.seed, "seed_vector": source,
-                      "songs": [{"path": path, "similarity": round(similarity, 4)} for path, similarity in found]},
-                     ensure_ascii=False))
+        details.close()
     return 0 if found else 1
 
 
@@ -156,14 +171,15 @@ def main(argv=None) -> int:
         return 0
     if args.command == "analyse":
         return analyse(args)
-    from soundprint import analyse as runner
-
     if args.command == "stop":
         os.makedirs(args.data, exist_ok=True)
-        runner.request_stop(args.data)
+        request_stop(args.data)
         return 0
     if args.command == "status":
-        print(json.dumps(runner.read_status(args.data), indent=1))
+        status = read_status(args.data)
+        if status.get("state") == "running":
+            status["alive"] = bool(running(args.data))
+        print(json.dumps(status, indent=1))
         return 0
     if args.command == "neighbours":
         return neighbours(args)

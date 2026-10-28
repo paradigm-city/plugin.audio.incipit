@@ -17,15 +17,13 @@ from typing import Callable, List, Optional, Sequence
 
 import numpy as np
 
+from soundprint import MODEL_FILES
 from soundprint.audio import RATE
 
 N_FFT, HOP, N_MELS, F_MIN, F_MAX = 2048, 480, 128, 0.0, 14000.0
 
 RELEASE = "https://github.com/NeptuneHub/AudioMuse-AI-DCLAP/releases/download/v1/"
-FILES = {  # name -> sha256 of release v1
-    "model_epoch_36.onnx": "17860403f8fc90aff8ac0632a0741eb5e58d8c0b0ad2fce5ced967274b0ea971",
-    "model_epoch_36.onnx.data": "2a735b23c2aad7b12d9ffc85334cebcc659c07696d2ff60e2e378da28b6df657",
-}
+FILES = MODEL_FILES
 MODEL_FILE = "model_epoch_36.onnx"
 LICENCE_NOTE = """DCLAP audio model, release v1 of AudioMuse-AI Distilled CLAP
 Source: https://github.com/NeptuneHub/AudioMuse-AI-DCLAP
