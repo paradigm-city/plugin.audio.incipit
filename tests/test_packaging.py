@@ -10,7 +10,7 @@ from fake_kodi import ADDON_DIR, ADDON_ID
 from support import logs, main, service
 
 SOURCES = ("main.py", "service.py", "context_mix.py", "context_radio.py")  # the entry points
-MODULES = SOURCES + ("logs.py",)
+MODULES = SOURCES + ("logs.py", os.path.join("soundprint", "client.py"), os.path.join("soundprint", "state.py"))
 
 
 def read(name):

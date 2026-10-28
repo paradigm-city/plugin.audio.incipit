@@ -4,7 +4,9 @@ song list and the model download. Decoding and the model itself are tested where
 
 import hashlib
 import io
+import itertools
 import json
+import random
 import os
 import sqlite3
 import sys
@@ -21,7 +23,7 @@ if ADDON_DIR not in sys.path:
 import numpy as np  # noqa: E402
 
 from soundprint import __main__ as cli  # noqa: E402
-from soundprint import analyse, analysis_version, audio, model, neighbours, songs, store  # noqa: E402
+from soundprint import analyse, analysis_version, audio, model, neighbours, songs, state, store  # noqa: E402
 
 try:
     import av  # noqa: F401
@@ -166,6 +168,43 @@ class StoreTest(unittest.TestCase):
         paths, _ = self.store.matrix()
         self.assertEqual(paths, ["b.mp3"])
 
+    def test_songs_stored_since_the_matrix_file_are_added_without_writing_it_again(self):
+        clock = itertools.count(100.0)
+        with unittest.mock.patch.object(store.time, "time", side_effect=lambda: next(clock)):
+            self.store.put("a.mp3", 1, 1.0, "v", 1.0, unit(1))
+            self.store.put("b.mp3", 1, 1.0, "v", 1.0, unit(0, 1))
+            self.store.commit()
+            self.store.matrix()
+            self.store.put("c.mp3", 1, 1.0, "v", 1.0, unit(0, 0, 1))
+            self.store.put("a.mp3", 1, 2.0, "v", 1.0, unit(0, 0, 0, 1))  # analysed again
+            self.store.commit()
+            with unittest.mock.patch.object(np, "save") as save:
+                paths, matrix = self.store.matrix()
+            save.assert_not_called()
+            self.assertEqual(sorted(paths), ["a.mp3", "b.mp3", "c.mp3"])
+            self.assertTrue(np.allclose(matrix[paths.index("a.mp3")], unit(0, 0, 0, 1), atol=1e-3))
+            self.store.put("b.mp3", 1, 3.0, "v", 0.0, None, "broken now")  # one fewer: written anew
+            self.store.commit()
+            paths, _ = self.store.matrix()
+        self.assertEqual(paths, ["a.mp3", "c.mp3"])
+
+    def test_many_newer_songs_write_the_matrix_file_again(self):
+        self.store.put("a.mp3", 1, 1.0, "v", 1.0, unit(1))
+        self.store.commit()
+        self.store.matrix()
+        with unittest.mock.patch.object(store.Store, "REWRITE_AFTER", 1), \
+                unittest.mock.patch.object(store.time, "time", return_value=time_after(self.store)):
+            self.store.put("b.mp3", 1, 1.0, "v", 1.0, unit(0, 1))
+            self.store.commit()
+            with unittest.mock.patch.object(np, "save", wraps=np.save) as save:
+                paths, _ = self.store.matrix()
+        save.assert_called_once()
+        self.assertEqual(paths, ["a.mp3", "b.mp3"])
+
+
+def time_after(stored):
+    return stored.last_change() + 10.0
+
 
 class PlanTest(unittest.TestCase):
     def setUp(self):
@@ -206,6 +245,26 @@ class PlanTest(unittest.TestCase):
                 analyse.run([self.files["new"]], self.folder, "", 6, 2, 1, low=False, say=lambda line: None)
         self.assertEqual(analyse.read_status(self.folder)["state"], "failed")
 
+    def test_a_second_analysis_does_not_start_while_one_runs(self):
+        state.write_status(self.folder, {"state": "running", "pid": os.getppid()})  # a process that is alive
+        lines = []
+        status = analyse.run([self.files["new"]], self.folder, "", 6, 1, 1, low=False, say=lines.append)
+        self.assertEqual(status, {"state": "busy", "pid": os.getppid()})
+        self.assertIn("running already", lines[0])
+        self.assertEqual(state.read_status(self.folder)["pid"], os.getppid())  # its status left alone
+
+    def test_an_analysis_says_it_runs_while_it_looks_at_the_files(self):
+        seen = []
+        real_plan = analyse.plan
+
+        def plan(*args):
+            seen.append(state.read_status(self.folder))
+            return real_plan(*args)
+
+        with unittest.mock.patch.object(analyse, "plan", side_effect=plan):
+            analyse.run([self.files["same"]], self.folder, "", 6, 1, 1, low=False, say=lambda line: None)
+        self.assertEqual((seen[0]["state"], seen[0]["phase"], seen[0]["pid"]), ("running", "planning", os.getpid()))
+
     def test_analysis_version_names_model_snippets_and_preroll(self):
         self.assertEqual(analysis_version(6), "dclap-v1/snippets-6/preroll-1")
 
@@ -222,17 +281,64 @@ class NearestTest(unittest.TestCase):
         self.store.close()
 
     def test_nearest_first_without_the_seed(self):
-        found, source = neighbours.nearest(self.store, "seed", 2)
+        found, source, left_out = neighbours.nearest(self.store, "seed", 2)
         self.assertEqual(source, "stored")
         self.assertEqual([path for path, _ in found], ["close", "middle"])
         self.assertGreater(found[0][1], found[1][1])
+        self.assertEqual(left_out, {"artist": 0, "same_song": 0})
 
     def test_count_larger_than_the_store(self):
-        found, _ = neighbours.nearest(self.store, "seed", 50)
+        found, _, _ = neighbours.nearest(self.store, "seed", 50)
         self.assertEqual([path for path, _ in found], ["close", "middle", "far"])
 
     def test_a_seed_without_vector_and_without_model_gives_nothing(self):
-        self.assertEqual(neighbours.nearest(self.store, "D:\\nowhere.mp3", 5), ([], "not a local file"))
+        self.assertEqual(neighbours.nearest(self.store, "D:\\nowhere.mp3", 5)[:2], ([], "not a local file"))
+
+
+class MixRulesTest(unittest.TestCase):
+    """The rules for a mix: songs per artist (the seed counted), each song once, variety."""
+
+    def setUp(self):
+        self.store = store.Store(tempfile.mkdtemp())
+        self.details = {"seed": ("Kraftwerk", "Radioactivity")}
+        songs_by_closeness = [("k1", "Kraftwerk", "Ohm Sweet Ohm"), ("k2", "Kraftwerk", "Antenna"),
+                              ("copy", "Kraftwerk", "Radioactivity"), ("c1", "Cluster", "Sowiesoso"),
+                              ("c2", "cluster", "Hollywood"), ("n1", "Neu!", "Hallogallo"),
+                              ("c3", "Cluster", "Dem Wanderer"), ("h1", "Harmonia", "Watussi")]
+        self.store.put("seed", 1, 1.0, "v", 1.0, unit(1, 0))
+        for number, (path, artist, title) in enumerate(songs_by_closeness, start=1):
+            self.store.put(path, 1, 1.0, "v", 1.0, unit(1, 0.1 * number))
+            self.details[path] = (artist, title)
+        self.store.commit()
+
+    def tearDown(self):
+        self.store.close()
+
+    def nearest(self, count, **rules):
+        found, _, left_out = neighbours.nearest(self.store, "seed", count,
+                                                details=lambda path: self.details.get(path, ("", "")), **rules)
+        return [path for path, _ in found], left_out
+
+    def test_at_most_so_many_songs_of_one_artist_with_the_seed_counted(self):
+        found, left_out = self.nearest(5, per_artist=2)
+        self.assertEqual(found, ["k1", "c1", "c2", "n1", "h1"])  # artist names compared without case
+        self.assertEqual(left_out, {"artist": 2, "same_song": 1})
+
+    def test_the_seed_itself_on_another_album_is_left_out_even_without_a_limit(self):
+        found, left_out = self.nearest(3)
+        self.assertEqual(found, ["k1", "k2", "c1"])
+        self.assertEqual(left_out["same_song"], 1)
+
+    def test_variety_chooses_from_more_of_the_nearest_in_their_order(self):
+        found, _ = self.nearest(3, variety=6, rng=random.Random(4))
+        pool = ["k1", "k2", "c1", "c2", "n1", "c3", "h1"][:neighbours.pool_size(3, 6)]
+        self.assertEqual(len(found), 3)
+        self.assertTrue(set(found) <= set(pool))
+        self.assertEqual(found, sorted(found, key=pool.index))
+        self.assertNotEqual(self.nearest(3, variety=6, rng=random.Random(5))[0], found)
+
+    def test_pool_size_grows_with_variety(self):
+        self.assertEqual([neighbours.pool_size(30, variety) for variety in (0, 3, 9)], [30, 60, 120])
 
 
 class SongListTest(unittest.TestCase):
@@ -262,6 +368,26 @@ class SongListTest(unittest.TestCase):
         kept, remote, out = songs.local([inside, inside, outside, "smb://box/c.mp3"],
                                         [os.path.join("D:" + os.sep, "music", "#electronica")])
         self.assertEqual((kept, remote, out), ([inside], 1, 1))
+
+    def test_artist_and_title_come_from_kodis_library(self):
+        database = os.path.join(tempfile.mkdtemp(), "MyMusic83.db")
+        connection = sqlite3.connect(database)
+        connection.executescript(
+            "CREATE TABLE path (idPath INTEGER, strPath TEXT);"
+            "CREATE TABLE song (idSong INTEGER, idPath INTEGER, strFileName TEXT, strArtistDisp TEXT, strTitle TEXT);"
+            "INSERT INTO path VALUES (1, 'D:\\music\\a\\');"
+            "INSERT INTO song VALUES (1, 1, '01.mp3', 'Cluster', 'Sowiesoso');")
+        connection.commit()
+        connection.close()
+        details = songs.Details(database)
+        self.assertEqual(details("D:\\music\\a\\01.mp3"), ("Cluster", "Sowiesoso"))
+        self.assertEqual(details("D:\\music\\a\\02.mp3"), ("", ""))
+        details.close()
+        self.assertEqual(songs.Details("")("D:\\x.mp3"), ("", ""))
+
+    def test_a_path_splits_into_kodis_folder_and_file_name(self):
+        self.assertEqual(songs.split("D:\\music\\a\\01.mp3"), ("D:\\music\\a\\", "01.mp3"))
+        self.assertEqual(songs.split("/music/a/01.mp3"), ("/music/a/", "01.mp3"))
 
     def test_a_list_file_may_start_with_a_byte_order_mark(self):
         name = os.path.join(tempfile.mkdtemp(), "list.txt")
@@ -312,17 +438,56 @@ class CommandLineTest(unittest.TestCase):
         self.assertEqual(args.data, os.path.join("U", "addon_data", "plugin.audio.musicip", "soundprint"))
         self.assertEqual(args.model, os.path.join(args.data, "model"))
 
-    def test_status_prints_the_status_file(self):
+    def test_status_prints_the_status_file_and_whether_the_analysis_is_alive(self):
         folder = tempfile.mkdtemp()
-        analyse.write_status(folder, {"state": "running", "done": 3})
+        state.write_status(folder, {"state": "running", "done": 3, "pid": os.getpid()})
         with unittest.mock.patch("sys.stdout", new_callable=io.StringIO) as out:
             cli.main(["--data", folder, "status"])
-        self.assertEqual(json.loads(out.getvalue())["done"], 3)
+        self.assertEqual((json.loads(out.getvalue())["done"], json.loads(out.getvalue())["alive"]), (3, True))
 
     def test_stop_leaves_the_stop_file(self):
         folder = tempfile.mkdtemp()
         cli.main(["--data", folder, "stop"])
-        self.assertTrue(os.path.isfile(os.path.join(folder, analyse.STOP_FILE)))
+        self.assertTrue(os.path.isfile(os.path.join(folder, state.STOP_FILE)))
+
+    def test_neighbours_answer_with_artist_title_and_what_was_left_out(self):
+        userdata, folder = tempfile.mkdtemp(), tempfile.mkdtemp()
+        stored = store.Store(folder)
+        stored.put("seed.mp3", 1, 1.0, "v", 1.0, unit(1))
+        stored.put("near.mp3", 1, 1.0, "v", 1.0, unit(1, 0.1))
+        stored.commit()
+        stored.close()
+        with unittest.mock.patch("sys.stdout", new_callable=io.StringIO) as out:
+            code = cli.main(["--userdata", userdata, "--data", folder, "neighbours", "seed.mp3", "--count", "5",
+                             "--per-artist", "2"])
+        answer = json.loads(out.getvalue())
+        self.assertEqual(code, 0)
+        self.assertEqual((answer["seed_vector"], answer["library"], answer["analysed"]), ("stored", "", 2))
+        self.assertEqual(answer["songs"], [{"path": "near.mp3", "similarity": answer["songs"][0]["similarity"],
+                                            "artist": "", "title": ""}])
+        self.assertEqual(answer["left_out"], {"artist": 0, "same_song": 0})
+
+
+class RunningTest(unittest.TestCase):
+    def setUp(self):
+        self.folder = tempfile.mkdtemp()
+
+    def test_a_running_analysis_needs_its_process_alive_and_a_recent_status(self):
+        state.write_status(self.folder, {"state": "running", "pid": 1234})
+        updated = state.read_status(self.folder)["updated"]
+        self.assertTrue(state.running(self.folder, alive=lambda pid: pid == 1234))
+        self.assertEqual(state.running(self.folder, alive=lambda pid: False), {})
+        self.assertEqual(state.running(self.folder, now=updated + state.STALE_SECONDS + 1, alive=lambda pid: True), {})
+
+    def test_a_finished_analysis_is_not_running(self):
+        state.write_status(self.folder, {"state": "finished", "pid": os.getpid()})
+        self.assertEqual(state.running(self.folder), {})
+        self.assertEqual(state.running(tempfile.mkdtemp()), {})
+
+    def test_this_process_is_alive_and_an_unused_number_is_not(self):
+        self.assertTrue(state.process_alive(os.getpid()))
+        self.assertFalse(state.process_alive(0))
+        self.assertFalse(state.process_alive(2 ** 30))
 
 
 def write_wave(path, seconds, channels=2, rate=44100):
