@@ -1,0 +1,215 @@
+"""Analysing many songs: worker processes, each with its own model; only the main process writes the store.
+
+Decoding and the model both use one CPU core per song, so songs are spread over processes rather than threads
+(Python threads would share one core for the spectrogram). The processes run at idle priority by default, so
+playback and Kodi keep the CPU whenever they need it.
+
+While it runs, status.json in the data folder says how far it is; a file named "stop" there ends it after the
+songs in hand (the next run picks up where it stopped). Every song gets a line in analysis.log.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import logging.handlers
+import multiprocessing
+import os
+import sys
+import time
+from typing import Dict, List, Sequence, Tuple
+
+from soundprint import analysis_version
+from soundprint.store import Store
+
+STATUS_FILE, STOP_FILE, LOG_FILE = "status.json", "stop", "analysis.log"
+STATUS_EVERY = 5.0  # s
+COMMIT_EVERY = 25  # songs
+
+MODEL = None
+SNIPPETS = 0
+
+
+def lower_priority() -> None:
+    """Idle priority for this process (and, on Windows, the processes it starts)."""
+    try:
+        if sys.platform == "win32":
+            import ctypes
+
+            idle = 0x00000040
+            ctypes.windll.kernel32.SetPriorityClass(ctypes.windll.kernel32.GetCurrentProcess(), idle)
+        else:
+            os.nice(19)
+    except Exception:
+        pass
+
+
+def start_worker(model_folder: str, threads: int, snippets: int, low: bool) -> None:
+    global MODEL, SNIPPETS
+    if low:
+        lower_priority()
+    from soundprint.model import Model
+
+    MODEL, SNIPPETS = Model(model_folder, threads), snippets
+
+
+def analyse_song(item: Tuple[str, int, float]) -> dict:
+    from soundprint import audio
+
+    path, size, mtime = item
+    started = time.perf_counter()
+    try:
+        windows, length, how = audio.snippets(path, SNIPPETS)
+        decoded = time.perf_counter()
+        vector = MODEL.embed(windows)
+        return {"path": path, "size": size, "mtime": mtime, "length": length, "vector": vector, "error": "",
+                "windows": len(windows), "how": how, "decode_s": decoded - started,
+                "model_s": time.perf_counter() - decoded}
+    except Exception as exc:  # a file FFmpeg can't open, or a broken one
+        return {"path": path, "size": size, "mtime": mtime, "length": 0.0, "vector": None,
+                "error": f"{type(exc).__name__}: {exc}", "decode_s": time.perf_counter() - started, "model_s": 0.0}
+
+
+def plan(paths: Sequence[str], store: Store, version: str) -> Tuple[List[Tuple[str, int, float]], Dict[str, int]]:
+    """The songs to analyse (path, size, change time), and counts of the rest: unchanged, failed before (and
+    unchanged), missing (the file isn't there)."""
+    known = store.known()
+    todo, counts = [], {"unchanged": 0, "failed_before": 0, "missing": 0}
+    for path in paths:
+        try:
+            info = os.stat(path)
+        except OSError:
+            counts["missing"] += 1
+            continue
+        before = known.get(path)
+        if before and before[0] == info.st_size and abs(before[1] - info.st_mtime) < 1e-3:
+            if before[3]:
+                counts["failed_before"] += 1
+                continue
+            if before[2] == version:
+                counts["unchanged"] += 1
+                continue
+        todo.append((path, info.st_size, info.st_mtime))
+    return todo, counts
+
+
+def logger_for(folder: str) -> logging.Logger:
+    log = logging.getLogger("soundprint")
+    if not log.handlers:
+        handler = logging.handlers.RotatingFileHandler(os.path.join(folder, LOG_FILE), maxBytes=20 << 20,
+                                                       backupCount=3, encoding="utf-8")
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+        log.addHandler(handler)
+        log.setLevel(logging.INFO)
+    return log
+
+
+def write_status(folder: str, status: dict) -> None:
+    status["updated"] = time.time()
+    target = os.path.join(folder, STATUS_FILE)
+    with open(target + ".part", "w", encoding="utf-8") as handle:
+        json.dump(status, handle, indent=1)
+    os.replace(target + ".part", target)
+
+
+def read_status(folder: str) -> dict:
+    try:
+        with open(os.path.join(folder, STATUS_FILE), encoding="utf-8") as handle:
+            return json.load(handle)
+    except (OSError, ValueError):
+        return {}
+
+
+def request_stop(folder: str) -> None:
+    open(os.path.join(folder, STOP_FILE), "w").close()
+
+
+def run(paths: Sequence[str], folder: str, model_folder: str, snippets: int, workers: int, threads: int,
+        low: bool = True, prune: bool = False, limit: int = 0, say=print) -> dict:
+    """Analyse what's new or changed among paths; returns the final status."""
+    if low:
+        lower_priority()
+    log = logger_for(folder)
+    version = analysis_version(snippets)
+    store = Store(folder)
+    stop = os.path.join(folder, STOP_FILE)
+    if os.path.exists(stop):
+        os.remove(stop)
+    try:
+        if prune:
+            listed = set(paths)
+            gone = store.remove(path for path in store.known() if path not in listed)
+            log.info("removed %d stored song(s) that are no longer in the library", gone)
+        todo, counts = plan(paths, store, version)
+        if limit:
+            todo = todo[:limit]
+        status = {"state": "running", "pid": os.getpid(), "started": time.time(), "version": version,
+                  "songs": len(paths), "todo": len(todo), "done": 0, "failed": 0, **counts,
+                  "workers": workers, "threads": threads, "snippets": snippets}
+        line = (f"analysis {version}: {len(paths)} song(s) listed, {len(todo)} to analyse; {counts['unchanged']} "
+                f"unchanged, {counts['failed_before']} failed before, {counts['missing']} missing; {workers} "
+                f"worker(s) x {threads} thread(s), {'idle' if low else 'normal'} priority")
+        log.info(line)
+        say(line)
+        write_status(folder, status)
+        if not todo:
+            status["state"] = "finished"
+            write_status(folder, status)
+            return status
+        # load the model once here first: a worker whose start fails is restarted by the pool without end
+        from soundprint.model import Model
+
+        Model(model_folder, 1)
+        started, last_status = time.perf_counter(), 0.0
+        # one thread per process for numpy's own maths: by default every process would start a thread per CPU
+        # for each matrix product, and eight processes then spend most of their time waiting for each other
+        for variable in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"):
+            os.environ[variable] = "1"
+        context = multiprocessing.get_context("spawn")
+        pool = context.Pool(workers, initializer=start_worker, initargs=(model_folder, threads, snippets, low))
+        try:
+            for result in pool.imap_unordered(analyse_song, todo, chunksize=2):
+                store.put(result["path"], result["size"], result["mtime"], version, result["length"],
+                          result["vector"], result["error"])
+                status["done"] += 1
+                if result["error"]:
+                    status["failed"] += 1
+                    log.warning("failed: %s: %s", result["path"], result["error"])
+                else:
+                    log.info("%s: %.0f s, %d window(s) by %s, decode %.2f s, model %.2f s", result["path"],
+                             result["length"], result["windows"], result["how"], result["decode_s"], result["model_s"])
+                if status["done"] % COMMIT_EVERY == 0:
+                    store.commit()
+                now = time.perf_counter()
+                if now - last_status >= STATUS_EVERY or status["done"] == len(todo):
+                    last_status = now
+                    rate = (now - started) / status["done"]
+                    status.update(seconds_per_song=round(rate, 3),
+                                  eta=time.time() + rate * (len(todo) - status["done"]))
+                    write_status(folder, status)
+                    if os.path.exists(stop):
+                        status["state"] = "stopped"
+                        break
+            else:
+                status["state"] = "finished"
+        finally:
+            pool.terminate()
+            pool.join()
+            store.commit()
+        line = (f"analysis {status['state']}: {status['done']} of {len(todo)} song(s) in "
+                f"{time.perf_counter() - started:.0f} s ({status.get('seconds_per_song', 0):.2f} s per song), "
+                f"{status['failed']} failed")
+        log.info(line)
+        say(line)
+        write_status(folder, status)
+        return status
+    except BaseException as exc:
+        status = read_status(folder)
+        status.update(state="failed", error=f"{type(exc).__name__}: {exc}")
+        write_status(folder, status)
+        log.exception("analysis failed")
+        raise
+    finally:
+        if os.path.exists(stop):
+            os.remove(stop)
+        store.close()
