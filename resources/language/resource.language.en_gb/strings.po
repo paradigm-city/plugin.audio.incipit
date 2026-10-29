@@ -201,7 +201,7 @@ msgid "Also take songs the AI calls borderline: they share part of what the seed
 msgstr ""
 
 msgctxt "#30436"
-msgid "Also take songs the AI calls borderline: they share part of what the station is about, not all of it, for bolder steps. Off: only songs the AI says fit."
+msgid "Also take songs the AI calls borderline: they share part of what the station is about, not all of it, for bolder steps. Off: only songs the AI says fit. A favourite station can have its own."
 msgstr ""
 
 msgctxt "#30437"
@@ -305,11 +305,11 @@ msgid "Stations"
 msgstr ""
 
 msgctxt "#30625"
-msgid "How far a station's songs may reach from the song they come from. 0: the nearest songs by sound, a very cohesive station; each step reaches further out and draws more of the far songs; at 9 the songs come from the whole library, across genres. A station that stays close to its picked song uses at least 2, so its refills don't repeat. Mixing has its own."
+msgid "How far a station's songs may reach from the song they come from. 0: the nearest songs by sound, a very cohesive station; each step reaches further out and draws more of the far songs; at 9 the songs come from the whole library, across genres. A station that stays close to its picked song uses at least 2, so its refills don't repeat. Mixing has its own, and so can a favourite station."
 msgstr ""
 
 msgctxt "#30626"
-msgid "Keeps an artist from playing again within this many songs of the station, counting the songs already queued. 0 allows repeats. Mixing has its own."
+msgid "Keeps an artist from playing again within this many songs of the station, counting the songs already queued. 0 allows repeats. Mixing has its own, and so can a favourite station."
 msgstr ""
 
 msgctxt "#30627"

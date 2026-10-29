@@ -7343,9 +7343,14 @@ def station_checks_on(settings: dict | None = None) -> bool:
 
 
 def station_setting_index(settings: dict | None, key: str) -> int:
-    """A station's own "openness", "drift" or "perspective" (a favourite's), else the global setting."""
-    if isinstance(settings, dict) and isinstance(settings.get(key), int):
+    """A station's own "openness" (Character), "drift", "perspective" (Intent), "variety" or "rejectsize" (a
+    favourite's), else the Radio setting."""
+    if isinstance(settings, dict) and isinstance(settings.get(key), int) and not isinstance(settings.get(key), bool):
         return settings[key]
+    if key == "variety":
+        return get_radio_variety()
+    if key == "rejectsize":
+        return get_radio_reject_size()
     if key == "openness":
         return get_setting_int("mix_assist_station_strictness", 2)
     if key == "perspective":
@@ -8082,15 +8087,17 @@ def radio_check_progress(check=None):
 RADIO_CHECK_BATCHES = (6, 4, 2, 2, 2)
 RADIO_CHECK_LISTS = 3
 # A station that stays close to its picked song asks for a mix of that song again and again; variety keeps those
-# mixes from repeating (MusicIP's variety 0: the same 75 songs every time; 1: about half of them new; measured
-# 2026-10-24; the sound engine's variety 2 draws from the nearest ~260 at random).
+# mixes from repeating. MusicIP's variety 0 gave the same 75 songs every time, 1 about half of them new (measured
+# 2026-10-24). The sound engine's variety 0 is just as fixed (its nearest songs, in order), so the rule stays; its
+# variety 2 draws a mix of 75 from the nearest ~400 at random.
 RADIO_STAY_CLOSE_MIN_VARIETY = 2
 
 
 def radio_mix_parameters(size: int, settings: dict | None = None) -> dict:
-    """The parameters of a station's mixes: Radio's variety and artist rule; a station that stays close to the
-    picked song gets at least RADIO_STAY_CLOSE_MIN_VARIETY."""
-    params = {"size": max(1, int(size)), "variety": get_radio_variety(), "rejectsize": get_radio_reject_size()}
+    """The parameters of a station's mixes: its variety and artist rule (a favourite's own, else Radio's); a station
+    that stays close to the picked song gets at least RADIO_STAY_CLOSE_MIN_VARIETY."""
+    params = {"size": max(1, int(size)), "variety": max(0, min(9, station_setting_index(settings, "variety"))),
+              "rejectsize": max(0, min(20, station_setting_index(settings, "rejectsize")))}
     if get_radio_drift_half_life(settings) == 0:
         params["variety"] = max(int(params.get("variety") or 0), RADIO_STAY_CLOSE_MIN_VARIETY)
     return params
@@ -8160,7 +8167,7 @@ def check_radio_refill(reference_song: str, candidates: list[str], count: int, r
     "reference": the station's profile after this refill (drifted towards the chosen songs)."""
     store = mix_assist_cache.RatingCache(mix_assist_cache_path())
     try:
-        window = get_radio_reject_size()
+        window = max(0, min(20, station_setting_index(settings, "rejectsize")))
         strictness, borderline = get_station_strictness(settings)
         perspective = perspective_key(station_setting_index(settings, "perspective"))
         profile = "the station's drifting profile" if reference else "the song's own profile"
@@ -8425,6 +8432,9 @@ def save_station_as_favourite() -> None:
         "openness": station_setting_index(settings, "openness"),
         "drift": station_setting_index(settings, "drift"),
         "perspective": station_setting_index(settings, "perspective"),
+        "variety": station_setting_index(settings, "variety"),
+        "rejectsize": station_setting_index(settings, "rejectsize"),
+        "borderline": station_accepts_borderline(settings),
         "name": station_name(state) or picked or path_to_label(seed),
         "seed": seed,
         "seed_label": picked or path_to_label(seed),
@@ -8458,12 +8468,8 @@ def show_radio_favourites() -> None:
         item.setProperty("IsPlayable", "false")
         item.addContextMenuItems([
             ("Information", f"RunPlugin({addon_url(action='radio_favourite_info', id=station['id'], nonce=new_nonce())})"),
-            (f"Character: {openness}",
-             f"RunPlugin({addon_url(action='radio_favourite_setting', id=station['id'], setting='openness', nonce=new_nonce())})"),
-            (f"Drift: {drift}",
-             f"RunPlugin({addon_url(action='radio_favourite_setting', id=station['id'], setting='drift', nonce=new_nonce())})"),
-            (f"Intent: {favourite_perspective_label(station)}",
-             f"RunPlugin({addon_url(action='radio_favourite_setting', id=station['id'], setting='perspective', nonce=new_nonce())})"),
+            ("Station settings...",
+             f"RunPlugin({addon_url(action='radio_favourite_settings', id=station['id'], nonce=new_nonce())})"),
             ("Rename", f"RunPlugin({addon_url(action='radio_rename_favourite', id=station['id'], nonce=new_nonce())})"),
             ("Remove from favourites",
              f"RunPlugin({addon_url(action='radio_remove_favourite', id=station['id'], nonce=new_nonce())})"),
@@ -8485,9 +8491,12 @@ def show_radio_favourite_info(favourite_id: str) -> None:
     openness, drift = favourite_setting_labels(station)
     overview = "\n".join([
         f"Picked song: {picked}{album_suffix(station.get('seed'))}",
+        f"Variety: {station_setting_index(favourite_settings(station), 'variety')}",
+        f"Artists: {artist_rule_label(station_setting_index(favourite_settings(station), 'rejectsize'))}",
         f"Character: {openness}",
         f"Drift: {drift}",
-        f"Intent: {favourite_perspective_label(station)}",
+        f"Intent: {favourite_perspective_label(station)}"
+        + (", borderline accepted" if station_accepts_borderline(favourite_settings(station)) else ""),
         f"Saved: {format_sidecar_ts(station.get('saved_ts'))}",
         "",
         "A favourite always starts fresh from its picked song; its name and settings stay.",
@@ -8500,10 +8509,46 @@ def show_radio_favourite_info(favourite_id: str) -> None:
                      lambda: show_info_pages(name, [(tab["title"], plain(tab["text"])) for tab in tabs]))
 
 
+FAVOURITE_SETTINGS = ("variety", "rejectsize", "openness", "drift", "perspective", "borderline")
+
+
 def favourite_settings(favourite: dict | None) -> dict:
-    """A favourite's own station settings ({} for favourites saved before they had any: the global ones apply)."""
-    return {key: favourite[key] for key in ("openness", "drift", "perspective")
-            if isinstance((favourite or {}).get(key), int)}
+    """A favourite's own station settings: what it was saved with (older favourites have fewer or none: Radio's
+    settings apply to the rest)."""
+    favourite = favourite or {}
+    own = {key: favourite[key] for key in FAVOURITE_SETTINGS[:-1]
+           if isinstance(favourite.get(key), int) and not isinstance(favourite.get(key), bool)}
+    if isinstance(favourite.get("borderline"), bool):
+        own["borderline"] = favourite["borderline"]
+    return own
+
+
+def artist_rule_label(window: int) -> str:
+    return f"no repeat within {window} songs" if window else "may repeat"
+
+
+def favourite_setting_lines(station: dict) -> list[tuple[str, str]]:
+    """(line, key) for each of a favourite's settings, as its "Station settings..." list shows them."""
+    settings = favourite_settings(station)
+    openness, drift = favourite_setting_labels(station)
+    return [(f"Variety: {station_setting_index(settings, 'variety')}", "variety"),
+            (f"Artists: {artist_rule_label(station_setting_index(settings, 'rejectsize'))}", "rejectsize"),
+            (f"Character: {openness}", "openness"),
+            (f"Drift: {drift}", "drift"),
+            (f"Intent: {favourite_perspective_label(station)}", "perspective"),
+            (f"Accept borderline: {'on' if station_accepts_borderline(settings) else 'off'}", "borderline")]
+
+
+def choose_favourite_setting(favourite_id: str) -> None:
+    """The context menu entry "Station settings...": the favourite's settings, one to change."""
+    station = find_radio_favourite(favourite_id=favourite_id)
+    if not station:
+        return
+    lines = favourite_setting_lines(station)
+    choice = xbmcgui.Dialog().select(f"Settings of {plain(favourite_title(station))}", [plain(line) for line, _ in lines])
+    if choice is None or choice < 0 or choice >= len(lines):
+        return
+    change_favourite_setting(favourite_id, lines[choice][1])
 
 
 def favourite_setting_labels(favourite: dict) -> tuple[str, str]:
@@ -8518,8 +8563,8 @@ def favourite_perspective_label(favourite: dict) -> str:
 
 
 def change_favourite_setting(favourite_id: str, key: str) -> None:
-    """Openness, drift or perspective of a favourite; a playing favourite uses it from its next check on."""
-    if key not in ("openness", "drift", "perspective"):
+    """One of a favourite's settings (FAVOURITE_SETTINGS); a playing favourite uses it from its next refill on."""
+    if key not in FAVOURITE_SETTINGS:
         return
     stations = load_radio_favourites()
     station = next((entry for entry in stations if entry.get("id") == favourite_id), None)
@@ -8527,7 +8572,17 @@ def change_favourite_setting(favourite_id: str, key: str) -> None:
         return
     current = station_setting_index(favourite_settings(station), key)
     heading = f"{({'perspective': 'Intent'}).get(key, key.capitalize())} of {plain(favourite_title(station))}"
-    if key == "perspective":
+    if key == "borderline":
+        current = station_accepts_borderline(favourite_settings(station))
+        choice = xbmcgui.Dialog().select(f"Accept borderline for {plain(favourite_title(station))}",
+                                         ["Off: only songs the AI says fit", "On: also songs it calls borderline"],
+                                         preselect=1 if current else 0)
+        choice = None if choice is None or choice < 0 else choice == 1
+    elif key == "variety":
+        choice = dialog_slider_int(current, "Variety 0..9", 0, 9, 1)
+    elif key == "rejectsize":
+        choice = dialog_slider_int(current, "Do not repeat artist within N songs (0..20)", 0, 20, 1)
+    elif key == "perspective":
         choice = select_perspective(heading, current, perspective_index(get_setting_int("mix_assist_station_perspective", 0)))
     elif key == "openness":
         choice = select_mix_openness(f"Character of {plain(favourite_title(station))}", current)
@@ -8935,6 +8990,10 @@ def router(params: dict[str, str] | None = None) -> None:
 
     if action == "radio_favourite_setting":
         change_favourite_setting(params.get("id", ""), params.get("setting", ""))
+        return
+
+    if action == "radio_favourite_settings":
+        choose_favourite_setting(params.get("id", ""))
         return
 
     if action == "radio_favourite_info":
