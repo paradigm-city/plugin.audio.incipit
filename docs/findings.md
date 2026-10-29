@@ -97,6 +97,12 @@ Not fixed. The planned fix is the library sync: remove a song's sound print when
 
 ## Resolved
 
+### F41 · The tests failed on GitHub
+
+Found on 2026-10-29, at the first push since 2026-10-14 (main had been local for 96 commits, the work on `ai-mix-assist` for 257). On GitHub's runners (Windows, Python 3.8 and 3.x), 27 tests failed: Pillow and numpy were not installed there (the collages, charts and favourite numbers are drawn with Pillow, which Kodi's own Python has; the sound engine's tests need numpy), `test_mixassist_usage` used a dict union (`|`, Python 3.9), which Kodi's Python 3.8 doesn't know, and once Pillow was there, `test_the_number_is_drawn_into_the_artwork` measured the favourite number's brightness by its brightest pixel, which JPEG lifts to 167 instead of 153 with the runner's fonts. Locally every test had passed.
+
+Fixed on 2026-10-29: the workflow installs Pillow and numpy (9e23ef4), the test builds its dict without `|` (8737555), and the number's brightness is its typical pixel (c8977b4). Both runs pass since. The add-on's own code had no Python 3.9 feature: the 3.8 run passes in full.
+
 ### F40 · AI Mix Assist's profile check is measured against the candidate list itself
 
 Found on 2026-10-29 while widening the sound engine's variety, so that loose mixes cross genres and AI Mix Assist keeps them consistent. `assist.analyze` scales every dimension by the spread of the list it checks (`fit.mix_spreads`) and calls a track off when its misfit is more than 1.2 × the list's median misfit. So the looser the list, the more of it passes than its distance from the seed warrants. Only the second rule (a single dimension off by 5 points or 25 years) is absolute. On mixes of 25 from the whole library (`tools/style_pilot/data/variety_2026-10-29/variety_scale.txt`; the seeds Kraftwerk, Holdsworth, Machacek), 59 / 75 / 70% pass at variety 0 and 34 / 44 / 29% at variety 9. On a fixed scale taken from the seed's 35 nearest songs, 59 / 56 / 30% fit at variety 0 and 19 / 30 / 24% at variety 9. Within a rank band the gap is larger: of the songs ranked 3,000 to 10,000 for Allan Holdsworth, 24% fit on the fixed scale and 46% on their own (`variety_survey.txt`).
