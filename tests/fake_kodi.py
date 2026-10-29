@@ -27,7 +27,7 @@ import types
 import xml.etree.ElementTree as ET
 
 ADDON_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ADDON_ID = "plugin.audio.musicip"
+ADDON_ID = "plugin.audio.incipit"
 PROFILE_URL = f"special://profile/addon_data/{ADDON_ID}/"
 
 LOGDEBUG, LOGINFO, LOGWARNING, LOGERROR, LOGFATAL = 0, 1, 2, 3, 4

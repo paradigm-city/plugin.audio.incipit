@@ -134,7 +134,7 @@ class KeymapTest(unittest.TestCase):
             self.assertIn(f'action == "{action}"', router_source)
 
     def test_shipped_keymap_matches_installed_keymap(self):
-        shipped = read(os.path.join("resources", "keymaps", "musicip_mix_editing.xml"))
+        shipped = read(os.path.join("resources", "keymaps", "incipit_mix_editing.xml"))
         self.assertEqual(
             ET.tostring(ET.fromstring(shipped.encode("utf-8"))),
             ET.tostring(ET.fromstring(main.MUSICIP_KEYMAP_CONTENT.encode("utf-8"))),

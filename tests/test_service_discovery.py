@@ -256,7 +256,7 @@ class SnippetRedrawTest(KodiTestCase):
 class MenuRefreshAndResetTest(KodiTestCase):
     def test_visible_discovery_menu_is_refreshed_once(self):
         service.save_discovery_state({"ui_refresh_requested": True})
-        folder = "plugin://plugin.audio.musicip/?action=discovery_mode&nonce=1"
+        folder = "plugin://plugin.audio.incipit/?action=discovery_mode&nonce=1"
         kodi.info_labels["Container.FolderPath"] = folder
         service.refresh_discovery_menu_if_visible()
         service.refresh_discovery_menu_if_visible()
@@ -264,7 +264,7 @@ class MenuRefreshAndResetTest(KodiTestCase):
 
     def test_the_visible_root_follows_discovery(self):
         service.save_discovery_state({"ui_refresh_requested": True})
-        kodi.info_labels["Container.FolderPath"] = "plugin://plugin.audio.musicip/"
+        kodi.info_labels["Container.FolderPath"] = "plugin://plugin.audio.incipit/"
         service.refresh_discovery_menu_if_visible()
         self.assertEqual(kodi.builtins, ["Container.Refresh"])
 

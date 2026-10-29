@@ -28,7 +28,7 @@ class ContextMixTest(KodiTestCase):
         self.run_context_item(selected_song(SONG))
         self.assertEqual(len(kodi.builtins), 1)
         command = kodi.builtins[0]
-        self.assertTrue(command.startswith("ActivateWindow(Music,plugin://plugin.audio.musicip/?"))
+        self.assertTrue(command.startswith("ActivateWindow(Music,plugin://plugin.audio.incipit/?"))
         self.assertTrue(command.endswith(",return)"))
         self.assertEqual(plugin_query(command), {"action": "browse_mix", "seed": SONG, "size": "25"})
 

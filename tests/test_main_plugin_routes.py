@@ -329,8 +329,8 @@ class MixInfoTest(KodiTestCase):
     def test_the_info_key_is_in_the_keymap(self):
         for section in ("MyMusicNav", "window10502", "MusicPlaylist", "MusicFiles"):
             block = main.MUSICIP_KEYMAP_CONTENT.split(f"<{section}>")[1].split(f"</{section}>")[0]
-            self.assertIn("<i>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_info)</i>", block)
-            self.assertIn("<info>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_info)</info>", block)
+            self.assertIn("<i>RunPlugin(plugin://plugin.audio.incipit/?action=keyboard_info)</i>", block)
+            self.assertIn("<info>RunPlugin(plugin://plugin.audio.incipit/?action=keyboard_info)</info>", block)
 
     def test_info_for_selected_item(self):
         kodi.info_labels["ListItem.Property(MusicIP.CachePath)"] = self.cache_path
@@ -550,7 +550,7 @@ class MixEditingRoutesTest(SourceTestCase):
         super().setUp()
         kodi.settings["playlist_size"] = "10"
         self.cache_path = self.save_mix([SEED, T1, T2], size=10)
-        kodi.info_labels["Container.PluginName"] = "plugin.audio.musicip"
+        kodi.info_labels["Container.PluginName"] = "plugin.audio.incipit"
 
     def test_remove_track(self):
         self.run_plugin(action="remove_track", seed=SEED, size="10", index="1", path=T1, cache_path=self.cache_path)
@@ -564,7 +564,7 @@ class MixEditingRoutesTest(SourceTestCase):
         self.assertNotified("only available inside the Incipit add-on")
         self.assertEqual(self.read_mix(self.cache_path), [SEED, T1, T2])
 
-        kodi.info_labels["Container.FolderPath"] = "plugin://plugin.audio.musicip/?action=browse_mix"
+        kodi.info_labels["Container.FolderPath"] = "plugin://plugin.audio.incipit/?action=browse_mix"
         self.assertTrue(main.is_addon_mix_container_active())
 
     def test_more_like_this(self):
@@ -635,9 +635,9 @@ class FolderEntriesTest(SourceTestCase):
 
 class KeyboardShortcutTest(KodiTestCase):
     def test_runs_the_selected_items_action(self):
-        kodi.info_labels["ListItem.Property(MusicIP.MixAction.Remove)"] = "RunPlugin(plugin://plugin.audio.musicip/?action=remove_track)"
+        kodi.info_labels["ListItem.Property(MusicIP.MixAction.Remove)"] = "RunPlugin(plugin://plugin.audio.incipit/?action=remove_track)"
         self.run_plugin(action="keyboard_remove_from_mix")
-        self.assertEqual(kodi.builtins[-1], "RunPlugin(plugin://plugin.audio.musicip/?action=remove_track)")
+        self.assertEqual(kodi.builtins[-1], "RunPlugin(plugin://plugin.audio.incipit/?action=remove_track)")
 
     def test_no_action_for_selection(self):
         for action, label in (("keyboard_more_like_this", "More like this"), ("keyboard_less_like_this", "Less like this")):

@@ -695,7 +695,7 @@ class ProcessNewMixTest(MixAssistTestCase):
         self.assertEqual(kodi.playlist_files(), [TRACKS[0], TRACKS[1], REPLACEMENT, TRACKS[3]])
 
     def test_the_list_is_not_redrawn_while_kodi_loads_one(self):
-        kodi.info_labels["Container.PluginName"] = "plugin.audio.musicip"
+        kodi.info_labels["Container.PluginName"] = "plugin.audio.incipit"
         kodi.conditions["Container.IsUpdating"] = True
         with mock.patch.object(main.xbmc.Monitor, "waitForAbort", return_value=False):
             self.process(plan(changes=[REPLACE_DISCO]))
@@ -728,7 +728,7 @@ class MoreLikeThisTest(SourceTestCase):
     def setUp(self):
         super().setUp()
         kodi.settings["playlist_size"] = "10"  # More like this adds 20 % = 2 tracks
-        kodi.info_labels["Container.PluginName"] = "plugin.audio.musicip"
+        kodi.info_labels["Container.PluginName"] = "plugin.audio.incipit"
         self.cache_path = self.save_mix(TRACKS)
         self.source.set_mix(TRACKS[1], [TRACKS[0]] + self.NEW)
         patcher = mock.patch.object(main, "mix_assist_ask", return_value=lambda *args: {})

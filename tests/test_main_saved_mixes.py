@@ -321,14 +321,14 @@ class RepairReadinessTest(KodiTestCase):
 
         lines = [message for message, _level in kodi.logs if "Repair readiness:" in message]
         self.assertEqual(lines, [
-            "[plugin.audio.musicip] [checks] Repair readiness: repair not available for '01 Song 1'; "
+            "[plugin.audio.incipit] [checks] Repair readiness: repair not available for '01 Song 1'; "
             "status=update_library_before_repair, reason='Kodi music library still lists 1 of 1 missing file(s). "
             "Update and clean the library.', missing_files=1, still_listed_by_kodi=1, "
             "unavailable_sources=0, outside_sources=0",
-            "[plugin.audio.musicip] [checks] Repair readiness: repair available for '01 Song 1'; status=ready, "
+            "[plugin.audio.incipit] [checks] Repair readiness: repair available for '01 Song 1'; status=ready, "
             "reason='Kodi music library no longer lists the missing files.', missing_files=1, still_listed_by_kodi=0, "
             "unavailable_sources=0, outside_sources=0",
-            "[plugin.audio.musicip] [checks] Repair readiness: repair not available for 'Fine mix'; status=not_needed, "
+            "[plugin.audio.incipit] [checks] Repair readiness: repair not available for 'Fine mix'; status=not_needed, "
             "reason='Mix is not inconsistent.'",
         ])
 

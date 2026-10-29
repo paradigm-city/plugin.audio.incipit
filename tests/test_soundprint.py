@@ -31,7 +31,7 @@ try:
     HAVE_AV = True
 except ImportError:
     HAVE_AV = False
-MODEL_FOLDER = os.path.join(cli.kodi_userdata(), "addon_data", "plugin.audio.musicip", "soundprint", "model")
+MODEL_FOLDER = os.path.join(cli.kodi_userdata(), "addon_data", "plugin.audio.incipit", "soundprint", "model")
 
 
 def unit(*values):
@@ -509,7 +509,7 @@ class ModelDownloadTest(unittest.TestCase):
 class CommandLineTest(unittest.TestCase):
     def test_data_and_model_folders_default_to_the_addon_data(self):
         args = cli.arguments(["--userdata", "U", "status"])
-        self.assertEqual(args.data, os.path.join("U", "addon_data", "plugin.audio.musicip", "soundprint"))
+        self.assertEqual(args.data, os.path.join("U", "addon_data", "plugin.audio.incipit", "soundprint"))
         self.assertEqual(args.model, os.path.join(args.data, "model"))
 
     def test_status_prints_the_status_file_and_whether_the_analysis_is_alive(self):

@@ -15,7 +15,7 @@ import fake_kodi
 from fake_kodi import ADDON_DIR, kodi
 from fake_source import FakeSource
 
-PLUGIN_URL = "plugin://plugin.audio.musicip/"
+PLUGIN_URL = "plugin://plugin.audio.incipit/"
 HANDLE = 7
 
 

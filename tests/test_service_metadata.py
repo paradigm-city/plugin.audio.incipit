@@ -9,7 +9,7 @@ from support import KodiTestCase, main, service
 
 TRACK = "D:\\music\\Motorhead\\Ace of Spades (1980)\\01 Ace of Spades.mp3"
 OTHER = "D:\\music\\Motorhead\\Overkill (1979)\\01 Overkill.mp3"
-MIX_FOLDER = "plugin://plugin.audio.musicip/?action=browse_saved_mix&cache_path=x"
+MIX_FOLDER = "plugin://plugin.audio.incipit/?action=browse_saved_mix&cache_path=x"
 
 
 class MetadataRefreshTickTest(KodiTestCase):
@@ -114,7 +114,7 @@ class ViewRefreshTest(KodiTestCase):
 
     def test_visible_context(self):
         kodi.window_id = 10502
-        kodi.info_labels["Container.FolderPath"] = "plugin://plugin.audio.musicip/?action=saved_mixes"
+        kodi.info_labels["Container.FolderPath"] = "plugin://plugin.audio.incipit/?action=saved_mixes"
         context = service.get_visible_musicip_mix_context()
         self.assertEqual((context["is_musicip_view"], context["is_mix_view"], context["is_visible_mix"]), (True, False, True))
 
@@ -280,12 +280,12 @@ class ServiceLoggingTest(KodiTestCase):
             service.main()
         below_error = [message for message, level in kodi.logs if level < 3]
         self.assertEqual(len(below_error), 1)
-        self.assertTrue(below_error[0].startswith("[plugin.audio.musicip] [general] Incipit service started. version="))
+        self.assertTrue(below_error[0].startswith("[plugin.audio.incipit] [general] Incipit service started. version="))
 
     def test_service_errors_are_still_logged(self):
         with mock.patch.object(service, "run_discovery_tick", side_effect=RuntimeError("boom")):
             service.main()
-        self.assertIn(("[plugin.audio.musicip] [discovery] Discovery mode tick failed: boom", 3), kodi.logs)
+        self.assertIn(("[plugin.audio.incipit] [discovery] Discovery mode tick failed: boom", 3), kodi.logs)
 
 
 class ServiceStartupLogTest(KodiTestCase):
@@ -307,8 +307,8 @@ class ServiceStartupLogTest(KodiTestCase):
     def test_service_start_message_has_a_single_addon_prefix(self):
         service.main()
         message = self.start_lines()[0][0]
-        self.assertTrue(message.startswith("[plugin.audio.musicip] [general] Incipit service started. version="))
-        self.assertNotIn("[plugin.audio.musicip] [plugin.audio.musicip]", message)
+        self.assertTrue(message.startswith("[plugin.audio.incipit] [general] Incipit service started. version="))
+        self.assertNotIn("[plugin.audio.incipit] [plugin.audio.incipit]", message)
 
 
 class ServiceRepairReadinessTest(KodiTestCase):

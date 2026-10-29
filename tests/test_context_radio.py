@@ -28,7 +28,7 @@ class ContextRadioTest(KodiTestCase):
         self.assertEqual(len(kodi.builtins), 1)
         command = kodi.builtins[0]
         # RunPlugin, not ActivateWindow: the radio starts and the current view stays.
-        self.assertTrue(command.startswith("RunPlugin(plugin://plugin.audio.musicip/?"))
+        self.assertTrue(command.startswith("RunPlugin(plugin://plugin.audio.incipit/?"))
         self.assertEqual(plugin_query(command), {"action": "radio_start_seed", "seed": SONG})
 
     def test_song_without_url(self):

@@ -30,14 +30,14 @@ class AreaSwitchTest(KodiTestCase):
                 self.assertEqual(kodi.logs, [])
                 kodi.settings[logs.AREAS[area]] = "true"
                 getattr(logs, f"log_{area}")("hello")
-                self.assertEqual(kodi.logs, [(f"[plugin.audio.musicip] [{area}] hello", 1)])
+                self.assertEqual(kodi.logs, [(f"[plugin.audio.incipit] [{area}] hello", 1)])
                 kodi.logs.clear()
 
     def test_warnings_and_errors_without_the_switch(self):
         self.log_every_level()
-        self.assertEqual(kodi.logs, [("[plugin.audio.musicip] [radio] warning message", 2),
-                                     ("[plugin.audio.musicip] [radio] error message", 3),
-                                     ("[plugin.audio.musicip] [radio] fatal message", 4)])
+        self.assertEqual(kodi.logs, [("[plugin.audio.incipit] [radio] warning message", 2),
+                                     ("[plugin.audio.incipit] [radio] error message", 3),
+                                     ("[plugin.audio.incipit] [radio] fatal message", 4)])
 
     def test_everything_with_the_switch_and_debug_as_info(self):
         kodi.settings["log_radio"] = "true"
@@ -48,11 +48,11 @@ class AreaSwitchTest(KodiTestCase):
         kodi.settings["log_ai"] = "true"
         for area in logs.AREAS:
             logs.write(area, "info")
-        self.assertEqual(kodi.log_text(), "[plugin.audio.musicip] [ai] info")
+        self.assertEqual(kodi.log_text(), "[plugin.audio.incipit] [ai] info")
 
     def test_always(self):
         logs.log_general("started", always=True)
-        self.assertEqual(kodi.log_text(), "[plugin.audio.musicip] [general] started")
+        self.assertEqual(kodi.log_text(), "[plugin.audio.incipit] [general] started")
 
     def test_switches_described(self):
         kodi.settings.update({"log_mixing": "true", "log_checks": "true"})

@@ -87,15 +87,15 @@ class RadioMenuTest(RadioTestCase):
 
     def test_skipping_on_the_radio_screen_keeps_the_focus(self):
         self.turn_on()
-        kodi.info_labels["Container.FolderPath"] = "plugin://plugin.audio.musicip/?action=radio_mode&nonce=1"
+        kodi.info_labels["Container.FolderPath"] = "plugin://plugin.audio.incipit/?action=radio_mode&nonce=1"
         kodi.builtins.clear()
         self.run_plugin(action="radio_tune")  # Skip station
         self.assertEqual([command for command in kodi.builtins if command.startswith("Container.")], ["Container.Refresh"])
-        kodi.info_labels["Container.FolderPath"] = "plugin://plugin.audio.musicip/"  # from elsewhere: the Radio screen
+        kodi.info_labels["Container.FolderPath"] = "plugin://plugin.audio.incipit/"  # from elsewhere: the Radio screen
         kodi.builtins.clear()
         self.run_plugin(action="radio_tune")
         (command,) = [command for command in kodi.builtins if command.startswith("Container.")]
-        self.assertTrue(command.startswith("Container.Update(plugin://plugin.audio.musicip/?action=radio_mode"))
+        self.assertTrue(command.startswith("Container.Update(plugin://plugin.audio.incipit/?action=radio_mode"))
 
     def test_tuning_and_playing(self):
         self.turn_on()
@@ -121,7 +121,7 @@ class TuningTest(RadioTestCase):
 
     def test_the_radio_screen_follows_the_snippets(self):
         self.turn_on()
-        kodi.info_labels["Container.FolderPath"] = "plugin://plugin.audio.musicip/?action=radio_mode&nonce=1"
+        kodi.info_labels["Container.FolderPath"] = "plugin://plugin.audio.incipit/?action=radio_mode&nonce=1"
         self.tick(service.RADIO_STOP_GRACE_SECONDS)
         service.refresh_radio_menu_if_visible()
         kodi.builtins.clear()
@@ -135,7 +135,7 @@ class TuningTest(RadioTestCase):
 
     def test_no_redraw_while_kodi_is_loading_a_list(self):
         self.turn_on()
-        kodi.info_labels["Container.FolderPath"] = "plugin://plugin.audio.musicip/?action=radio_mode&nonce=1"
+        kodi.info_labels["Container.FolderPath"] = "plugin://plugin.audio.incipit/?action=radio_mode&nonce=1"
         self.tick(service.RADIO_STOP_GRACE_SECONDS)
         service.refresh_radio_menu_if_visible()
         main.skip_discovery_song()
@@ -154,7 +154,7 @@ class TuningTest(RadioTestCase):
 
     def test_the_radio_screen_is_not_redrawn_elsewhere(self):
         self.turn_on()
-        kodi.info_labels["Container.FolderPath"] = "plugin://plugin.audio.musicip/?action=saved_mixes"
+        kodi.info_labels["Container.FolderPath"] = "plugin://plugin.audio.incipit/?action=saved_mixes"
         kodi.builtins.clear()
         self.tick(service.RADIO_STOP_GRACE_SECONDS)
         service.refresh_radio_menu_if_visible()
@@ -673,19 +673,19 @@ class StationArtworkTest(RadioTestCase):
 
 class RadioServiceIntegrationTest(RadioTestCase):
     def test_the_visible_root_follows_the_radio(self):
-        for folder in ("plugin://plugin.audio.musicip/", "plugin://plugin.audio.musicip", "plugin://plugin.audio.musicip/?"):
+        for folder in ("plugin://plugin.audio.incipit/", "plugin://plugin.audio.incipit", "plugin://plugin.audio.incipit/?"):
             with self.subTest(folder=folder):
                 kodi.builtins.clear()
                 main.save_radio_state({"phase": "playing", "ui_refresh_requested": True})
                 kodi.info_labels["Container.FolderPath"] = folder
                 service.refresh_radio_menu_if_visible()
                 self.assertEqual(kodi.builtins, ["Container.Refresh"])
-        self.assertFalse(service.is_addon_root("plugin://plugin.audio.musicip/?action=saved_mixes"))
+        self.assertFalse(service.is_addon_root("plugin://plugin.audio.incipit/?action=saved_mixes"))
         self.assertFalse(service.is_addon_root("plugin://plugin.audio.other/"))
 
     def test_visible_radio_screen_is_refreshed_once(self):
         main.save_radio_state({"phase": "off", "ui_refresh_requested": True})
-        folder = "plugin://plugin.audio.musicip/?action=radio_mode&nonce=1"
+        folder = "plugin://plugin.audio.incipit/?action=radio_mode&nonce=1"
         kodi.info_labels["Container.FolderPath"] = folder
         service.refresh_radio_menu_if_visible()
         service.refresh_radio_menu_if_visible()

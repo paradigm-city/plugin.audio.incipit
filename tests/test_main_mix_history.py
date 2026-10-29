@@ -120,7 +120,7 @@ class EditingHistoryAndProgressTest(SourceTestCase, HistoryTestCase):
     def setUp(self):
         super().setUp()
         kodi.settings["playlist_size"] = "10"  # More/Less like this change 20 % = 2 tracks
-        kodi.info_labels["Container.PluginName"] = "plugin.audio.musicip"
+        kodi.info_labels["Container.PluginName"] = "plugin.audio.incipit"
         self.cache_path = self.save_mix([A, B, C, D], size=4)
 
     def test_more_like_this(self):
