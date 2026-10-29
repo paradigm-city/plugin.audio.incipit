@@ -40,7 +40,7 @@ class ContextMixTest(KodiTestCase):
     def test_no_selected_item(self):
         self.run_context_item(None)
         self.assertNotified("Kodi did not provide the selected list item.")
-        self.assertEqual(kodi.notifications[0][0], "MusicIP")
+        self.assertEqual(kodi.notifications[0][0], "Incipit")
 
     def test_broken_list_item(self):
         self.run_context_item(object())

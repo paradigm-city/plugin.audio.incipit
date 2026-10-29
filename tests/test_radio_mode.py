@@ -54,7 +54,7 @@ class RadioMenuTest(RadioTestCase):
 
     def test_off(self):
         self.assertEqual(self.menu(), ["Scan stations"])
-        self.assertIn(("setPluginCategory", "MusicIP radio"), kodi.directory_calls)
+        self.assertIn(("setPluginCategory", "Incipit radio"), kodi.directory_calls)
 
     def test_entries_are_actions_not_folders(self):
         self.menu()

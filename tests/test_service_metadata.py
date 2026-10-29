@@ -192,7 +192,7 @@ class BackgroundConsistencyCheckTest(KodiTestCase):
         kodi.settings["service_auto_repair_enabled"] = "true"
         service.run_consistency_check()
         self.assertEqual(kodi.notifications, [(
-            "MusicIP",
+            "Incipit",
             "Mix '01 Overkill' has missing tracks. Update the Kodi music library to allow automatic repair.",
             "warning",
         )])
@@ -280,7 +280,7 @@ class ServiceLoggingTest(KodiTestCase):
             service.main()
         below_error = [message for message, level in kodi.logs if level < 3]
         self.assertEqual(len(below_error), 1)
-        self.assertTrue(below_error[0].startswith("[plugin.audio.musicip] [general] MusicIP service started. version="))
+        self.assertTrue(below_error[0].startswith("[plugin.audio.musicip] [general] Incipit service started. version="))
 
     def test_service_errors_are_still_logged(self):
         with mock.patch.object(service, "run_discovery_tick", side_effect=RuntimeError("boom")):
@@ -290,7 +290,7 @@ class ServiceLoggingTest(KodiTestCase):
 
 class ServiceStartupLogTest(KodiTestCase):
     def start_lines(self):
-        return [(message, level) for message, level in kodi.logs if "MusicIP service started." in message]
+        return [(message, level) for message, level in kodi.logs if "Incipit service started." in message]
 
     def test_start_line_is_logged_as_info_without_logging(self):
         service.main()
@@ -307,7 +307,7 @@ class ServiceStartupLogTest(KodiTestCase):
     def test_service_start_message_has_a_single_addon_prefix(self):
         service.main()
         message = self.start_lines()[0][0]
-        self.assertTrue(message.startswith("[plugin.audio.musicip] [general] MusicIP service started. version="))
+        self.assertTrue(message.startswith("[plugin.audio.musicip] [general] Incipit service started. version="))
         self.assertNotIn("[plugin.audio.musicip] [plugin.audio.musicip]", message)
 
 

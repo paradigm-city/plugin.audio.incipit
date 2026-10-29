@@ -295,7 +295,7 @@ class MixInfoTest(KodiTestCase):
         kodi.window_error = "broken skin file"
         self.run_plugin(action="mix_info", cache_path=self.cache_path)
         heading, text = kodi.dialogs("textviewer")[0][1]
-        self.assertEqual(heading, "MusicIP mix information")
+        self.assertEqual(heading, "Mix information")
         self.assertIn("[B]How it was made[/B]", text)
         self.assertIn("Sound engine: 2 tracks, variety 0, no artist repeat within 2 tracks", text)
         self.assertIn("[B]Files[/B]\nNot checked yet", text)
@@ -423,7 +423,7 @@ class BrowseMixTest(SourceTestCase):
 
     def test_cancelled_generation_shows_error_item(self):
         self.run_plugin(action="browse_mix", seed=SEED, size="20")
-        self.assertEqual(self.listed_labels(), ["MusicIP mix failed: Mix generation cancelled."])
+        self.assertEqual(self.listed_labels(), ["Mix failed: Mix generation cancelled."])
         self.assertEqual(kodi.notifications[-1][2], "warning")
 
     def test_no_seed(self):
@@ -457,7 +457,7 @@ class BrowseSavedMixTest(SourceTestCase):
     def test_listing(self):
         self.run_plugin(action="browse_saved_mix", cache_path=self.cache_path)
         self.assertEqual(len(self.listed_labels()), 2)
-        self.assertIn(("setPluginCategory", "Saved MusicIP mix: 01 Ace of Spades"), kodi.directory_calls)
+        self.assertIn(("setPluginCategory", "Saved mix: 01 Ace of Spades"), kodi.directory_calls)
 
     def test_refresh_makes_a_new_current_mix(self):
         self.source.set_mix(SEED, [T2])
@@ -466,7 +466,7 @@ class BrowseSavedMixTest(SourceTestCase):
         self.assertEqual(self.current_mix_tracks(), [SEED, T2])
         self.assertNotEqual(main.get_current_mix_cache_path(), self.cache_path)
         self.assertEqual(self.read_mix(self.cache_path), [SEED, T1])  # the saved mix stays
-        self.assertIn(("setPluginCategory", "Current MusicIP mix: 01 Ace of Spades"), kodi.directory_calls)
+        self.assertIn(("setPluginCategory", "Current mix: 01 Ace of Spades"), kodi.directory_calls)
 
     def test_empty_mix(self):
         with open(self.cache_path, "w", encoding="utf-8") as handle:
@@ -514,7 +514,7 @@ class GenerateFromPlayingAudioTest(SourceTestCase):
         self.source.mix_status = 500
         kodi.respond("select", 0)
         self.run_plugin(action="generate_current_mix")
-        self.assertEqual(self.listed_labels(), ["MusicIP mix failed: The sound engine failed: server error"])
+        self.assertEqual(self.listed_labels(), ["Mix failed: The sound engine failed: server error"])
         self.assertEqual(kodi.playlist, [])
 
     def test_playback_failure_is_listed(self):
@@ -523,7 +523,7 @@ class GenerateFromPlayingAudioTest(SourceTestCase):
         kodi.respond("select", 0)
         with mock.patch("fake_kodi.Player.play", side_effect=RuntimeError("player busy")):
             self.run_plugin(action="generate_current_mix")
-        self.assertEqual(self.listed_labels(), ["MusicIP mix playback failed: player busy"])
+        self.assertEqual(self.listed_labels(), ["Mix playback failed: player busy"])
         self.assertEqual(self.current_mix_tracks(), [SEED, T1])
 
     def test_nothing_playing(self):
@@ -561,7 +561,7 @@ class MixEditingRoutesTest(SourceTestCase):
     def test_remove_is_only_allowed_inside_the_addon(self):
         kodi.info_labels.clear()
         self.run_plugin(action="remove_track", seed=SEED, size="10", index="1", path=T1, cache_path=self.cache_path)
-        self.assertNotified("only available inside the MusicIP add-on")
+        self.assertNotified("only available inside the Incipit add-on")
         self.assertEqual(self.read_mix(self.cache_path), [SEED, T1, T2])
 
         kodi.info_labels["Container.FolderPath"] = "plugin://plugin.audio.musicip/?action=browse_mix"

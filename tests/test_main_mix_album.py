@@ -48,7 +48,7 @@ class MixAlbumTest(MixAlbumTestCase):
         item = self.mix_item()
         tag = item.getMusicInfoTag()
         self.assertIn(("setContent", "albums"), kodi.directory_calls)
-        self.assertEqual((tag.getMediaType(), tag.getArtist(), tag.getAlbumArtist()), ("", "", "MusicIP"))  # no artist: no
+        self.assertEqual((tag.getMediaType(), tag.getArtist(), tag.getAlbumArtist()), ("", "", "Incipit"))  # no artist: no
         # Kodi "Information" (an artist makes it a song to Kodi)
         self.assertEqual([label for label, _action in item.context_menu].count("Information"), 1)
         self.assertTrue(tag.getAlbum().startswith("Artist 3 - Song 3 | "))  # the seed song: the second line
@@ -60,7 +60,7 @@ class MixAlbumTest(MixAlbumTestCase):
         self.assertTrue(item.getLabel2().startswith("Artist 3 - Song 3 | "))  # plain punctuation on this branch
         self.assertEqual(item.getProperty("Album_Description"),
                          "From: Artist 3 - Song 3\nArtists: Artist 3, Artist 0, Artist 1, Artist 2, Artist 4")
-        self.assertEqual((item.getProperty("Album_Type"), item.getProperty("Album_Label")), ("Mix", "MusicIP"))
+        self.assertEqual((item.getProperty("Album_Type"), item.getProperty("Album_Label")), ("Mix", "Incipit"))
         self.assertEqual((item.getArt("thumb"), item.getArt("fanart")), ("image://cover3.jpg/", "image://fanart3.jpg/"))
 
     def test_ai_mix_assist_adds_what_it_is_about_and_the_sound_in_words(self):

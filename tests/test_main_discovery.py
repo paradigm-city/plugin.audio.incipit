@@ -38,7 +38,7 @@ class DiscoveryMenuTest(KodiTestCase):
         self.run_plugin(action="discovery_mode")
         self.assertEqual(self.listed_labels(), ["Start discovery mode"])
         self.assertEqual(self.icons(), ["icon-searching.png"])  # it scans, like the radio
-        self.assertIn(("setPluginCategory", "MusicIP discovery mode"), kodi.directory_calls)
+        self.assertIn(("setPluginCategory", "Incipit discovery mode"), kodi.directory_calls)
 
     def test_active_menu(self):
         main.save_discovery_state({"enabled": True, "current_label": "Artist 1 - Song 1"})

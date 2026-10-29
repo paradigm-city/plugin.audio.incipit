@@ -104,7 +104,7 @@ class MigrationTest(KodiTestCase):
     def test_the_service_migrates_at_its_start(self):
         self.write_stored_settings(service_extended_logging="true")
         service.main()
-        (line,) = [message for message, _level in kodi.logs if "MusicIP service started." in message]
+        (line,) = [message for message, _level in kodi.logs if "Incipit service started." in message]
         self.assertIn("checks on (turned on from the old extended logging switches).", line)
 
 

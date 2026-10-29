@@ -218,7 +218,7 @@ class ServiceSearchTest(SourcesTestCase):
         self.assertEqual(search["found_outside_sources"], {MISSING: MOVED})
         self.assertEqual(search["signature"], self.meta()["consistency"]["missing_signature"])
         self.assertNotIn("suggested_sources", self.meta()["repair_readiness"])
-        self.assertEqual(kodi.notifications, [("MusicIP", self.NOTIFICATION, "info")])
+        self.assertEqual(kodi.notifications, [("Incipit", self.NOTIFICATION, "info")])
 
     def test_several_files_in_one_notification(self):
         other_missing = "D:\\music\\#metal\\Saxon\\Wheels of Steel (1980)\\02 Wheels of Steel.mp3"
@@ -297,7 +297,7 @@ class UnscannedSourceTest(SourcesTestCase):
         self.clock.advance(main.MISSING_FILE_SEARCH_MAX_AGE_SECONDS + 1)
         service.run_consistency_check()
         self.assertEqual(kodi.notifications, [(
-            "MusicIP",
+            "Incipit",
             f"Missing file found in a music source that is not scanned into the library: {self.JAZZ}",
             "info",
         )])

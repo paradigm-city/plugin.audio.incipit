@@ -148,7 +148,7 @@ class SaveFromTheMixTest(KodiTestCase):
         menus = self.tracks_context(cache_path)
         self.assertEqual(menus[0], ["Refresh mix", "More like this", "Remove from mix", "Save mix"])
         self.assertEqual(menus[1][-1], "Save mix")
-        self.assertIn(("setPluginCategory", "Current MusicIP mix: 01 Ace of Spades"), kodi.directory_calls)
+        self.assertIn(("setPluginCategory", "Current mix: 01 Ace of Spades"), kodi.directory_calls)
         save = plugin_query(kodi.directory_items[1][1].context_action("Save mix"))
         self.assertEqual((save["action"], save["cache_path"]), ("save_mix", cache_path))
 

@@ -299,7 +299,7 @@ class ServiceMainLoopTest(KodiTestCase):
         state = service.load_discovery_state()
         self.assertEqual(state["stop_reason"], "startup_reset")
         self.assertFalse(state["enabled"])
-        self.assertIn("MusicIP service started. version=", kodi.log_text())
+        self.assertIn("Incipit service started. version=", kodi.log_text())
         self.assertEqual(kodi.waits, 1)
 
     def test_discovery_is_stopped_on_shutdown(self):

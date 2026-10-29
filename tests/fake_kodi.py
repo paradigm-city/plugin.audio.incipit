@@ -225,7 +225,7 @@ class KodiState:
         self.settings = dict(self.setting_defaults)
         self.addon_info = {
             "id": ADDON_ID,
-            "name": "MusicIP",
+            "name": "Incipit",
             "version": read_addon_version(),
             "profile": PROFILE_URL,
             "path": ADDON_DIR,
