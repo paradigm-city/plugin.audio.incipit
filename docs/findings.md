@@ -97,6 +97,22 @@ Not fixed. The planned fix is the library sync: remove a song's sound print when
 
 ## Resolved
 
+### F39 · The service ignored settings changed while Kodi runs
+
+Found on 2026-10-29: the user chose the sound engine in the settings after Kodi had started, with MusicIP shut down. Radio's first songs came from the sound engine (the plugin reads the settings anew on every call), but the service's start check and every refill still asked MusicIP, failed ("Could not reach MusicIP server"), and the station ran dry after one song; the service also tried MusicIP's library reload. Kodi gives every `xbmcaddon.Addon` its own copy of the settings, read when it is made, and the service made its copies once at start: its own `ADDON`, the plugin module's (loaded by the service) and the logging switches' (`logs.ADDON`). So any setting changed while Kodi runs (logging switches, intervals, AI Mix Assist settings, the engine) reached the service only after a restart.
+
+Fixed on 2026-10-29 (c4a98e7, tests 07c49c5): `ServiceMonitor.onSettingsChanged` calls `service.reload_settings()`, which makes all three anew and logs "Settings changed: the service reads them again. Mixes come from … (before: …)" and the logging switches.
+
+**Test:** `test_soundprint_client.SettingsChangeTest.test_the_service_reads_changed_settings_again`
+
+### F38 · The AI judge turned down little-known music for an intent it read from a guessed description
+
+Found by the user on 2026-10-29 in the sound engine pilot (Kraftwerk "Vitamin", Emotional). The rating guesses a description for music it doesn't know (familiarity 0), from the names, the album and the genre, and the judge took such guesses as fact. It turned down three little-known 80s synth tracks for their intent: Satellite & Atom Cristal "Boulevard Circulaire" (outlier, "eighties synthpop going for pop appeal"), Tara Cross "City Limit" (borderline, "leans toward pop mood over concept") and Paul Nagle "Journey" (borderline, "more style exercise than statement"). The user hears all three as fitting. An intent can't be told from names; only the fourth, Im Namen des Volkes "Haushaltsmaschine" (borderline, retro Kraftwerk/DAF homage), was turned down for a reason the user shares (X or b), though for its style rather than its emotion.
+
+Fixed on 2026-10-29 (c4a98e7, tests 07c49c5): `checks.track_line` marks lines of music the rating didn't know with "(little known)", and the note every check prompt ends with says such a description is a guess; the judge is not to turn such a track down only because the guess suggests another intent (pop appeal, nostalgia, pastiche, a use), only when what is known clearly clashes. On the pilot's 5 lists (175 verdicts) the little-known units went from 16 fits / 19 borderline / 14 outliers to 32 / 9 / 8, the others from 44 / 38 / 44 to 48 / 45 / 33 (the judge's run-to-run variance is of that size). All four tracks above now fit, Haushaltsmaschine included, which the user would turn down. Little-known tracks that clearly clash stay out, for example J. P. & Company's boogie soul and a smooth-jazz cover of "Aja" on the Machacek lists. Still to check by ear: whether the rule now lets in too much (`tools/style_pilot/data/soundprint_pilot_2026-10-29/compare_little_known.txt`).
+
+**Test:** `test_mixassist_tidy_up.ChecksTest.test_music_the_rating_did_not_know_is_marked_as_little_known`
+
 ### F37 · The sound engine's analysis couldn't read 68 songs
 
 The first full analysis (2026-10-28, 152,975 songs) failed on 68 files that Kodi plays:
