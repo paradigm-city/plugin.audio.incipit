@@ -2775,7 +2775,7 @@ def insert_more_like_this_into_mix(seed: str, size: int, index: int, path: str, 
 
     if not new_tracks:
         if result and result["not_fitting"]:
-            raise MusicIPError("AI Mix Assist: none of the suggested tracks is close enough to this song.")
+            raise MusicIPError("None of the suggested tracks passes the checks.")
         raise MusicIPError("No new tracks found for this song.")
 
     updated_tracks = source_tracks[:insert_at] + new_tracks + source_tracks[insert_at:]
@@ -2784,7 +2784,7 @@ def insert_more_like_this_into_mix(seed: str, size: int, index: int, path: str, 
     skipped = [{"track": entry["label"], "reason": entry["reason"]} for entry in (result or {}).get("not_fitting") or []]
     record_mix_history(target_cache_path, "more_like_this", song=song,
                        added=mix_track_labels(target_cache_path, new_tracks), skipped=skipped)
-    note = f"Added by More like this for {song}" + (", checked by AI Mix Assist" if result else "")
+    note = f"Added by More like this for {song}" + (", checked" if result else "")
     record_track_origins(target_cache_path, new_tracks, "more_like_this", [note] * len(new_tracks))
     if report is not None and skipped:
         report["skipped"] = len(skipped)
@@ -2794,7 +2794,7 @@ def insert_more_like_this_into_mix(seed: str, size: int, index: int, path: str, 
 def more_like_this_message(inserted: int, report: dict) -> str:
     message = f"Inserted {inserted} track(s)."
     if report.get("skipped"):
-        message += f" AI Mix Assist skipped {report['skipped']} that didn't fit (see the mix history)."
+        message += f" The checks skipped {report['skipped']} that didn't fit (see the mix history)."
     return message
 
 
@@ -4358,7 +4358,7 @@ def run_selected_mix_keyboard_action(property_name: str, action_label: str) -> N
 # track list (the second text) and in the track's information (its comment). Tracks without one came with the mix.
 
 TRACK_ORIGIN_LABELS = {"seed": "Seed", "more_like_this": "More like this", "repaired": "Repaired",
-                       "ai": "AI Mix Assist"}
+                       "ai": "Checks"}
 
 
 def record_track_origins(cache_path: str, tracks: list[str], origin: str, notes: list[str] | None = None) -> None:
@@ -4388,7 +4388,7 @@ def track_origin(meta: dict, path: str, seed: str = "") -> dict:
 
 
 def ai_replacement_note(change: dict) -> str:
-    return f"Replaced by AI Mix Assist: {change.get('old_label', '')} ({change.get('reason', '')})"
+    return f"Replaced by the checks: {change.get('old_label', '')} ({change.get('reason', '')})"
 
 
 def add_track_item(
@@ -4558,7 +4558,7 @@ def add_saved_mix_item(cache_path: str) -> None:
                 repair_readiness_action_label(repair_readiness),
                 build_update_library_before_repair_action(cache_path),
             ))
-    context_items.append(("AI Mix Assist...", build_mix_assist_action("mix_assist_menu", cache_path)))
+    context_items.append(("Checks...", build_mix_assist_action("mix_assist_menu", cache_path)))
     context_items.append(("Delete this mix", build_cleanup_saved_mix_action(cache_path)))
     list_item.addContextMenuItems(context_items)
 
@@ -4707,7 +4707,7 @@ def add_current_mix_item(cache_path: str) -> None:
     context_items += [
         ("Information", run_plugin_url(action="mix_info", cache_path=cache_path, nonce=new_nonce())),
         ("Check consistency", build_check_mix_action(cache_path)),
-        ("AI Mix Assist...", build_mix_assist_action("mix_assist_menu", cache_path)),
+        ("Checks...", build_mix_assist_action("mix_assist_menu", cache_path)),
     ]
     item.addContextMenuItems(context_items)
     add_directory_item(HANDLE, build_saved_browse_url(cache_path), item, isFolder=True)
@@ -5126,14 +5126,14 @@ def describe_station_start(params: dict, favourite: dict | None, assisted: bool)
     station = f"favourite {favourite.get('name', '')!r} ({favourite.get('id', '')})" if favourite else "new station"
     mix = f"size {params.get('size')}, {describe_mix_parameters(compact_mix_generation_parameters(params))}"
     if not assisted:
-        return f"{station} | mix: {mix} | AI Mix Assist: off"
+        return f"{station} | mix: {mix} | checks: off"
     settings = favourite_settings(favourite)
     source = {key: "favourite's own" if key in settings else "setting" for key in ("openness", "drift", "perspective")}
     openness = station_setting_index(settings, "openness")
     limit, borderline = get_station_strictness(settings)
     drift = max(0, min(2, station_setting_index(settings, "drift")))
     half_life = get_radio_drift_half_life(settings)
-    return (f"{station} | mix: {mix} | AI Mix Assist: on, model {mix_assist_claude.DEFAULT_MODEL}, effort "
+    return (f"{station} | mix: {mix} | checks: on, model {mix_assist_claude.DEFAULT_MODEL}, effort "
             f"{mix_assist_claude.DEFAULT_EFFORT} | Character {mix_openness_label(openness)} ({source['openness']}; "
             f"limit {limit}) | Intent: borderline {'accepted' if borderline else 'rejected'} | drift {RADIO_DRIFT_LABELS[drift]} "
             f"({source['drift']}; {f'half-life {half_life} songs' if half_life else 'no drift'}) | perspective "
@@ -5813,7 +5813,7 @@ def format_history_more_like_this(event: dict) -> list[str]:
     lines = [f"\"More like this\" for {event.get('song', '?')} added {len(added)} track(s):"] + history_list("+", added)
     skipped = event.get("skipped") or []
     if skipped:
-        lines.append(f"AI Mix Assist skipped {len(skipped)} that didn't fit:")
+        lines.append(f"The checks skipped {len(skipped)} that didn't fit:")
         lines += [f"x {entry.get('track', '?')} ({entry.get('reason', '')})" for entry in skipped]
     return lines
 
@@ -5832,7 +5832,7 @@ def format_history_repaired(event: dict) -> list[str]:
 
 
 def format_history_ai_tidy_up(event: dict) -> list[str]:
-    who = "AI Mix Assist checked the new mix" if event.get("automatic") else "AI Mix Assist tidied up the mix"
+    who = "The new mix was checked" if event.get("automatic") else "The mix was tidied up"
     replaced, removed = event.get("replaced") or [], event.get("removed") or []
     if not replaced and not removed:
         return [f"{who}: every track fits"]
@@ -5843,7 +5843,7 @@ def format_history_ai_tidy_up(event: dict) -> list[str]:
 
 
 def format_history_ai_undone(event: dict) -> list[str]:
-    return ["You undid the AI Mix Assist changes"]
+    return ["You undid the changes of the checks"]
 
 
 def format_history_intent_edited(event: dict) -> list[str]:
@@ -5857,7 +5857,7 @@ def format_history_assist_settings(event: dict) -> list[str]:
         parts.append(f"Intent {event['perspective']}")
     if event.get("intent"):
         parts.append(f"about \"{event['intent']}\"")
-    who = "When you created the mix, you set AI Mix Assist to" if event.get("at_creation") else "You set AI Mix Assist to"
+    who = "When you created the mix, you set the checks to" if event.get("at_creation") else "You set the checks to"
     return [f"{who} {'; '.join(parts)}"]
 
 
@@ -5866,7 +5866,7 @@ MIX_HISTORY_FORMATTERS = {
     "ai_tidy_up": format_history_ai_tidy_up,
     "ai_undone": format_history_ai_undone,
     "intent_edited": format_history_intent_edited,
-    "named": lambda event: [f"AI Mix Assist named the mix \"{event.get('name', '')}\""],
+    "named": lambda event: [f"The AI named the mix \"{event.get('name', '')}\""],
     "renamed": lambda event: [f"You named the mix \"{event['name']}\"" if event.get("name")
                               else "You removed your name; the AI's is used again"],
     "created": format_history_created,
@@ -6045,7 +6045,7 @@ class InfoWindow(xbmcgui.WindowXMLDialog):
                 pass
 
 
-# --- AI Mix Assist statistics: what it costs and what it does (Settings: "Show statistics") ----------------------
+# --- Claude statistics: what it costs and what it does (Settings: "Show statistics") ----------------------
 # mixassist.usage counts; the events are kept in usage.db for a year. The AI calls are told apart by their system
 # prompt: rating new music, describing a mix (its intent, its name), judging tracks against an intent.
 
@@ -6235,20 +6235,20 @@ def nice_ceiling(value: float) -> int:
 def show_mix_assist_statistics() -> None:
     events = usage_log().events()
     if not events:
-        xbmcgui.Dialog().ok("AI Mix Assist statistics", "Nothing counted yet. AI Mix Assist counts its requests and "
+        xbmcgui.Dialog().ok("Claude statistics", "Nothing counted yet. The checks count their requests and "
                                                          "results from now on.")
         return
     now = time.time()
     requests = sum(1 for event in events if event[1] == "ai_call")
     facts = f"Counted since {format_calendar_date(events[0][0])} | {format_count(requests)} AI requests"
-    show_info_window("AI Mix Assist statistics", facts, statistics_tabs(events, now),
-                     lambda: show_text_page("AI Mix Assist statistics", "\n\n".join(
+    show_info_window("Claude statistics", facts, statistics_tabs(events, now),
+                     lambda: show_text_page("Claude statistics", "\n\n".join(
                          f"{info_heading(tab['title'].upper())}\n\n{tab['text']}"
                          for tab in statistics_tabs(events, now, charts=False))))
 
 
 def reset_mix_assist_statistics() -> None:
-    if xbmcgui.Dialog().yesno("AI Mix Assist statistics", "Delete all statistics counted so far?"):
+    if xbmcgui.Dialog().yesno("Claude statistics", "Delete all statistics counted so far?"):
         usage_log().clear()
         notify("Statistics deleted.")
 
@@ -6522,7 +6522,7 @@ def mix_info_parts(cache_path: str) -> dict:
                  f"Character {mix_openness_label(index)}" + (" (chosen for this mix)" if own else "")
                  + f", Intent {perspective_label(perspective)}" + (" (chosen for this mix)" if "perspective" in section else ""))
         checked = f", last checked {format_sidecar_ts(section.get('checked_ts'))}" if section.get("checked_ts") else ""
-        about.append(f"AI Mix Assist: {state}{checked}")
+        about.append(f"Checks: {state}{checked}")
     info["about"] = about
 
     # How it sounds: the ratings at the last check, then what the library says
@@ -6563,7 +6563,7 @@ def mix_info_parts(cache_path: str) -> dict:
                 for change in replaced]
     changes += [f"Removed: {label}" for label in removed]
     if changes and section.get("previous_tracks"):
-        changes.append("(\"AI Mix Assist...\" in the context menu can undo it)")
+        changes.append("(\"Checks...\" in the context menu can undo it)")
     info["changes"] = changes
 
     # How it was made, its files, what happened
@@ -6624,7 +6624,7 @@ def mix_info_tabs(info: dict) -> list[dict]:
         if text_in_charts:
             lines.insert(0, "Each scale from 0 (left) to 10 (right): the bar is the mix's range, the dot its average.")
     else:
-        lines = ["Not rated yet: AI Mix Assist rates the tracks when it checks the mix."]
+        lines = ["Not rated yet: the tracks are rated when the mix is checked."]
     sound["text"] = "\n".join(lines + ([""] + info["sound"] if info["sound"] else []))
     tabs.append(sound)
 
@@ -6641,9 +6641,9 @@ def mix_info_tabs(info: dict) -> list[dict]:
     if info["changes"]:
         changes = [info_heading("Last tidy-up")] + info["changes"]
     elif info["checked"]:
-        changes = ["AI Mix Assist found nothing to change at its last check."]
+        changes = ["The last check found nothing to change."]
     else:
-        changes = ["AI Mix Assist hasn't checked this mix yet."]
+        changes = ["This mix hasn't been checked yet."]
     tabs.append({"title": "Changes", "text": "\n".join(changes)})
     tabs.append({"title": "History", "text": info["history"]})
     return tabs
@@ -7296,11 +7296,11 @@ CHARACTER_LIMITS = (1.0, 1.1, 1.2, 1.35, 1.5)  # default: Balanced
 CHECK_OFF = -1
 MIX_ASSIST_SECTION = "mix_assist"
 MIX_ASSIST_MESSAGES = {
-    mix_assist_claude.NOT_FOUND: "AI Mix Assist needs the Claude Code CLI. Install it, or set its path in the settings.",
-    mix_assist_claude.NOT_LOGGED_IN: "AI Mix Assist: Claude Code is not logged in. Run \"claude\" once and log in.",
-    mix_assist_claude.USAGE_LIMIT: "AI Mix Assist: Claude's usage limit is reached. Please try again later.",
-    mix_assist_claude.TIMEOUT: "AI Mix Assist: Claude did not answer in time.",
-    mix_assist_claude.FAILED: "AI Mix Assist: Claude could not judge this mix.",
+    mix_assist_claude.NOT_FOUND: "The checks need the Claude Code CLI. Install it, or set its path in the settings.",
+    mix_assist_claude.NOT_LOGGED_IN: "Checks: Claude Code is not logged in. Run \"claude\" once and log in.",
+    mix_assist_claude.USAGE_LIMIT: "Checks: Claude's usage limit is reached. Please try again later.",
+    mix_assist_claude.TIMEOUT: "Checks: Claude did not answer in time.",
+    mix_assist_claude.FAILED: "Checks: Claude could not judge this mix.",
 }
 
 
@@ -7525,7 +7525,7 @@ def run_mix_assist_on_saved_mix(cache_path: str) -> dict:
     meta = get_saved_mix_metadata(cache_path, tracks)
     if mix_checks_off(meta):
         raise MusicIPError("Character and Intent are both off for this mix: there is nothing to check.")
-    with BackgroundProgress("AI Mix Assist") as progress:
+    with BackgroundProgress("Checking the mix") as progress:
         plan = compute_mix_assist_plan(tracks, meta, progress=mix_assist_step_reporter(progress, MIX_ASSIST_STEPS))
     record_mix_assist_result(cache_path, tracks, plan, automatic=False)
     return plan
@@ -7534,13 +7534,13 @@ def run_mix_assist_on_saved_mix(cache_path: str) -> dict:
 def mix_assist_result_message(plan: dict) -> str:
     replaced, removed = len(plan["changes"]), len(plan["removed"])
     if not replaced and not removed:
-        return "AI Mix Assist: every track fits."
+        return "Checks: every track fits."
     parts = []
     if replaced:
         parts.append(f"{replaced} track{'s' if replaced != 1 else ''} didn't fit and {'were' if replaced != 1 else 'was'} replaced")
     if removed:
         parts.append(f"{removed} without a fitting replacement {'were' if removed != 1 else 'was'} removed")
-    return "AI Mix Assist: " + ", ".join(parts) + "."
+    return "Checks: " + ", ".join(parts) + "."
 
 
 def undo_mix_assist_on_saved_mix(cache_path: str) -> int:
@@ -7548,7 +7548,7 @@ def undo_mix_assist_on_saved_mix(cache_path: str) -> int:
     section = get_mix_assist_section(meta)
     previous = section.get("previous_tracks")
     if not isinstance(previous, list) or not previous:
-        raise MusicIPError("There are no AI Mix Assist changes to undo.")
+        raise MusicIPError("There are no changes of the checks to undo.")
     save_mix_by_cache_path(cache_path, [str(track) for track in previous])
     meta = get_saved_mix_metadata(cache_path, previous)
     section = get_mix_assist_section(meta)
@@ -7600,7 +7600,7 @@ def mix_assist_for_more_like_this() -> bool:
 def report_automatic_mix_assist_error(exc: Exception) -> None:
     """Automatic checks stay quiet without the Claude CLI (AI Mix Assist is optional); other problems are shown."""
     kind = getattr(exc, "kind", "")
-    log_ai(f"AI Mix Assist: {kind}: {exc}", xbmc.LOGWARNING if kind == mix_assist_claude.NOT_FOUND else xbmc.LOGERROR)
+    log_ai(f"Checks: {kind}: {exc}", xbmc.LOGWARNING if kind == mix_assist_claude.NOT_FOUND else xbmc.LOGERROR)
     if kind != mix_assist_claude.NOT_FOUND:
         notify(MIX_ASSIST_MESSAGES.get(kind, str(exc)), xbmcgui.NOTIFICATION_WARNING)
 
@@ -7826,11 +7826,11 @@ def choose_from_mix_assist_menu(cache_path: str) -> str:
         (f"Intent: {perspective_label(mix_perspective_index(meta))}", "mix_assist_perspective"),
     ] + ([(f"Name: {mix_name(meta) or '<given at the first check>'}", "mix_assist_rename")]
          if mix_naming_enabled() and is_mix_saved(meta) else []) + [
-        ("Run AI Mix Assist", "mix_assist_tidy_up"),
+        ("Check the mix now", "mix_assist_tidy_up"),
     ]
     if section.get("previous_tracks"):
-        entries.append(("Undo the AI Mix Assist changes", "mix_assist_undo"))
-    choice = xbmcgui.Dialog().select("AI Mix Assist", [plain(label) for label, _action in entries])
+        entries.append(("Undo the changes of the checks", "mix_assist_undo"))
+    choice = xbmcgui.Dialog().select("Checks", [plain(label) for label, _action in entries])
     if choice is None or choice < 0 or choice >= len(entries):
         return ""
     return entries[choice][1]
@@ -7922,7 +7922,7 @@ def queue_mix_assist_for_new_mix(cache_path: str, tracks: list[str]) -> None:
     if not mix_assist_for_new_mixes() or len(tracks) < 2:
         return
     if mix_checks_off(get_saved_mix_metadata(cache_path, tracks)):
-        log_ai(f"AI Mix Assist: Character and Intent are off for {cache_path!r}; not queued.")
+        log_ai(f"Checks: Character and Intent are off for {cache_path!r}; not queued.")
         return
     try:
         queue = [entry for entry in load_json_file(mix_assist_queue_path()).get("entries", [])
@@ -7931,7 +7931,7 @@ def queue_mix_assist_for_new_mix(cache_path: str, tracks: list[str]) -> None:
         os.makedirs(os.path.dirname(mix_assist_queue_path()), exist_ok=True)
         save_json_file(mix_assist_queue_path(), {"entries": queue})
     except Exception as exc:
-        log_ai(f"AI Mix Assist: could not queue {cache_path!r}: {exc}", xbmc.LOGWARNING)
+        log_ai(f"Checks: could not queue {cache_path!r}: {exc}", xbmc.LOGWARNING)
 
 
 def pop_mix_assist_request() -> dict:
@@ -7972,7 +7972,7 @@ def patch_playlist_for_mix(original: list[str], plan: dict) -> int:
                 playlist.add(track, build_mix_playlist_item(track, metadata, position), index)
             patched += 1
         except Exception as exc:
-            log_ai(f"AI Mix Assist: could not patch playlist position {position}: {exc}", xbmc.LOGWARNING)
+            log_ai(f"Checks: could not patch playlist position {position}: {exc}", xbmc.LOGWARNING)
     return patched
 
 
@@ -7996,7 +7996,7 @@ def process_mix_assist_request(entry: dict) -> None:
     if not cache_path or not original:
         return
     if load_mix_by_cache_path(cache_path) != original:
-        log_ai(f"AI Mix Assist: {cache_path!r} changed since it was queued; skipped.")
+        log_ai(f"Checks: {cache_path!r} changed since it was queued; skipped.")
         return
     monitor = xbmc.Monitor()
 
@@ -8005,26 +8005,26 @@ def process_mix_assist_request(entry: dict) -> None:
             raise MusicIPError("Kodi is shutting down.")
 
     try:
-        with BackgroundProgress("AI Mix Assist: new mix") as progress:
+        with BackgroundProgress("Checking the new mix") as progress:
             plan = compute_mix_assist_plan(
                 original, get_saved_mix_metadata(cache_path, original),
                 progress=mix_assist_step_reporter(progress, MIX_ASSIST_STEPS, check=check_abort))
         check_abort()
         if load_mix_by_cache_path(cache_path) != original:
-            log_ai(f"AI Mix Assist: {cache_path!r} changed while it was checked; not applied.")
+            log_ai(f"Checks: {cache_path!r} changed while it was checked; not applied.")
             return
         changed = record_mix_assist_result(cache_path, original, plan, automatic=True)
     except mix_assist_claude.ClaudeError as exc:
         report_automatic_mix_assist_error(exc)
         return
     except MusicIPError as exc:
-        log_ai(f"AI Mix Assist: {exc}", xbmc.LOGWARNING)
+        log_ai(f"Checks: {exc}", xbmc.LOGWARNING)
         return
 
     if not changed:
         return
     patched = patch_playlist_for_mix(original, plan)
-    log_ai(f"AI Mix Assist: {cache_path!r}: {len(plan['changes'])} replaced, {len(plan['removed'])} removed, "
+    log_ai(f"Checks: {cache_path!r}: {len(plan['changes'])} replaced, {len(plan['removed'])} removed, "
              f"{patched} playlist entries patched.")
     if is_addon_mix_container_active() and wait_until_kodi_has_loaded():
         xbmc.executebuiltin("Container.Refresh")
@@ -8124,7 +8124,7 @@ def radio_more_candidates(seeds: list[str], seen, settings: dict | None = None, 
             lists["left"] -= 1
             fresh = [track for track in mix if normalize_track_identity(track) not in seen]
             if fresh:
-                log_radio(f"Radio mode: AI Mix Assist looks further, in the mix for {seed!r}.")
+                log_radio(f"Radio mode: the checks look further, in the mix for {seed!r}.")
                 return fresh
         return []
     return more
@@ -8458,11 +8458,11 @@ def show_radio_favourites() -> None:
         item.setProperty("IsPlayable", "false")
         item.addContextMenuItems([
             ("Information", f"RunPlugin({addon_url(action='radio_favourite_info', id=station['id'], nonce=new_nonce())})"),
-            (f"Openness: {openness}",
+            (f"Character: {openness}",
              f"RunPlugin({addon_url(action='radio_favourite_setting', id=station['id'], setting='openness', nonce=new_nonce())})"),
             (f"Drift: {drift}",
              f"RunPlugin({addon_url(action='radio_favourite_setting', id=station['id'], setting='drift', nonce=new_nonce())})"),
-            (f"Perspective: {favourite_perspective_label(station)}",
+            (f"Intent: {favourite_perspective_label(station)}",
              f"RunPlugin({addon_url(action='radio_favourite_setting', id=station['id'], setting='perspective', nonce=new_nonce())})"),
             ("Rename", f"RunPlugin({addon_url(action='radio_rename_favourite', id=station['id'], nonce=new_nonce())})"),
             ("Remove from favourites",
@@ -8485,15 +8485,15 @@ def show_radio_favourite_info(favourite_id: str) -> None:
     openness, drift = favourite_setting_labels(station)
     overview = "\n".join([
         f"Picked song: {picked}{album_suffix(station.get('seed'))}",
-        f"Station openness: {openness}",
-        f"Station drift: {drift}",
-        f"Station perspective: {favourite_perspective_label(station)}",
+        f"Character: {openness}",
+        f"Drift: {drift}",
+        f"Intent: {favourite_perspective_label(station)}",
         f"Saved: {format_sidecar_ts(station.get('saved_ts'))}",
         "",
         "A favourite always starts fresh from its picked song; its name and settings stay.",
     ])
     about = str(station.get("intent") or "").strip() or \
-        "Not described yet. AI Mix Assist describes a station when it checks its first songs."
+        "Not described yet. The AI describes a station when it checks its first songs."
     tabs = [{"title": "Overview", "text": overview, "image": favourite_artwork(station, "fanart")},
             {"title": "What it is about", "text": about}]
     show_info_window(name, f"Favourite station | {openness} | {drift}", tabs,
@@ -8526,7 +8526,7 @@ def change_favourite_setting(favourite_id: str, key: str) -> None:
     if not station:
         return
     current = station_setting_index(favourite_settings(station), key)
-    heading = f"{key.capitalize()} of {plain(favourite_title(station))}"
+    heading = f"{({'perspective': 'Intent'}).get(key, key.capitalize())} of {plain(favourite_title(station))}"
     if key == "perspective":
         choice = select_perspective(heading, current, perspective_index(get_setting_int("mix_assist_station_perspective", 0)))
     elif key == "openness":
@@ -8646,11 +8646,11 @@ def build_radio_overview(state: dict, events: list[dict]) -> str:
          f"Source: sound engine, {started.get('parameters') or 'parameters not recorded'}"),
     ]
     if started.get("assisted"):
-        lines.append(f"AI Mix Assist: on | Station openness: {started.get('openness')} | "
-                     f"Station drift: {started.get('drift')}"
-                     + (f" | Station perspective: {started['perspective']}" if started.get("perspective") else ""))
+        lines.append(f"Checks: on | Character: {started.get('openness')} | "
+                     f"Drift: {started.get('drift')}"
+                     + (f" | Intent: {started['perspective']}" if started.get("perspective") else ""))
     else:
-        lines.append("AI Mix Assist: off for this station")
+        lines.append("Checks: off for this station")
     lines.append(f"Refills: {len(refills)} ({len(checked)} checked, {len(refills) - len(checked)} unchecked)")
     if kept or skipped:
         lines.append(f"Checked refills kept {kept} song(s) and skipped {skipped} "
@@ -8670,7 +8670,7 @@ def build_radio_about(events: list[dict]) -> str:
         else:
             blocks.append(f"{when}  Refill from {event.get('seed', '?')}:\n{event['intent']}")
     if not blocks:
-        return "Not worked out yet. AI Mix Assist describes the picked song when it checks the station's first songs."
+        return "Not worked out yet. The AI describes the picked song when it checks the station's first songs."
     return "\n\n".join(blocks)
 
 
@@ -8691,7 +8691,7 @@ def build_radio_drift(events: list[dict]) -> str:
     """The station's profile over time: where it started (the picked song), where it is, the course between."""
     profiles = radio_profiles(events)
     if not profiles:
-        return "Drift is measured when AI Mix Assist checks the station's songs."
+        return "Drift is measured when the station's songs are checked."
     first, last = profiles[0][1], profiles[-1][1]
     lines = ["The station's profile starts as the picked song and moves with the songs the station adds; new songs "
              "are measured against it.", f"Measured {len(profiles)} time(s), last at {format_sidecar_ts(profiles[-1][0])}.", ""]
@@ -8794,15 +8794,15 @@ def format_radio_event(event: dict) -> list[str]:
     if kind == "start_check":
         removed, added = event.get("removed") or [], event.get("added") or []
         if not removed and not added:
-            return ["AI Mix Assist checked the first songs: all fit"]
-        lines = [f"AI Mix Assist checked the first songs: {len(removed)} taken out, {len(added)} added"
+            return ["The first songs were checked: all fit"]
+        lines = [f"The first songs were checked: {len(removed)} taken out, {len(added)} added"
                  + (f" ({event['examined']} examined from {event.get('lists', 1)} candidate list(s))"
                     if event.get("examined") else "")]
         lines += [f"- {entry.get('track', '?')} ({entry.get('reason', '')})" for entry in removed]
         return lines + [f"+ {label}" for label in added]
     if kind == "refill":
         added = event.get("added") or []
-        how = "checked" if event.get("checked") else "unchecked (AI Mix Assist off)"
+        how = "checked" if event.get("checked") else "unchecked (checks off)"
         if event.get("examined"):
             how += f", {event['examined']} examined from {event.get('lists', 1)} candidate list(s)"
         lines = [f"Refill from {event.get('seed', '?')}: {len(added)} song(s), {how}"] + [f"+ {label}" for label in added]
@@ -9080,7 +9080,7 @@ def router(params: dict[str, str] | None = None) -> None:
         try:
             if action == "mix_assist_openness":
                 if choose_mix_openness(cache_path):
-                    notify("Saved. AI Mix Assist uses it for this mix from now on.")
+                    notify("Saved. The checks use it for this mix from now on.")
             elif action == "mix_assist_perspective":
                 if choose_mix_perspective(cache_path):
                     notify("Saved. Tidy up the mix to see it from the new perspective.")
@@ -9090,14 +9090,14 @@ def router(params: dict[str, str] | None = None) -> None:
                 notify(mix_assist_result_message(run_mix_assist_on_saved_mix(cache_path)))
             elif action == "mix_assist_undo":
                 undo_mix_assist_on_saved_mix(cache_path)
-                notify("AI Mix Assist: the changes were undone.")
+                notify("Checks: the changes were undone.")
             elif edit_mix_assist_intent(cache_path):
                 notify("Saved. Tidy up the mix to apply it.")
         except mix_assist_claude.ClaudeError as exc:
-            log_ai(f"AI Mix Assist: {exc.kind}: {exc}", xbmc.LOGERROR)
+            log_ai(f"Checks: {exc.kind}: {exc}", xbmc.LOGERROR)
             notify(MIX_ASSIST_MESSAGES.get(exc.kind, str(exc)), xbmcgui.NOTIFICATION_ERROR)
         except MusicIPError as exc:
-            log_ai(f"AI Mix Assist: {exc}", xbmc.LOGERROR)
+            log_ai(f"Checks: {exc}", xbmc.LOGERROR)
             notify(str(exc), xbmcgui.NOTIFICATION_ERROR)
         xbmc.executebuiltin("Container.Refresh")
         return

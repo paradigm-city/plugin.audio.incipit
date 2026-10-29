@@ -29,7 +29,7 @@ msgid "Variety"
 msgstr ""
 
 msgctxt "#30307"
-msgid "How far a mix may reach from the seed. 0 keeps a mix close to the seed's sound; 9 gives the widest choice. For the sound engine: 0 takes the nearest songs by sound, a very cohesive mix; each step reaches further out and draws more of the far songs; at 9 a mix draws from the whole library, across genres, near songs only a little more likely than far ones. Use AI Mix Assist to keep a loose mix consistent in mood and character."
+msgid "How far a mix may reach from the seed. 0 keeps a mix close to the seed's sound; 9 gives the widest choice. For the sound engine: 0 takes the nearest songs by sound, a very cohesive mix; each step reaches further out and draws more of the far songs; at 9 a mix draws from the whole library, across genres, near songs only a little more likely than far ones. Character and Intent keep a loose mix consistent in mood and character."
 msgstr ""
 
 msgctxt "#30310"
@@ -37,7 +37,7 @@ msgid "Do not repeat artist within this many tracks"
 msgstr ""
 
 msgctxt "#30311"
-msgid "Keeps an artist from appearing again within this many tracks of the finished mix. 0 allows repeats. The sound engine keeps to it when it makes a mix (the seed is the first track), and so does AI Mix Assist when it adds or replaces songs, in a saved mix with the value the mix was made with. Radio has its own."
+msgid "Keeps an artist from appearing again within this many tracks of the finished mix. 0 allows repeats. The sound engine keeps to it when it makes a mix (the seed is the first track), and so do the checks when they add or replace songs, in a saved mix with the value the mix was made with. Radio has its own."
 msgstr ""
 
 msgctxt "#30312"
@@ -73,7 +73,7 @@ msgid "Keep new mixes on track"
 msgstr ""
 
 msgctxt "#30403"
-msgid "After a new mix is created, AI Mix Assist checks it in the background and replaces tracks that don't fit what the mix is about. A progress bar shows the steps; the changes are in the mix history and can be undone. Needs the Claude Code CLI."
+msgid "After a new mix is created, Character and Intent check it in the background and replace tracks that don't fit what the mix is about. A progress bar shows the steps; the changes are in the mix history and can be undone. Needs the Claude Code CLI."
 msgstr ""
 
 msgctxt "#30404"
@@ -81,7 +81,7 @@ msgid "Keep \"More like this\" on track"
 msgstr ""
 
 msgctxt "#30405"
-msgid "Before \"More like this\" inserts tracks, AI Mix Assist checks the sound engine's suggestions against the song you selected and inserts only those that clearly fit. Takes up to a minute."
+msgid "Before \"More like this\" inserts tracks, Character and Intent check the sound engine's suggestions against the song you selected and inserts only those that clearly fit. Takes up to a minute."
 msgstr ""
 
 msgctxt "#30406"
@@ -89,7 +89,7 @@ msgid "Tolerance"
 msgstr ""
 
 msgctxt "#30407"
-msgid "How far a song's profile (energy, exploration, mood, making, danceability, production, form and the sounding year, rated by the AI) may be from the seed's. Focused stays close; Adventurous lets in wide differences. The limit is measured on a fixed scale for each seed, from its nearest songs by sound. Off: the profile isn't compared. A mix can have its own, in its \"AI Mix Assist...\" menu."
+msgid "How far a song's profile (energy, exploration, mood, making, danceability, production, form and the sounding year, rated by the AI) may be from the seed's. Focused stays close; Adventurous lets in wide differences. The limit is measured on a fixed scale for each seed, from its nearest songs by sound. Off: the profile isn't compared. A mix can have its own, in its \"Checks...\" menu."
 msgstr ""
 
 msgctxt "#30408"
@@ -117,7 +117,7 @@ msgid "Perspective"
 msgstr ""
 
 msgctxt "#30414"
-msgid "From which point of view the AI works out what a mix is about and judges its tracks. Mixed: the music's intention and its qualities together, the tested default. Technical: how it is made (harmony, rhythm, form, musicianship), as a musician hears it. Emotional: the emotion the artist sets out to express, and how seriously it is meant. Cultural: where it comes from (scene, era, tradition). Functional: what it is for (a party, a drive, focus, falling asleep). Lyrical: what the words are about; for instrumental music, the story it suggests. Off: no AI judgement. A mix can have its own, in its \"AI Mix Assist...\" menu."
+msgid "From which point of view the AI works out what a mix is about and judges its tracks. Mixed: the music's intention and its qualities together, the tested default. Technical: how it is made (harmony, rhythm, form, musicianship), as a musician hears it. Emotional: the emotion the artist sets out to express, and how seriously it is meant. Cultural: where it comes from (scene, era, tradition). Functional: what it is for (a party, a drive, focus, falling asleep). Lyrical: what the words are about; for instrumental music, the story it suggests. Off: no AI judgement. A mix can have its own, in its \"Checks...\" menu."
 msgstr ""
 
 msgctxt "#30415"
@@ -149,7 +149,7 @@ msgid "Name mixes"
 msgstr ""
 
 msgctxt "#30422"
-msgid "At its first check, AI Mix Assist gives a mix a short name of 2 to 4 words saying what it is about, like \"Cosmic Analog Journeys\". It is shown instead of the seed song and suggested when you save the mix; a mix can be renamed in its \"AI Mix Assist...\" menu. Off: mixes are named after their seed song, unless you name them yourself. Radio has its own."
+msgid "At its first check, the AI gives a mix a short name of 2 to 4 words saying what it is about, like \"Cosmic Analog Journeys\". It is shown instead of the seed song and suggested when you save the mix; a mix can be renamed in its \"Checks...\" menu. Off: mixes are named after their seed song, unless you name them yourself. Radio has its own."
 msgstr ""
 
 msgctxt "#30423"
@@ -161,7 +161,7 @@ msgid "Claude Code CLI (empty: find it automatically)"
 msgstr ""
 
 msgctxt "#30425"
-msgid "Full path to the Claude Code program (claude.exe). Leave empty to find it automatically, for example in the VS Code extension. AI Mix Assist uses your claude.ai subscription through it."
+msgid "Full path to the Claude Code program (claude.exe). Leave empty to find it automatically, for example in the VS Code extension. The checks use your claude.ai subscription through it."
 msgstr ""
 
 msgctxt "#30426"
@@ -169,7 +169,7 @@ msgid "Show statistics"
 msgstr ""
 
 msgctxt "#30427"
-msgid "What AI Mix Assist costs and does: requests to the AI, tokens, the rating cache's hit rate, what it changed in mixes and stations, and how often you undid it. Today, the last 7 and 30 days, all time."
+msgid "What the AI costs and does: requests to the AI, tokens, the rating cache's hit rate, what it changed in mixes and stations, and how often you undid it. Today, the last 7 and 30 days, all time."
 msgstr ""
 
 msgctxt "#30428"
@@ -317,7 +317,7 @@ msgid "Name stations"
 msgstr ""
 
 msgctxt "#30628"
-msgid "At its first check, AI Mix Assist gives a station a short name of 2 to 4 words saying what it is about, like \"Cosmic Analog Journeys\". Off: stations are named after their picked song; a favourite keeps the name you gave it. Mixing has its own."
+msgid "At its first check, the AI gives a station a short name of 2 to 4 words saying what it is about, like \"Cosmic Analog Journeys\". Off: stations are named after their picked song; a favourite keeps the name you gave it. Mixing has its own."
 msgstr ""
 
 msgctxt "#30629"
@@ -369,7 +369,7 @@ msgid "Every request to the sound engine (seed, parameters) with the songs it re
 msgstr ""
 
 msgctxt "#30705"
-msgid "AI Mix Assist"
+msgid "AI and checks"
 msgstr ""
 
 msgctxt "#30706"

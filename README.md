@@ -21,7 +21,7 @@ Kodi music add-on that can create a mix from the currently playing audio track o
 A mix is made in three steps: **Source** (the sound engine's songs that sound alike, as far out as the variety lets it reach), **Character** (each song's 8-value profile against the seed's, on a fixed scale for that seed) and **Intent** (the AI's judgement of what the seed is about, from a listening perspective). Character and Intent can each be switched off.
 
 - **Advanced**: the sound engine (automatic analysis, status, analyse now, stop, set-up) and Claude Code (CLI path, statistics)
-- **Logging**: one switch per area (General, Mixing, AI Mix Assist, Radio, Discovery mode, Saved-mix checks). With a switch on, that area writes detailed messages to `kodi.log`, each line tagged with its area, e.g. `[plugin.audio.musicip] [radio] ...`. Errors and warnings are always logged. AI Mix Assist logs every request to the AI in full, with its answer.
+- **Logging**: one switch per area (General, Mixing, AI and checks, Radio, Discovery mode, Saved-mix checks). With a switch on, that area writes detailed messages to `kodi.log`, each line tagged with its area, e.g. `[plugin.audio.musicip] [radio] ...`. Errors and warnings are always logged. The AI area logs every request to the AI in full, with its answer.
 
 ## Install
 

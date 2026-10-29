@@ -1324,7 +1324,7 @@ def run_radio_tick() -> None:
     next_refill = int(state.get("next_refill_ts") or 0)
     log_radio_tick(
         f"position {position} of {len(state['queue'])} queued, {remaining} to come (refill below {threshold}); "
-        f"AI Mix Assist {'on' if assisted else 'off'}; "
+        f"checks {'on' if assisted else 'off'}; "
         + (f"{RADIO_CHECK['kind']} check {'running' if radio_check_running() else 'done, waiting to be applied'}; "
            if radio_check_busy() else "no check running; ")
         + (f"next refill not before {time.strftime('%H:%M:%S', time.localtime(next_refill))}." if next_refill > now
@@ -1411,7 +1411,7 @@ def start_radio_start_check(state: dict, plugin) -> None:
     files = [str(entry["file"]) for entry in state.get("queue") or []]
     tracks = [seed] + [track for track in files if plugin.normalize_track_identity(track) != plugin.normalize_track_identity(seed)]
     if seed:
-        log_radio(f"Radio mode: AI Mix Assist checks the station's first {len(tracks) - 1} song(s) and the mix "
+        log_radio(f"Radio mode: the checks look at the station's first {len(tracks) - 1} song(s) and the mix "
                  f"for the picked song.")
         settings = state.get("settings") if isinstance(state.get("settings"), dict) else None
         start_radio_check(state, "start", lambda check: plugin.check_radio_start(
@@ -1437,7 +1437,7 @@ def apply_radio_start_check(state: dict, plugin, position: int, result: dict) ->
         state["name"] = result["name"]
         state["ui_refresh_requested"] = True  # the Radio screen (and the first screen) show the name
     if result.get("checked") is False:
-        log_radio("Radio mode: AI Mix Assist couldn't measure the first songs; they stay unchecked.")
+        log_radio("Radio mode: the checks couldn't measure the first songs; they stay unchecked.")
         add_radio_event(state, "start_check", unchecked=True, intent=state["intent"], profile=state["reference"],
                         name=result.get("name") or "")
         return
@@ -1475,7 +1475,7 @@ def apply_radio_start_check(state: dict, plugin, position: int, result: dict) ->
                     skipped=[{"track": entry.get("label", ""), "reason": entry.get("reason", "")}
                              for entry in not_fitting if entry.get("label", "") not in removed_labels][:10],
                     intent=state["intent"], profile=state["reference"], name=result.get("name") or "")
-    log_radio(f"Radio mode: AI Mix Assist took out {len(removed_songs)} of the first songs and added {len(new)}"
+    log_radio(f"Radio mode: the checks took out {len(removed_songs)} of the first songs and added {len(new)}"
               f" (songs up to position {protected} were left alone).")
     for entry in removed_songs:
         log_radio(f"Radio mode:   taken out: {entry['track']!r}: {entry['reason']}")
@@ -1560,7 +1560,7 @@ def apply_radio_check(state: dict, plugin, position: int) -> None:
 
     error = result.get("error")
     if error is not None:
-        log_radio(f"Radio mode: AI Mix Assist check failed: {error}", xbmc.LOGWARNING)
+        log_radio(f"Radio mode: the checks check failed: {error}", xbmc.LOGWARNING)
         if getattr(error, "kind", ""):
             plugin.report_automatic_mix_assist_error(error)
         if kind == "refill" and fallback:  # keep the station going, unchecked
@@ -1583,7 +1583,7 @@ def apply_radio_check(state: dict, plugin, position: int) -> None:
             "skipped_count": skipped, "examined": result.get("examined") or 0, "lists": result.get("lists") or 1,
             "skipped": [{"track": entry.get("label", ""), "reason": entry.get("reason", "")} for entry in not_fitting[:10]]})
         state["refill_seed_offset"] = 0
-        log_radio(f"Radio mode: AI Mix Assist kept {len(chosen)} song(s), skipped {skipped}.")
+        log_radio(f"Radio mode: the checks kept {len(chosen)} song(s), skipped {skipped}.")
         return
     remaining = len(state["queue"]) - position - 1 if position >= 0 else len(state["queue"])
     if remaining <= 1 and fallback:
@@ -1743,7 +1743,7 @@ def refill_radio_queue(state: dict, checked: bool = False) -> int:
         if len(candidates) < len(new_tracks):
             log_radio(f"Radio mode: {len(new_tracks) - len(candidates)} of the sound engine's suggestions were turned down "
                       f"earlier on this station ({len(rejected)} so far); they aren't checked again.")
-        log_radio(f"Radio mode: AI Mix Assist picks {RADIO_CHECKED_BATCH} song(s) from the sound engine's {len(candidates)} "
+        log_radio(f"Radio mode: the checks pick {RADIO_CHECKED_BATCH} song(s) from the sound engine's {len(candidates)} "
                  f"suggestion(s) for {used_seed!r} (closest first, checked in groups).")
         start_radio_check(
             state, "refill",
@@ -2006,7 +2006,7 @@ def prune_statistics_on_startup() -> None:
     try:
         removed = load_plugin_module().usage_log().prune()
         if removed:
-            log_ai(f"AI Mix Assist statistics: {removed} event(s) older than a year removed.")
+            log_ai(f"Claude statistics: {removed} event(s) older than a year removed.")
     except Exception as exc:
         log_ai(f"Pruning the statistics failed: {exc}", xbmc.LOGWARNING)
 
@@ -2788,7 +2788,7 @@ def run_mix_assist_tick() -> None:
     entry = plugin.pop_mix_assist_request()
     if not entry:
         return
-    log_ai(f"AI Mix Assist: tidying up {entry.get('cache_path')!r} ({entry.get('mode')}).")
+    log_ai(f"Checks: tidying up {entry.get('cache_path')!r} ({entry.get('mode')}).")
     MIX_ASSIST_WORKER = threading.Thread(target=run_mix_assist_request, args=(plugin, entry), daemon=True)
     MIX_ASSIST_WORKER.start()
 
@@ -2797,7 +2797,7 @@ def run_mix_assist_request(plugin, entry: dict) -> None:
     try:
         plugin.process_mix_assist_request(entry)
     except Exception as exc:
-        log_ai(f"AI Mix Assist: tidying up {entry.get('cache_path')!r} failed: {exc}", xbmc.LOGERROR)
+        log_ai(f"Checks: tidying up {entry.get('cache_path')!r} failed: {exc}", xbmc.LOGERROR)
 
 
 # --- Cover collages for saved mixes: one mix at a time, now and then, so the service loop stays quick ---------
@@ -3035,7 +3035,7 @@ def main() -> None:
         try:
             run_mix_assist_tick()
         except Exception as exc:
-            log_ai(f"AI Mix Assist tick failed: {exc}", xbmc.LOGERROR)
+            log_ai(f"the checks tick failed: {exc}", xbmc.LOGERROR)
 
         try:
             run_mix_collage_tick()
