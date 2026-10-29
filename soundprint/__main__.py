@@ -62,8 +62,8 @@ def arguments(argv=None) -> argparse.Namespace:
     near.add_argument("--count", type=int, default=100)
     near.add_argument("--artist-window", type=int, default=0,
                       help="no artist repeat within this many songs, the seed counted (0: repeats allowed)")
-    near.add_argument("--variety", type=int, default=0, help="0: the nearest songs; up to 9: a random choice from "
-                                                             "more of them")
+    near.add_argument("--variety", type=int, default=0, help="0: the nearest songs; up to 9: a random choice "
+                                                             "reaching further out, spread from near to far")
     commands.add_parser("failures")
     args = parser.parse_args(argv)
     args.data = args.data or os.path.join(args.userdata, "addon_data", "plugin.audio.musicip", "soundprint")
@@ -136,7 +136,7 @@ def neighbours(args) -> int:
     import time
 
     from soundprint import songs
-    from soundprint.neighbours import nearest
+    from soundprint.neighbours import nearest, reach
     from soundprint.store import Store
 
     started = time.perf_counter()
@@ -152,10 +152,11 @@ def neighbours(args) -> int:
         analysed = store.counts()["analysed"]
         print(json.dumps({"seed": args.seed, "seed_vector": source, "seed_details": list(details(args.seed)),
                           "library": database, "analysed": analysed, "left_out": left_out,
+                          "reach": reach(args.count, args.variety, analysed),
                           "seconds": round(time.perf_counter() - started, 2),
-                          "songs": [{"path": path, "similarity": round(similarity, 4),
+                          "songs": [{"path": path, "similarity": round(similarity, 4), "rank": rank,
                                      "artist": details(path)[0], "title": details(path)[1]}
-                                    for path, similarity in found]}, ensure_ascii=False))
+                                    for path, similarity, rank in found]}, ensure_ascii=False))
     finally:
         store.close()
         details.close()

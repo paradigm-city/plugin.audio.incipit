@@ -69,7 +69,7 @@ msgid "Variety"
 msgstr ""
 
 msgctxt "#30307"
-msgid "How far a mix may reach from the seed. 0 keeps a mix close to the seed's sound; 9 gives the widest choice. For the sound engine: 0 takes the nearest songs, higher values a random choice from more of them (at 3, from twice as many as the mix needs)."
+msgid "How far a mix may reach from the seed. 0 keeps a mix close to the seed's sound; 9 gives the widest choice. For the sound engine: 0 takes the nearest songs by sound, a very cohesive mix; each step reaches further out and draws more of the far songs; at 9 a mix draws from the whole library, across genres, near songs only a little more likely than far ones. Use AI Mix Assist to keep a loose mix consistent in mood and character."
 msgstr ""
 
 msgctxt "#30308"

@@ -2601,13 +2601,19 @@ def fetch_sound_mix(seed_song: str, size: int, params: dict, progress=None) -> l
     songs = answer["songs"]
     left_out = answer.get("left_out") or {}
     artist, title = (list(answer.get("seed_details") or []) + ["", ""])[:2]
+    reach = int(answer.get("reach") or 0)
     log_mixing(f"Sound engine answered in {time.time() - started:.1f} s (search {answer.get('seconds', 0)} s; the "
                f"seed's sound print {answer.get('seed_vector', '')}; {int(answer.get('analysed') or 0):,} song(s) "
-               f"analysed; left out on the way: {left_out.get('artist', 0)} for an artist played too recently, "
+               f"analysed; "
+               + (f"variety {variety}: drawn from the nearest {reach:,}, the nearer the likelier; " if variety
+                  else "variety 0: the nearest songs; ")
+               + f"left out on the way: {left_out.get('artist', 0)} for an artist played too recently, "
                f"{left_out.get('same_song', 0)} the same song again) with {len(songs)} song(s) for {seed_song!r} "
                f"({artist} - {title}):"
-               + "".join(f"\n  {number}. {song['path']} (similarity {song['similarity']:.3f}, {song.get('artist', '')} "
-                         f"- {song.get('title', '')})" for number, song in enumerate(songs, start=1)))
+               + "".join(f"\n  {number}. {song['path']} (similarity {song['similarity']:.3f}"
+                         + (f", rank {int(song['rank']):,}" if song.get("rank") else "")
+                         + f", {song.get('artist', '')} - {song.get('title', '')})"
+                         for number, song in enumerate(songs, start=1)))
     return prepend_seed_track(seed_song, [song["path"] for song in songs])
 
 
