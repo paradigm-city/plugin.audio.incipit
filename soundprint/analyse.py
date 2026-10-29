@@ -69,9 +69,10 @@ def analyse_song(item: Tuple[str, int, float]) -> dict:
                 "error": f"{type(exc).__name__}: {exc}", "decode_s": time.perf_counter() - started, "model_s": 0.0}
 
 
-def plan(paths: Sequence[str], store: Store, version: str) -> Tuple[List[Tuple[str, int, float]], Dict[str, int]]:
+def plan(paths: Sequence[str], store: Store, version: str, retry_failed: bool = False
+         ) -> Tuple[List[Tuple[str, int, float]], Dict[str, int]]:
     """The songs to analyse (path, size, change time), and counts of the rest: unchanged, failed before (and
-    unchanged), missing (the file isn't there)."""
+    unchanged; analysed again with retry_failed, after a fix of the decoding), missing (the file isn't there)."""
     known = store.known()
     todo, counts = [], {"unchanged": 0, "failed_before": 0, "missing": 0}
     for path in paths:
@@ -83,9 +84,10 @@ def plan(paths: Sequence[str], store: Store, version: str) -> Tuple[List[Tuple[s
         before = known.get(path)
         if before and before[0] == info.st_size and abs(before[1] - info.st_mtime) < 1e-3:
             if before[3]:
-                counts["failed_before"] += 1
-                continue
-            if before[2] == version:
+                if not retry_failed:
+                    counts["failed_before"] += 1
+                    continue
+            elif before[2] == version:
                 counts["unchanged"] += 1
                 continue
         todo.append((path, info.st_size, info.st_mtime))
@@ -104,7 +106,7 @@ def logger_for(folder: str) -> logging.Logger:
 
 
 def run(paths: Sequence[str], folder: str, model_folder: str, snippets: int, workers: int, threads: int,
-        low: bool = True, prune: bool = False, limit: int = 0, say=print) -> dict:
+        low: bool = True, prune: bool = False, limit: int = 0, retry_failed: bool = False, say=print) -> dict:
     """Analyse what's new or changed among paths; returns the final status ("busy" when another analysis of this
     data folder is running: two would write the same store)."""
     os.makedirs(folder, exist_ok=True)
@@ -130,7 +132,7 @@ def run(paths: Sequence[str], folder: str, model_folder: str, snippets: int, wor
             listed = set(paths)
             gone = store.remove(path for path in store.known() if path not in listed)
             log.info("removed %d stored song(s) that are no longer in the library", gone)
-        todo, counts = plan(paths, store, version)
+        todo, counts = plan(paths, store, version, retry_failed)
         if limit:
             todo = todo[:limit]
         status = {"state": "running", "pid": os.getpid(), "started": time.time(), "version": version,

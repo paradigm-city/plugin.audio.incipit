@@ -53,6 +53,8 @@ def arguments(argv=None) -> argparse.Namespace:
     analyse.add_argument("--limit", type=int, default=0, help="analyse at most this many songs")
     analyse.add_argument("--normal-priority", action="store_true", help="don't lower the priority")
     analyse.add_argument("--prune", action="store_true", help="remove stored songs that are no longer listed")
+    analyse.add_argument("--retry-failed", action="store_true",
+                         help="analyse songs that failed before again, although their files haven't changed")
     commands.add_parser("stop")
     commands.add_parser("status")
     near = commands.add_parser("neighbours")
@@ -124,7 +126,8 @@ def analyse(args) -> int:
     print(f"{len(paths)} song(s) from {source}; left out: {remote} not local, {outside} outside the folders")
     workers = args.workers or max(1, (os.cpu_count() or 2) // 2)
     status = runner.run(paths, args.data, args.model, args.snippets or DEFAULT_SNIPPETS, workers, args.threads,
-                        low=not args.normal_priority, prune=args.prune, limit=args.limit)
+                        low=not args.normal_priority, prune=args.prune, limit=args.limit,
+                        retry_failed=args.retry_failed)
     return {"finished": 0, "stopped": 0, "busy": 3}.get(status["state"], 1)
 
 
