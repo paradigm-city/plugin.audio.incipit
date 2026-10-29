@@ -1,40 +1,7 @@
 <?xml version="1.0" encoding="utf-8" standalone="yes"?>
 <settings version="1">
     <section id="plugin.audio.musicip">
-        <category id="general" label="30100">
-            <group id="1" label="30101">
-                <setting id="host" type="string" label="30102" help="30103">
-                    <level>0</level>
-                    <default>localhost</default>
-                    <constraints><allowempty>true</allowempty></constraints>
-                    <control type="edit" format="string"><heading>30102</heading></control>
-                </setting>
-                <setting id="port" type="integer" label="30104" help="30105">
-                    <level>0</level>
-                    <default>10002</default>
-                    <control type="edit" format="integer"><heading>30104</heading></control>
-                </setting>
-                <setting id="timeout" type="integer" label="30106" help="30107">
-                    <level>0</level>
-                    <default>10</default>
-                    <control type="edit" format="integer"><heading>30106</heading></control>
-                </setting>
-            </group>
-        </category>
         <category id="soundengine" label="30800">
-            <group id="1" label="30801">
-                <setting id="suggestion_engine" type="integer" label="30802" help="30803">
-                    <level>0</level>
-                    <default>0</default>
-                    <constraints>
-                        <options>
-                            <option label="30804">0</option>
-                            <option label="30805">1</option>
-                        </options>
-                    </constraints>
-                    <control type="spinner" format="string"/>
-                </setting>
-            </group>
             <group id="2" label="30806">
                 <setting id="soundprint_auto_analyse" type="boolean" label="30809" help="30810">
                     <level>0</level>
@@ -83,23 +50,11 @@
                     <constraints><minimum>1</minimum><step>1</step><maximum>100</maximum></constraints>
                     <control type="slider" format="integer"><popup>false</popup></control>
                 </setting>
-                <setting id="mix_style_preference" type="integer" label="30304" help="30305">
-                    <level>0</level>
-                    <default>2</default>
-                    <constraints><minimum>0</minimum><step>1</step><maximum>10</maximum></constraints>
-                    <control type="slider" format="integer"><popup>false</popup></control>
-                </setting>
                 <setting id="mix_variety" type="integer" label="30306" help="30307">
                     <level>0</level>
                     <default>0</default>
                     <constraints><minimum>0</minimum><step>1</step><maximum>9</maximum></constraints>
                     <control type="slider" format="integer"><popup>false</popup></control>
-                </setting>
-                <setting id="mix_filter" type="string" label="30308" help="30309">
-                    <level>0</level>
-                    <default/>
-                    <constraints><allowempty>true</allowempty></constraints>
-                    <control type="edit" format="string"><heading>30308</heading></control>
                 </setting>
                 <setting id="mix_reject_size" type="integer" label="30310" help="30311">
                     <level>0</level>

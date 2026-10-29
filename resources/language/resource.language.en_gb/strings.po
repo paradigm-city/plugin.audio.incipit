@@ -8,38 +8,6 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Language: en_GB\n"
 
-msgctxt "#30100"
-msgid "General"
-msgstr ""
-
-msgctxt "#30101"
-msgid "MusicIP server"
-msgstr ""
-
-msgctxt "#30102"
-msgid "Host"
-msgstr ""
-
-msgctxt "#30103"
-msgid "Name or address of the computer that runs the MusicIP server. \"localhost\" when it runs on this computer."
-msgstr ""
-
-msgctxt "#30104"
-msgid "Port"
-msgstr ""
-
-msgctxt "#30105"
-msgid "Port of the MusicIP server's web interface. MusicIP's default is 10002."
-msgstr ""
-
-msgctxt "#30106"
-msgid "HTTP timeout (seconds)"
-msgstr ""
-
-msgctxt "#30107"
-msgid "How long to wait for the MusicIP server to answer. Raise it if large mixes or a busy server cause time-outs."
-msgstr ""
-
 msgctxt "#30300"
 msgid "Mixing"
 msgstr ""
@@ -56,14 +24,6 @@ msgctxt "#30303"
 msgid "How many tracks a new mix has. \"More like this\" and \"Less like this\" change a mix by a fifth of this number."
 msgstr ""
 
-msgctxt "#30304"
-msgid "Style preference (0 ignore, 10 strongly prefer)"
-msgstr ""
-
-msgctxt "#30305"
-msgid "How strongly MusicIP favours tracks in the seed's style. 0 ignores style; 10 strongly prefers it."
-msgstr ""
-
 msgctxt "#30306"
 msgid "Variety"
 msgstr ""
@@ -72,20 +32,12 @@ msgctxt "#30307"
 msgid "How far a mix may reach from the seed. 0 keeps a mix close to the seed's sound; 9 gives the widest choice. For the sound engine: 0 takes the nearest songs by sound, a very cohesive mix; each step reaches further out and draws more of the far songs; at 9 a mix draws from the whole library, across genres, near songs only a little more likely than far ones. Use AI Mix Assist to keep a loose mix consistent in mood and character."
 msgstr ""
 
-msgctxt "#30308"
-msgid "MusicIP filter"
-msgstr ""
-
-msgctxt "#30309"
-msgid "Name of a filter defined in MusicIP, for example to leave out certain genres. Empty: no filter."
-msgstr ""
-
 msgctxt "#30310"
 msgid "Do not repeat artist within this many tracks"
 msgstr ""
 
 msgctxt "#30311"
-msgid "Keeps an artist from appearing again within this many tracks of the finished mix. 0 allows repeats. MusicIP and the sound engine keep to it when they make a mix (the seed is the first track), and so does AI Mix Assist when it adds or replaces songs: in a saved mix with the value the mix was made with, on a Radio station counting the songs already queued."
+msgid "Keeps an artist from appearing again within this many tracks of the finished mix. 0 allows repeats. The sound engine keeps to it when it makes a mix (the seed is the first track), and so does AI Mix Assist when it adds or replaces songs: in a saved mix with the value the mix was made with, on a Radio station counting the songs already queued."
 msgstr ""
 
 msgctxt "#30312"
@@ -137,7 +89,7 @@ msgid "Keep \"More like this\" on track"
 msgstr ""
 
 msgctxt "#30405"
-msgid "Before \"More like this\" inserts tracks, AI Mix Assist checks MusicIP's suggestions against the song you selected and inserts only those that clearly fit. Takes up to a minute."
+msgid "Before \"More like this\" inserts tracks, AI Mix Assist checks the sound engine's suggestions against the song you selected and inserts only those that clearly fit. Takes up to a minute."
 msgstr ""
 
 msgctxt "#30406"
@@ -361,7 +313,7 @@ msgid "General"
 msgstr ""
 
 msgctxt "#30702"
-msgid "Detailed messages in Kodi's log (kodi.log) about menus and screens, keymaps, track details and artwork, MusicIP library reloads, the sound engine's set-up and analyses, and the service's start. Errors and warnings are always logged, whatever these switches say."
+msgid "Detailed messages in Kodi's log (kodi.log) about menus and screens, keymaps, track details and artwork, the sound engine's set-up and analyses, and the service's start. Errors and warnings are always logged, whatever these switches say."
 msgstr ""
 
 msgctxt "#30703"
@@ -369,7 +321,7 @@ msgid "Mixing"
 msgstr ""
 
 msgctxt "#30704"
-msgid "Every request to MusicIP or the sound engine (seed, parameters, address) with the songs it returned and how long it took (the sound engine also with each song's similarity, artist and title), and every mix created, opened, refreshed or changed."
+msgid "Every request to the sound engine (seed, parameters) with the songs it returned and how long it took, each song with its similarity, rank, artist and title, and every mix created, opened, refreshed or changed."
 msgstr ""
 
 msgctxt "#30705"
@@ -405,26 +357,6 @@ msgid "The background check of saved mixes: missing files, the library's state, 
 msgstr ""
 
 msgctxt "#30800"
-msgid "Sound engine"
-msgstr ""
-
-msgctxt "#30801"
-msgid "Suggestions"
-msgstr ""
-
-msgctxt "#30802"
-msgid "Mixes come from"
-msgstr ""
-
-msgctxt "#30803"
-msgid "Where the songs for mixes, Radio and AI Mix Assist come from. MusicIP: the MusicIP server (Settings > General). Sound engine: sound prints made on this computer from a few 10-second snippets of every song, by sound alone (no tags), so unknown artists come along too. Set it up and let it analyse the library first (below)."
-msgstr ""
-
-msgctxt "#30804"
-msgid "MusicIP"
-msgstr ""
-
-msgctxt "#30805"
 msgid "Sound engine"
 msgstr ""
 

@@ -1,6 +1,6 @@
 # MusicIP Kodi Add-on
 
-Kodi music add-on that can create a mix from the currently playing audio track or from a song selected in the Kodi music library, using a local MusicIP server.
+Kodi music add-on that can create a mix from the currently playing audio track or from a song selected in the Kodi music library. The mixes come from the sound engine: sound prints made on this computer from a few 10-second snippets of every song (`soundprint/`). Until 2026-10-29 they came from a local MusicIP server; that code is kept dormant in `musicip_dormant.py`.
 
 ## Features
 
@@ -15,8 +15,8 @@ Kodi music add-on that can create a mix from the currently playing audio track o
 
 ## Settings
 
-- **General**: the MusicIP server (host, port, HTTP timeout)
-- **Mixing**: mix parameters (playlist size, style, variety, filter, no artist repeat) and saved mixes (consistency check, its interval, automatic repair)
+- **Sound engine**: its analysis of the library (automatic, status, analyse now, stop) and its set-up
+- **Mixing**: mix parameters (playlist size, variety, no artist repeat) and saved mixes (consistency check, its interval, automatic repair)
 - **AI Mix Assist**: new mixes and "More like this" (on track, openness, perspective, names), Claude Code (CLI path, statistics)
 - **Radio**: AI Mix Assist for stations (on track, drift, openness, perspective)
 - **Discovery mode**: excerpt length, start offset
@@ -28,7 +28,7 @@ Kodi music add-on that can create a mix from the currently playing audio track o
 2. Zip that folder itself, not only its contents.
 3. In Kodi, go to **Add-ons** -> **Install from ZIP file**.
 4. Install the zip.
-5. Install and configure MusicIPMixer software
+5. Set up the sound engine in the add-on's settings (**Sound engine** -> **Set up the sound engine**); it then analyses the library in the background.
 6. Open **Music** -> **Music add-ons** -> **MusicIP**.
 
 ## Notes
@@ -36,7 +36,7 @@ Kodi music add-on that can create a mix from the currently playing audio track o
 - The add-on uses the song title from Kodi metadata when available.
 - If no title tag is available, it falls back to the current filename without extension.
 - The refresh action forces Kodi to re-run the request and bypass plugin disk caching.
-- If the MusicIP server returns deterministic results for the same seed, the refreshed mix may still be identical.
+- At variety 0 the sound engine returns the same nearest songs for the same seed, so the refreshed mix is identical; raise the variety for a different choice.
 
 - When a list item path is set in Kodi, the add-on also writes the same value into the corresponding `MusicInfoTag` URL field.
 - The add-on now also writes artist and album into the corresponding `MusicInfoTag` when Kodi can resolve that metadata from the current player or the music library.

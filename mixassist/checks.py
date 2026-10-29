@@ -27,7 +27,7 @@ known clearly clashes."""
 LITTLE_KNOWN = " (little known)"
 
 SEED_INTENT_PROMPT = """You judge whether the tracks of a music mix serve the listener's intent.
-The listener started the mix from the first track (the seed); MusicIP then added tracks by comparing audio.
+The listener started the mix from the first track (the seed); the sound engine then added tracks that sound alike.
 The seed carries the intent of the mix.
 
 First, state that intent (field "character"). Begin with the seed's intention in one sentence: what the music sets
@@ -68,7 +68,7 @@ PERSPECTIVES = ("mixed", "technical", "emotional", "cultural", "functional", "ly
 DEFAULT_PERSPECTIVE = "mixed"
 
 SEED_INTENT_HEAD = """You judge whether the tracks of a music mix serve the listener's intent.
-The listener started the mix from the first track (the seed); MusicIP then added tracks by comparing audio.
+The listener started the mix from the first track (the seed); the sound engine then added tracks that sound alike.
 The seed carries the intent of the mix.
 """
 

@@ -18,9 +18,7 @@ import threading
 import time
 import unicodedata
 from functools import partial
-from urllib.parse import parse_qsl, quote_from_bytes, urlencode, unquote
-from urllib.request import urlopen
-from urllib.error import URLError, HTTPError
+from urllib.parse import parse_qsl, urlencode, unquote
 from xml.etree import ElementTree
 
 import xbmc
@@ -220,7 +218,7 @@ def notify(message: str, level=xbmcgui.NOTIFICATION_INFO) -> None:
 class BackgroundProgress:
     """A small progress bar in the corner of the screen (Kodi's DialogProgressBG), closed even when the work fails.
     While one step takes longer than a few seconds, a running clock is added to its text, so a long step (a large
-    MusicIP mix, an AI call) visibly keeps going.
+    mix, an AI call) visibly keeps going.
 
         with BackgroundProgress("More like this") as progress:
             progress(30, "Asking the suggestion engine")
@@ -323,67 +321,17 @@ def get_setting_int(name: str, default: int) -> int:
         return default
 
 
-def get_server_host() -> str:
-    return get_setting("host", "localhost").strip() or "localhost"
-
-
-def get_server_port() -> int:
-    return get_setting_int("port", 10002)
-
-
 def get_playlist_size() -> int:
     size = get_setting_int("playlist_size", 20)
     return max(1, size)
-
-
-def get_timeout() -> int:
-    timeout = get_setting_int("timeout", 10)
-    return max(1, timeout)
-
-
-def get_mix_style_preference() -> int:
-    value = get_setting_int("mix_style_preference", 2)
-    return max(0, min(10, value))
-
-
-def get_mix_style_api_value() -> int:
-    # MusicIP API style range: 0..200.
-    # UI scale: 0..10 in steps of 1.
-    return get_mix_style_preference() * 20
-
-
-def get_mix_style_label(value: int | None = None) -> str:
-    raw_value = get_mix_style_preference() if value is None else int(value)
-    ui_value = max(0, min(10, raw_value))
-    labels = {
-        0: "ignore",
-        1: "barely noticeable",
-        2: "weak preference",
-        3: "light preference",
-        4: "mild preference",
-        5: "medium preference",
-        6: "balanced preference",
-        7: "clear preference",
-        8: "strong preference",
-        9: "very strong preference",
-        10: "strongly prefer",
-    }
-    return labels.get(ui_value, f"{ui_value}/10")
 
 
 def get_mix_variety() -> int:
     return max(0, min(9, get_setting_int("mix_variety", 0)))
 
 
-# --- The suggestion engine: MusicIP's server, or the sound prints made on this computer (soundprint/) ---------
-def uses_sound_prints() -> bool:
-    return get_setting_int("suggestion_engine", 0) == 1  # 0: MusicIP, 1: sound prints
-
-
-def engine_name() -> str:
-    return "the sound engine" if uses_sound_prints() else "MusicIP"
-
-
+# --- The source of mixes: the sound engine, sound prints made on this computer (soundprint/). MusicIP made them
+# until 2026-10-29; its code is kept dormant in musicip_dormant.py. ----------------------------------------------
 def soundprint_data() -> str:
     return soundprint.data_folder(get_profile_dir())
 
@@ -408,43 +356,23 @@ def mix_reject_size_for(meta: dict | None) -> int:
     return get_mix_reject_size()
 
 
-def get_mix_filter() -> str:
-    return get_setting("mix_filter", "").strip()
-
-
 def get_effective_mix_parameters(size_override: int | None = None) -> dict:
-    size = max(1, int(size_override or get_playlist_size()))
-    reject_size = get_mix_reject_size()
-    style_ui = get_mix_style_preference()
     return {
-        "size": size,
-        "sizetype": "tracks",
-        "style": style_ui * 20,
-        "style_ui": style_ui,
-        "style_label": get_mix_style_label(style_ui),
+        "size": max(1, int(size_override or get_playlist_size())),
         "variety": get_mix_variety(),
-        "filter": get_mix_filter(),
-        "rejectsize": reject_size,
-        "rejecttype": "tracks",
-        "content": "text",
+        "rejectsize": get_mix_reject_size(),
     }
 
 
 def normalize_mix_parameters(params: dict) -> dict:
+    """The parameters of a mix within their ranges. Parameters recorded by older versions may hold MusicIP's own
+    (style, filter, sizetype, ...): they stay as recorded, for the mix's information."""
     normalized = dict(params or {})
     normalized["size"] = max(1, min(100, int(normalized.get("size") or get_playlist_size())))
-    normalized["style_ui"] = max(0, min(10, int(normalized.get("style_ui") or 0)))
-    normalized["style"] = max(0, min(200, int(normalized["style_ui"]) * 20))
-    normalized["style_label"] = get_mix_style_label(int(normalized["style_ui"]))
     normalized["variety"] = max(0, min(9, int(normalized.get("variety") or 0)))
     # "Restrict to seed genre" was removed: genre tags are too inconsistent to mean much.
-    # Parameters recorded by older versions may still contain it.
     normalized.pop("mixgenre", None)
-    normalized["filter"] = str(normalized.get("filter") or "").strip()
     normalized["rejectsize"] = max(0, min(20, int(normalized.get("rejectsize") or 0)))
-    normalized["rejecttype"] = "tracks"
-    normalized["sizetype"] = "tracks"
-    normalized["content"] = "text"
     return normalized
 
 
@@ -452,16 +380,15 @@ def compact_mix_generation_parameters(params: dict) -> dict:
     normalized = normalize_mix_parameters(params)
     return {
         "size": int(normalized.get("size") or 0),
-        "sizetype": "tracks",
-        "style_ui": int(normalized.get("style_ui") or 0),
-        "style": int(normalized.get("style") or 0),
-        "style_label": str(normalized.get("style_label") or ""),
         "variety": int(normalized.get("variety") or 0),
-        "filter": str(normalized.get("filter") or ""),
         "rejectsize": int(normalized.get("rejectsize") or 0),
-        "rejecttype": "tracks",
-        "content": "text",
     }
+
+
+def made_by_musicip(params: dict | None) -> bool:
+    """Whether recorded mix parameters are MusicIP's (it had a style); mixes made since 2026-10-29 come from the
+    sound engine."""
+    return isinstance(params, dict) and "style_ui" in params
 
 
 def remember_mix_generation_parameters(seed: str, size: int, params: dict) -> None:
@@ -476,27 +403,6 @@ def pop_mix_generation_parameters(seed: str, size: int) -> dict:
         return LAST_MIX_GENERATION_PARAMS.pop(mix_cache_key(seed, size), {})
     except Exception:
         return {}
-
-
-def build_mix_parameter_summary(params: dict) -> str:
-    params = normalize_mix_parameters(params)
-    reject_size = int(params.get("rejectsize") or 0)
-    reject_text = (
-        f"do not repeat artist within {reject_size} tracks"
-        if reject_size > 0
-        else "disabled"
-    )
-    filter_value = str(params.get("filter") or "").strip() or "<none>"
-
-    lines = [
-        f"Size: {int(params.get('size') or 0)} tracks",
-        f"Style: {int(params.get('style_ui') or 0)}/10 - {params.get('style_label')}",
-        f"MusicIP style value: {int(params.get('style') or 0)}",
-        f"Variety: {int(params.get('variety') or 0)}",
-        f"Filter: {filter_value}",
-        f"Artist repeat: {reject_text}",
-    ]
-    return "\n".join(lines)
 
 
 def dialog_slider_int(default_value: int, heading: str, minimum: int, maximum: int, step: int = 1) -> int | None:
@@ -549,21 +455,11 @@ def edit_mix_generation_parameter(params: dict, option: int) -> dict:
             updated["size"] = value
 
     elif option == 2:
-        value = dialog_slider_int(int(updated["style_ui"]), "Style preference 0..10", 0, 10, 1)
-        if value is not None:
-            updated["style_ui"] = value
-
-    elif option == 3:
         value = dialog_slider_int(int(updated["variety"]), "Variety 0..9", 0, 9, 1)
         if value is not None:
             updated["variety"] = value
 
-    elif option == 4:
-        value = ask_text("MusicIP filter", str(updated.get("filter") or ""))
-        if value is not None:
-            updated["filter"] = value.strip()
-
-    elif option == 5:
+    elif option == 3:
         value = dialog_slider_int(int(updated["rejectsize"]), "Do not repeat artist within N tracks (0..20)", 0, 20, 1)
         if value is not None:
             updated["rejectsize"] = value
@@ -585,7 +481,6 @@ def confirm_mix_generation(params: dict) -> dict | None:
     current = normalize_mix_parameters(params)
 
     while True:
-        filter_value = str(current.get("filter") or "").strip() or "<none>"
         reject_size = int(current.get("rejectsize") or 0)
         reject_label = (
             f"do not repeat artist within {reject_size} tracks"
@@ -596,14 +491,12 @@ def confirm_mix_generation(params: dict) -> dict | None:
         choices = [
             "Generate mix",
             f"Size: {int(current.get('size') or 0)} tracks",
-            f"Style: {int(current.get('style_ui') or 0)}/10 - {current.get('style_label')} (API {int(current.get('style') or 0)})",
             f"Variety: {int(current.get('variety') or 0)}",
-            f"Filter: {filter_value}",
             f"Artist repeat: {reject_label}",
         ] + mix_assist_dialog_lines(current)
 
         choice = xbmcgui.Dialog().select(
-            "Generate MusicIP mix",
+            "Generate mix",
             choices,
         )
 
@@ -616,32 +509,6 @@ def confirm_mix_generation(params: dict) -> dict | None:
             continue
 
         current = edit_mix_generation_parameter(current, choice)
-
-
-def build_musicip_parameter_query(seed_song: str, params: dict) -> str:
-    params = normalize_mix_parameters(params)
-    # MusicIP on Windows expects the seed path in the Windows code page (cp1252), which also has œ, ’, “ ”, – and …
-    encoded_seed = quote_from_bytes(seed_song.encode("cp1252", errors="replace"))
-
-    query_params = {
-        "size": str(int(params.get("size") or get_playlist_size())),
-        "sizeType": "tracks",
-        "style": str(int(params.get("style") or 0)),
-        "variety": str(int(params.get("variety") or 0)),
-        "mixgenre": "false",
-        "content": "text",
-    }
-
-    filter_value = str(params.get("filter") or "").strip()
-    if filter_value:
-        query_params["filter"] = filter_value
-
-    reject_size = int(params.get("rejectsize") or 0)
-    if reject_size > 0:
-        query_params["rejectsize"] = str(reject_size)
-        query_params["rejectType"] = "tracks"
-
-    return f"song={encoded_seed}&{urlencode(query_params)}"
 
 
 def parse_args() -> dict[str, str]:
@@ -2542,23 +2409,6 @@ def get_current_seed_song() -> str:
     return seed_song
 
 
-def build_musicip_url(seed_song: str, size: int, mix_params: dict | None = None) -> str:
-    params = mix_params or get_effective_mix_parameters(size_override=size)
-    host = get_server_host()
-    port = get_server_port()
-    query = build_musicip_parameter_query(seed_song, params)
-    return f"http://{host}:{port}/api/mix?{query}"
-
-
-def decode_response(data: bytes) -> str:
-    for enc in ("utf-8", "iso-8859-1"):
-        try:
-            return data.decode(enc)
-        except UnicodeDecodeError:
-            continue
-    return data.decode("utf-8", errors="replace")
-
-
 def normalize_track_identity(path: str) -> str:
     return (path or "").replace("\\", "/").strip()
 
@@ -2580,15 +2430,13 @@ def prepend_seed_track(seed_song: str, tracks: list[str]) -> list[str]:
 
 def fetch_sound_mix(seed_song: str, size: int, params: dict, progress=None) -> list[str]:
     """The sound engine's mix for a seed: the songs nearest to it by sound, each song once, with the mix's variety
-    and its rule for artists, as MusicIP's (no artist repeat within the reject size); MusicIP's style and filter
-    don't apply."""
+    and its rule for artists (no artist repeat within the reject size)."""
     window, variety = int(params.get("rejectsize") or 0), int(params.get("variety") or 0)
     if progress:
         progress(15, "Looking for songs that sound alike")
     log_mixing(f"Sound engine mix request: seed {seed_song!r}, size {size}, "
                + (f"no artist repeat within {window} song(s)" if window else "artists may repeat")
-               + f", variety {variety}; MusicIP's style {params.get('style_label', '')!r} and filter "
-               f"{params.get('filter', '')!r} don't apply.")
+               + f", variety {variety}.")
     started = time.time()
     try:
         answer = soundprint.neighbours(soundprint_data(), kodi_userdata(), seed_song, size, window, variety)
@@ -2597,6 +2445,8 @@ def fetch_sound_mix(seed_song: str, size: int, params: dict, progress=None) -> l
                    f"{exc}", xbmc.LOGWARNING if exc.kind == soundprint.NOT_ANALYSED else xbmc.LOGERROR)
         if exc.kind == soundprint.NOT_ANALYSED:
             raise MusicIPError(f"The sound engine returned an empty mix. {exc}") from exc
+        if exc.kind == soundprint.NOT_SET_UP:
+            raise MusicIPError(f"{exc} {SOUND_ENGINE_SETUP_HINT}") from exc
         raise MusicIPError(str(exc)) from exc
     songs = answer["songs"]
     left_out = answer.get("left_out") or {}
@@ -2617,57 +2467,13 @@ def fetch_sound_mix(seed_song: str, size: int, params: dict, progress=None) -> l
     return prepend_seed_track(seed_song, [song["path"] for song in songs])
 
 
+SOUND_ENGINE_SETUP_HINT = "Set it up in Settings > Sound engine > Set up the sound engine."
+
+
 def fetch_mix(seed_song: str, size: int, mix_params: dict | None = None, progress=None) -> list[str]:
-    """The suggestion engine's mix for a seed (MusicIP's, or the sound engine's: uses_sound_prints). progress(percent,
-    text), if given, is told about each step."""
+    """The mix for a seed, from the sound engine. progress(percent, text), if given, is told about each step."""
     params = mix_params or get_effective_mix_parameters(size_override=size)
-    if uses_sound_prints():
-        return fetch_sound_mix(seed_song, size, params, progress)
-    if progress:
-        progress(15, "MusicIP is mixing")
-    url = build_musicip_url(seed_song, size, params)
-    timeout = get_timeout()
-
-    try:
-        encoded_seed = url.split("song=", 1)[1].split("&", 1)[0]
-    except Exception:
-        encoded_seed = ""
-
-    log_mixing(f"MusicIP mix request: seed {seed_song!r} (encoded {encoded_seed!r}), size {size}, "
-               f"parameters {params!r}, timeout {timeout} s, URL {url!r}")
-
-    started = time.time()
-    try:
-        with urlopen(url, timeout=timeout) as response:
-            body = response.read()
-    except HTTPError as exc:
-        try:
-            error_body = exc.read()
-        except Exception:
-            error_body = b""
-
-        log_mixing(f"MusicIP HTTP error {exc.code}", xbmc.LOGERROR)
-        log_mixing(f"MusicIP error URL: {url!r}", xbmc.LOGERROR)
-        log_mixing(f"MusicIP error seed raw: {seed_song!r}", xbmc.LOGERROR)
-        log_mixing(f"MusicIP error seed encoded: {encoded_seed!r}", xbmc.LOGERROR)
-        log_mixing(f"MusicIP error playlist size: {size}", xbmc.LOGERROR)
-        log_mixing(f"MusicIP error body: {error_body!r}", xbmc.LOGERROR)
-        raise MusicIPError(f"MusicIP server returned HTTP {exc.code}.") from exc
-    except URLError as exc:
-        log_mixing(f"MusicIP URL error for {url!r}: {exc}", xbmc.LOGERROR)
-        raise MusicIPError(f"Could not reach MusicIP server at {get_server_host()}:{get_server_port()}.") from exc
-    except Exception as exc:
-        log_mixing(f"MusicIP request failed for {url!r}: {exc}", xbmc.LOGERROR)
-        raise MusicIPError(f"MusicIP request failed: {exc}") from exc
-
-    text = decode_response(body)
-    tracks = [line.strip() for line in text.splitlines() if line.strip()]
-    log_mixing(f"MusicIP answered in {time.time() - started:.1f} s with {len(tracks)} song(s) for {seed_song!r}"
-               + "".join(f"\n  {number}. {track}" for number, track in enumerate(tracks, start=1)))
-    if not tracks:
-        raise MusicIPError("MusicIP returned an empty mix.")
-
-    return prepend_seed_track(seed_song, tracks)
+    return fetch_sound_mix(seed_song, size, params, progress)
 
 
 def fetch_mix_with_defaults(seed_song: str, size: int, progress=None) -> list[str]:
@@ -2684,7 +2490,7 @@ def fetch_mix_confirmed(seed_song: str, size: int) -> list[str]:
 
     remember_mix_generation_parameters(seed_song, size, params)
     remember_mix_assist_choices(mix_cache_key(seed_song, size), params)
-    with BackgroundProgress("Creating a sound engine mix" if uses_sound_prints() else "Creating a MusicIP mix") as progress:
+    with BackgroundProgress("Creating a mix") as progress:
         return fetch_mix(seed_song, int(params.get("size") or size), mix_params=params, progress=progress)
 
 
@@ -2946,7 +2752,7 @@ def insert_more_like_this_into_mix(seed: str, size: int, index: int, path: str, 
 
     if not new_tracks:
         if result and result["not_fitting"]:
-            raise MusicIPError("AI Mix Assist: none of MusicIP's tracks is close enough to this song.")
+            raise MusicIPError("AI Mix Assist: none of the suggested tracks is close enough to this song.")
         raise MusicIPError("No new tracks found for this song.")
 
     updated_tracks = source_tracks[:insert_at] + new_tracks + source_tracks[insert_at:]
@@ -4526,7 +4332,7 @@ def run_selected_mix_keyboard_action(property_name: str, action_label: str) -> N
 
 
 # --- Where a mix's tracks came from: kept with the mix ("track_origins": path -> origin, note), shown in the
-# track list (the second text) and in the track's information (its comment). Tracks without one are MusicIP's.
+# track list (the second text) and in the track's information (its comment). Tracks without one came with the mix.
 
 TRACK_ORIGIN_LABELS = {"seed": "Seed", "more_like_this": "More like this", "repaired": "Repaired",
                        "ai": "AI Mix Assist"}
@@ -4544,7 +4350,7 @@ def record_track_origins(cache_path: str, tracks: list[str], origin: str, notes:
 
 
 def track_origin(meta: dict, path: str, seed: str = "") -> dict:
-    """{"origin", "note"} for a track of the mix; {} for MusicIP's own."""
+    """{"origin", "note"} for a track of the mix; {} for one that came with the mix."""
     if seed and canonical_audio_path(path) == canonical_audio_path(seed):
         return {"origin": "seed", "note": "The song the mix was made from"}
     origins = meta.get("track_origins") if isinstance(meta.get("track_origins"), dict) else {}
@@ -5086,7 +4892,7 @@ def end_discovery_playback(reason: str = "manual_stop") -> None:
 
 # --- Radio mode ------------------------------------------------------------------------------
 # Like a vintage radio set: "Scan stations" plays random snippets (Discovery playback), "Skip station"
-# moves on, "Pick this station" locks onto the current song. The station is an endless MusicIP mix with the configured mix
+# moves on, "Pick this station" locks onto the current song. The station is an endless mix with the configured mix
 # parameters; the service plays it, tops it up from the last queued song and stops it on the
 # player's Stop.
 
@@ -5235,7 +5041,7 @@ def tune_radio() -> None:
 
 
 def start_radio() -> None:
-    """Lock onto the current snippet: an endless MusicIP mix with the configured mix parameters, no dialog."""
+    """Lock onto the current snippet: an endless mix with the configured mix parameters, no dialog."""
     if radio_phase() != "seeking":
         replace_with_radio_mode_menu()
         return
@@ -5251,7 +5057,7 @@ def start_radio() -> None:
         replace_with_radio_mode_menu()
         return
 
-    # Keep the current snippet playing while MusicIP builds the station.
+    # Keep the current snippet playing while the sound engine builds the station.
     set_discovery_mix_dialog_hold(seed)
     if not start_radio_station(seed):
         clear_discovery_mix_dialog_hold()
@@ -5271,7 +5077,7 @@ RADIO_ASSISTED_START_SIZE = 6  # with AI Mix Assist: one refill's worth, so the 
 
 
 def start_radio_station(seed: str, favourite: dict | None = None) -> bool:
-    """Play an endless MusicIP mix seeded with seed, using the configured mix parameters. False on failure.
+    """Play an endless mix seeded with seed, using the configured mix parameters. False on failure.
     With AI Mix Assist the station starts small; otherwise with the mix size. A station picked from a song that is a
     favourite (or started from one) is that favourite: it keeps the favourite's name.
     A progress bar ("Opening <station>...") shows the steps until the music plays."""
@@ -5948,15 +5754,16 @@ def record_mix_history(cache_path: str, kind: str, **details) -> None:
 
 
 def describe_mix_parameters(params: dict) -> str:
+    """The parameters a mix was made with, MusicIP's own too in a mix it made."""
     if not isinstance(params, dict) or not params:
         return ""
     reject = int(params.get("rejectsize") or 0)
-    parts = [
-        f"variety {params.get('variety', '?')}",
-        f"style {params.get('style_ui', '?')}/10",
-        f"no artist repeat within {reject} tracks" if reject > 0 else "artists may repeat",
-        f"filter {params.get('filter')}" if params.get("filter") else "no filter",
-    ]
+    parts = [f"variety {params.get('variety', '?')}"]
+    if made_by_musicip(params):
+        parts.append(f"style {params.get('style_ui', '?')}/10")
+    parts.append(f"no artist repeat within {reject} tracks" if reject > 0 else "artists may repeat")
+    if made_by_musicip(params):
+        parts.append(f"filter {params.get('filter')}" if params.get("filter") else "no filter")
     return ", ".join(parts)
 
 
@@ -6117,14 +5924,15 @@ def build_mix_info_message(cache_path: str) -> str:
             if reject_size > 0
             else "disabled"
         )
-        lines.extend([
-            f"Size: {params.get('size', 'unknown')} {params.get('sizetype', 'tracks')}",
-            f"Style: {params.get('style_ui', 'unknown')}/10 - {params.get('style_label', '')} (API {params.get('style', 'unknown')})",
-            f"Variety: {params.get('variety', 'unknown')}",
-            f"Filter: {params.get('filter') or '<none>'}",
-            f"Artist repeat: {reject_text}",
-            f"Recorded: {format_sidecar_ts(meta.get('mix_generation_parameters_ts'))}",
-        ])
+        musicip = made_by_musicip(params)
+        lines.extend([f"Made by: {'MusicIP' if musicip else 'the sound engine'}",
+                      f"Size: {params.get('size', 'unknown')} tracks"]
+                     + ([f"Style: {params.get('style_ui', 'unknown')}/10 - {params.get('style_label', '')} "
+                         f"(API {params.get('style', 'unknown')})"] if musicip else [])
+                     + [f"Variety: {params.get('variety', 'unknown')}"]
+                     + ([f"Filter: {params.get('filter') or '<none>'}"] if musicip else [])
+                     + [f"Artist repeat: {reject_text}",
+                        f"Recorded: {format_sidecar_ts(meta.get('mix_generation_parameters_ts'))}"])
     else:
         lines.append("No generation parameters recorded for this mix.")
 
@@ -6329,7 +6137,7 @@ def radio_statistics_lines(total: dict) -> list[str]:
     if total.get("radio_nothing_fitted"):
         lines.append(f"Refills where nothing fitted: {format_count(total['radio_nothing_fitted'])}")
     if total.get("radio_musicip_failed"):
-        lines.append(f"MusicIP outages: {format_count(total['radio_musicip_failed'])}")
+        lines.append(f"Source outages: {format_count(total['radio_musicip_failed'])}")
     return lines or ["No stations checked."]
 
 
@@ -6738,8 +6546,8 @@ def mix_info_parts(cache_path: str) -> dict:
 
     # How it was made, its files, what happened
     params = meta.get("mix_generation_parameters") if isinstance(meta.get("mix_generation_parameters"), dict) else {}
-    info["made"] = [f"MusicIP: {params.get('size', '?')} tracks, {describe_mix_parameters(params)}" if params
-                    else "MusicIP: no parameters recorded"]
+    info["made"] = [f"{'MusicIP' if made_by_musicip(params) else 'Sound engine'}: {params.get('size', '?')} tracks, "
+                    f"{describe_mix_parameters(params)}" if params else "No parameters recorded"]
     consistency = meta.get("consistency") if isinstance(meta.get("consistency"), dict) else {}
     readiness = meta.get("repair_readiness") if isinstance(meta.get("repair_readiness"), dict) else {}
     missing = int(consistency.get("missing_files") or 0)
@@ -7742,7 +7550,7 @@ def check_more_like_this(cache_path: str, tracks: list[str], selected: int, cand
 
 MIX_OPENNESS_OFF = -1
 MIX_OPENNESS_LABELS = ("Focused", "Close", "Balanced", "Open", "Adventurous")
-MIX_ASSIST_DIALOG_FIRST = 6  # the generate dialog's lines for AI Mix Assist follow the six MusicIP lines
+MIX_ASSIST_DIALOG_FIRST = 4  # the generate dialog's lines for AI Mix Assist follow the mix's four lines
 PENDING_MIX_ASSIST_CHOICES: dict[str, dict] = {}  # mix_cache_key -> choices made in the dialog, until the mix is stored
 
 
@@ -8105,7 +7913,7 @@ def process_mix_assist_request(entry: dict) -> None:
 
 
 # --- AI Mix Assist for Radio: the service checks a station's songs in a background thread ------------------
-# A station starts with a plain MusicIP mix, so it plays at once. Right away, its first songs and MusicIP's largest
+# A station starts with a plain mix, so it plays at once. Right away, its first songs and the largest
 # mix for the picked song are held to the "More like this" rule for the picked song: what fits becomes the station's
 # next songs, the rest leaves (2026-10-24; before, only songs that clearly didn't fit left, and the next song
 # always stayed). Refills are seeded from the last song that passed a check (else the picked song) and checked
@@ -8148,19 +7956,19 @@ def radio_check_progress(check=None):
 
 
 # How many candidates a Radio check examines, in batches of 18, by Station openness (Focused ... Adventurous): a
-# stricter station needs more to choose from (station #11, Focused: 5 of 36 fitted). And how many MusicIP lists
+# stricter station needs more to choose from (station #11, Focused: 5 of 36 fitted). And how many candidate lists
 # it may draw them from: the first, then lists for the songs that passed (this check's newest first) or the
 # station's earlier seeds, until enough songs fit (2026-10-24).
 RADIO_CHECK_BATCHES = (6, 4, 2, 2, 2)
 RADIO_CHECK_LISTS = 3
-# A station that stays close to its picked song asks MusicIP about that song again and again; MusicIP's variety
-# keeps those mixes from repeating (variety 0: the same 75 songs every time; 1: about half of them new; measured
-# 2026-10-24).
+# A station that stays close to its picked song asks for a mix of that song again and again; variety keeps those
+# mixes from repeating (MusicIP's variety 0: the same 75 songs every time; 1: about half of them new; measured
+# 2026-10-24; the sound engine's variety 2 draws from the nearest ~260 at random).
 RADIO_STAY_CLOSE_MIN_VARIETY = 2
 
 
 def radio_mix_parameters(size: int, settings: dict | None = None) -> dict:
-    """MusicIP's parameters for a station's mixes: the configured ones; a station that stays close to the picked
+    """The parameters of a station's mixes: the configured ones; a station that stays close to the picked
     song gets at least RADIO_STAY_CLOSE_MIN_VARIETY."""
     params = get_effective_mix_parameters(size_override=size)
     if get_radio_drift_half_life(settings) == 0:
@@ -8173,7 +7981,7 @@ def radio_check_batches(settings: dict | None = None) -> int:
 
 
 def radio_more_candidates(seeds: list[str], seen, settings: dict | None = None, picked: str = ""):
-    """more() for a Radio check: the next MusicIP list, from the songs chosen so far (the newest first), then from
+    """more() for a Radio check: the next candidate list, from the songs chosen so far (the newest first), then from
     seeds, without the station's songs (seen: identities); [] when the lists are used up. A station that stays
     close asks about its picked song first, once more (its mixes vary, see radio_mix_parameters)."""
     used, seen = set(), set(seen)
@@ -8190,12 +7998,12 @@ def radio_more_candidates(seeds: list[str], seen, settings: dict | None = None, 
             try:
                 mix = fetch_mix(seed, mix_assist.MUSICIP_MAX_MIX, radio_mix_parameters(mix_assist.MUSICIP_MAX_MIX, settings))
             except MusicIPError as exc:
-                log_radio(f"Radio mode: MusicIP's mix for {seed!r} failed: {exc}", xbmc.LOGWARNING)
+                log_radio(f"Radio mode: the mix for {seed!r} failed: {exc}", xbmc.LOGWARNING)
                 continue
             lists["left"] -= 1
             fresh = [track for track in mix if normalize_track_identity(track) not in seen]
             if fresh:
-                log_radio(f"Radio mode: AI Mix Assist looks further, in MusicIP's mix for {seed!r}.")
+                log_radio(f"Radio mode: AI Mix Assist looks further, in the mix for {seed!r}.")
                 return fresh
         return []
     return more
@@ -8203,14 +8011,14 @@ def radio_more_candidates(seeds: list[str], seen, settings: dict | None = None, 
 
 def check_radio_start(tracks: list[str], count: int, check=None, settings: dict | None = None) -> dict:
     """A new station's first check: "More like this" for the picked song (tracks[0]). The candidates are its first
-    songs (tracks[1:], a plain MusicIP mix), then MusicIP's largest mix for it, then (if too few fit) MusicIP's
+    songs (tracks[1:], a plain mix), then the largest mix for it, then (if too few fit) the
     mixes for the songs that fit; up to count songs that fit are chosen, in that order. As check_radio_refill,
     plus the station's name (from the same AI call)."""
     seed = tracks[0]
     try:
         mix = fetch_mix(seed, mix_assist.MUSICIP_MAX_MIX, radio_mix_parameters(mix_assist.MUSICIP_MAX_MIX, settings))
     except MusicIPError as exc:
-        log_radio(f"Radio mode: MusicIP's mix for the start check failed: {exc}", xbmc.LOGWARNING)
+        log_radio(f"Radio mode: the mix for the start check failed: {exc}", xbmc.LOGWARNING)
         mix = []
     candidates, known = [], {normalize_track_identity(seed)}
     for track in list(tracks[1:]) + mix:
@@ -8225,8 +8033,8 @@ def check_radio_start(tracks: list[str], count: int, check=None, settings: dict 
 def check_radio_refill(reference_song: str, candidates: list[str], count: int, reference: dict | None,
                        neighbours: list[str], check=None, settings: dict | None = None, name: bool = False,
                        more_seeds: list[str] = (), seen=()) -> dict:
-    """Choose a refill's songs from MusicIP's candidates (closest first): both signals must say they fit. Examines
-    more the stricter the station (radio_check_batches); when the candidates run out first, further MusicIP lists
+    """Choose a refill's songs from the candidates (in the mix's order): both signals must say they fit. Examines
+    more the stricter the station (radio_check_batches); when the candidates run out first, further lists
     (radio_more_candidates: from the songs chosen, then more_seeds; without the station's songs, seen). Adds
     "reference": the station's profile after this refill (drifted towards the chosen songs)."""
     store = mix_assist_cache.RatingCache(mix_assist_cache_path())
@@ -8709,7 +8517,8 @@ def build_radio_overview(state: dict, events: list[dict]) -> str:
         f"Now playing: {state.get('current_label') or ''}",
         f"Songs played: {int(state.get('played') or 0)} | coming up: {max(0, len(queue) - position - 1)}",
         "",
-        f"MusicIP: {started.get('parameters') or 'not recorded'}",
+        (f"MusicIP: {started['parameters']}" if " style " in f" {started.get('parameters') or ''}" else
+         f"Source: sound engine, {started.get('parameters') or 'parameters not recorded'}"),
     ]
     if started.get("assisted"):
         lines.append(f"AI Mix Assist: on | Station openness: {started.get('openness')} | "
@@ -8862,7 +8671,7 @@ def format_radio_event(event: dict) -> list[str]:
         if not removed and not added:
             return ["AI Mix Assist checked the first songs: all fit"]
         lines = [f"AI Mix Assist checked the first songs: {len(removed)} taken out, {len(added)} added"
-                 + (f" ({event['examined']} examined from {event.get('lists', 1)} MusicIP list(s))"
+                 + (f" ({event['examined']} examined from {event.get('lists', 1)} candidate list(s))"
                     if event.get("examined") else "")]
         lines += [f"- {entry.get('track', '?')} ({entry.get('reason', '')})" for entry in removed]
         return lines + [f"+ {label}" for label in added]
@@ -8870,7 +8679,7 @@ def format_radio_event(event: dict) -> list[str]:
         added = event.get("added") or []
         how = "checked" if event.get("checked") else "unchecked (AI Mix Assist off)"
         if event.get("examined"):
-            how += f", {event['examined']} examined from {event.get('lists', 1)} MusicIP list(s)"
+            how += f", {event['examined']} examined from {event.get('lists', 1)} candidate list(s)"
         lines = [f"Refill from {event.get('seed', '?')}: {len(added)} song(s), {how}"] + [f"+ {label}" for label in added]
         skipped = event.get("skipped") or []
         if skipped:
@@ -8886,10 +8695,10 @@ def format_radio_event(event: dict) -> list[str]:
                 "trying an earlier song"]
     if kind == "profile":
         return ["The late AI check updated the station's profile"]
-    if kind == "musicip_failed":
-        return [f"MusicIP couldn't make a mix ({event.get('error', '')}); the station tries again, less and less often"]
+    if kind == "musicip_failed":  # the kinds' names date from MusicIP
+        return [f"No mix could be made ({event.get('error', '')}); the station tries again, less and less often"]
     if kind == "musicip_back":
-        return ["MusicIP makes mixes again"]
+        return ["Mixes can be made again"]
     return [str(kind)]
 
 

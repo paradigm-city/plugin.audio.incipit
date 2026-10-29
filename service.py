@@ -16,7 +16,6 @@ import threading
 import time
 import urllib.parse
 import unicodedata
-from urllib.request import urlopen
 
 import xbmc
 import xbmcaddon
@@ -1176,7 +1175,7 @@ def load_plugin_module():
 
 # --- Radio mode ------------------------------------------------------------------------------
 # The plugin scans stations (Discovery snippet playback) and picks one ("Pick this station").
-# While it plays, the service follows the playlist, tops it up with new MusicIP mixes seeded from
+# While it plays, the service follows the playlist, tops it up with new mixes seeded from
 # the last queued song, prunes old songs, and stops the radio on the player's Stop or when other
 # playback takes over. Pause does not stop it.
 
@@ -1184,12 +1183,12 @@ RADIO_REFILL_THRESHOLD = 3       # top up when fewer future songs remain
 RADIO_BACKLOG_SIZE = 10          # played songs kept in the playlist
 RADIO_REFILL_SEEDS = 3           # last queued songs tried as seed when a mix brings nothing new
 RADIO_REFILL_RETRY_SECONDS = 60  # wait after a failed or empty top-up
-RADIO_OUTAGE_MAX_WAIT_SECONDS = 600  # MusicIP failing again and again: the wait doubles up to this
+RADIO_OUTAGE_MAX_WAIT_SECONDS = 600  # mixes failing again and again: the wait doubles up to this
 RADIO_STOP_GRACE_SECONDS = 3     # playback must be stopped this long (gaps between songs are shorter)
 RADIO_MAX_SEEN = 5000            # songs remembered per session to avoid repeats
 RADIO_MAX_REJECTED = 5000        # songs the station's checks turned down, remembered while it plays
 RADIO_CHECKED_THRESHOLD = 3      # with AI Mix Assist: top up when fewer songs remain (the check takes 1-2 minutes)
-RADIO_CHECK_SIZE = 75            # MusicIP candidates per checked refill (MusicIP's maximum)
+RADIO_CHECK_SIZE = 75            # candidates per checked refill (MusicIP's maximum was 75)
 RADIO_CHECKED_BATCH = 6          # songs per checked refill (15-40 minutes): small steps for a smooth meander; 6 is an experiment (was 8)
 RADIO_START_KEEP_NEXT_SECONDS = 30  # the start check leaves the next song alone when the playing one ends sooner
 
@@ -1406,12 +1405,12 @@ def start_radio_check(state: dict, kind: str, job, fallback=(), seed: str = "") 
 
 
 def start_radio_start_check(state: dict, plugin) -> None:
-    """The station's first songs and MusicIP's largest mix for the picked song, held to "More like this" for it."""
+    """The station's first songs and the largest mix for the picked song, held to "More like this" for it."""
     seed = str(state.get("seed") or "")
     files = [str(entry["file"]) for entry in state.get("queue") or []]
     tracks = [seed] + [track for track in files if plugin.normalize_track_identity(track) != plugin.normalize_track_identity(seed)]
     if seed:
-        log_radio(f"Radio mode: AI Mix Assist checks the station's first {len(tracks) - 1} song(s) and MusicIP's mix "
+        log_radio(f"Radio mode: AI Mix Assist checks the station's first {len(tracks) - 1} song(s) and the mix "
                  f"for the picked song.")
         settings = state.get("settings") if isinstance(state.get("settings"), dict) else None
         start_radio_check(state, "start", lambda check: plugin.check_radio_start(
@@ -1482,14 +1481,14 @@ def apply_radio_start_check(state: dict, plugin, position: int, result: dict) ->
 
 
 def keep_radio_from_running_dry(state: dict, plugin, position: int) -> None:
-    """The last song plays and the refill check is still running: queue MusicIP's songs unchecked now, or the
+    """The last song plays and the refill check is still running: queue the mix's songs unchecked now, or the
     player would stop (and with it the radio). The check's songs are then not added; its profile still counts."""
     if not radio_check_running() or RADIO_CHECK["kind"] != "refill" or RADIO_CHECK["superseded"]:
         return
     if RADIO_CHECK["station"] != radio_station_id(state) or position < 0 or position < len(state["queue"]) - 1:
         return
     RADIO_CHECK["superseded"] = True
-    log_radio("Radio mode: the refill check is taking long; adding MusicIP's songs unchecked so the music goes on.")
+    log_radio("Radio mode: the refill check is taking long; adding the mix's songs unchecked so the music goes on.")
     append_radio_tracks(state, plugin, RADIO_CHECK["seed"], RADIO_CHECK["fallback"],
                         event={"kind": "refill_unchecked", "reason": "the AI check took too long"})
 
@@ -1501,7 +1500,7 @@ def log_radio_check_result(kind: str, result: dict) -> None:
         return
     log_radio(f"Radio mode: {kind} check finished after {seconds:.0f} s: {len(result.get('chosen') or [])} song(s) "
               f"fit, {len(result.get('not_fitting') or [])} don't; {result.get('examined') or 0} examined from "
-              f"{result.get('lists') or 1} MusicIP list(s); measured: {result.get('checked')}.")
+              f"{result.get('lists') or 1} candidate list(s); measured: {result.get('checked')}.")
     if result.get("intent"):
         log_radio(f"Radio mode: what the station is about: {result['intent']}")
     for path in result.get("chosen") or []:
@@ -1587,7 +1586,7 @@ def apply_radio_check(state: dict, plugin, position: int) -> None:
         return
     remaining = len(state["queue"]) - position - 1 if position >= 0 else len(state["queue"])
     if remaining <= 1 and fallback:
-        log_radio("Radio mode: nothing fitted and the station is about to run dry; adding MusicIP's songs unchecked.")
+        log_radio("Radio mode: nothing fitted and the station is about to run dry; adding the mix's songs unchecked.")
         append_radio_tracks(state, plugin, seed, fallback, event={
             "kind": "refill_unchecked", "reason": "nothing fitted and the station was about to run dry"})
         return
@@ -1670,8 +1669,8 @@ def refill_seed_entries(state: dict, checked: bool) -> list[dict]:
 
 
 def refill_radio_queue(state: dict, checked: bool = False) -> int:
-    """Top up the station with a MusicIP mix seeded from the last queued song (checked: the last one that passed a
-    check, else the picked song). Returns songs added. With checked, MusicIP's songs go to AI Mix Assist first (in
+    """Top up the station with a mix seeded from the last queued song (checked: the last one that passed a
+    check, else the picked song). Returns songs added. With checked, the mix's songs go to AI Mix Assist first (in
     the background) and are added when the check is done."""
     plugin = load_plugin_module()
     queue = state["queue"]
@@ -1694,13 +1693,13 @@ def refill_radio_queue(state: dict, checked: bool = False) -> int:
             tracks = plugin.fetch_mix(seed, request_size, plugin.radio_mix_parameters(request_size, settings))
         except Exception as exc:
             if isinstance(exc, plugin.MusicIPError) and "empty mix" in str(exc):
-                log_radio(f"Radio mode: MusicIP returned no songs for {seed!r}.")
+                log_radio(f"Radio mode: the sound engine returned no songs for {seed!r}.")
                 continue  # try the song before it
-            log_radio(f"Radio mode: MusicIP mix for {seed!r} failed: {exc}", xbmc.LOGWARNING)
+            log_radio(f"Radio mode: the mix for {seed!r} failed: {exc}", xbmc.LOGWARNING)
             if server_error is None:
                 server_error = exc
                 continue  # it may be this song: try the one before it, once
-            break  # two songs failed: MusicIP itself has a problem
+            break  # two songs failed: the sound engine itself has a problem
         server_error = None
         used_entry = entry
         new_tracks = []
@@ -1708,7 +1707,7 @@ def refill_radio_queue(state: dict, checked: bool = False) -> int:
             identity = plugin.normalize_track_identity(track)
             if identity not in seen_set and identity not in {plugin.normalize_track_identity(t) for t in new_tracks}:
                 new_tracks.append(track)
-        log_radio(f"Radio mode: MusicIP's mix for {seed!r} has {len(tracks)} song(s), {len(new_tracks)} of them new to "
+        log_radio(f"Radio mode: the mix for {seed!r} has {len(tracks)} song(s), {len(new_tracks)} of them new to "
                   f"the station.")
         if new_tracks:
             used_seed = seed
@@ -1716,12 +1715,12 @@ def refill_radio_queue(state: dict, checked: bool = False) -> int:
         log_radio(f"Radio mode: mix from {seed!r} brought no new songs.")
 
     if server_error is not None:
-        musicip_outage(state, plugin, server_error)
+        source_outage(state, plugin, server_error)
         return 0
     if int(state.get("musicip_failures") or 0):
         state["musicip_failures"] = 0
         add_radio_event(state, "musicip_back")
-        log_radio("Radio mode: MusicIP makes mixes again.")
+        log_radio("Radio mode: mixes can be made again.")
     if not new_tracks:
         state["next_refill_ts"] = now + RADIO_REFILL_RETRY_SECONDS
         state["refill_seed_offset"] = 0
@@ -1741,9 +1740,9 @@ def refill_radio_queue(state: dict, checked: bool = False) -> int:
         more_seeds = seeds[seeds.index(str(used_entry["file"])) + 1:] if str(used_entry["file"]) in seeds else []
         seen = list(seen_set | rejected)
         if len(candidates) < len(new_tracks):
-            log_radio(f"Radio mode: {len(new_tracks) - len(candidates)} of MusicIP's suggestions were turned down "
+            log_radio(f"Radio mode: {len(new_tracks) - len(candidates)} of the sound engine's suggestions were turned down "
                       f"earlier on this station ({len(rejected)} so far); they aren't checked again.")
-        log_radio(f"Radio mode: AI Mix Assist picks {RADIO_CHECKED_BATCH} song(s) from MusicIP's {len(candidates)} "
+        log_radio(f"Radio mode: AI Mix Assist picks {RADIO_CHECKED_BATCH} song(s) from the sound engine's {len(candidates)} "
                  f"suggestion(s) for {used_seed!r} (closest first, checked in groups).")
         start_radio_check(
             state, "refill",
@@ -1755,22 +1754,20 @@ def refill_radio_queue(state: dict, checked: bool = False) -> int:
     return append_radio_tracks(state, plugin, used_seed, new_tracks, event={"kind": "refill", "checked": False})
 
 
-def musicip_outage(state: dict, plugin, error: Exception) -> None:
-    """MusicIP failed for two songs in a row: wait longer each time (1, 2, 4, 8, then 10 minutes), so a struggling
+def source_outage(state: dict, plugin, error: Exception) -> None:
+    """The mixes failed for two songs in a row: wait longer each time (1, 2, 4, 8, then 10 minutes), so a struggling
     server isn't asked every minute; say so once, on the screen and in the station's history."""
     failures = int(state.get("musicip_failures") or 0) + 1
     wait = min(RADIO_OUTAGE_MAX_WAIT_SECONDS, RADIO_REFILL_RETRY_SECONDS * 2 ** (failures - 1))
     state["musicip_failures"] = failures
     state["next_refill_ts"] = int(time.time()) + wait
     state["refill_seed_offset"] = 0
-    log_radio(f"Radio mode: MusicIP can't make mixes ({error}); trying again in {wait} s.", xbmc.LOGWARNING)
+    log_radio(f"Radio mode: no mixes can be made ({error}); trying again in {wait} s.", xbmc.LOGWARNING)
     if failures == 1:
         add_radio_event(state, "musicip_failed", error=str(error))
         try:
             plugin.notify("The sound engine can't make mixes right now. The station plays on and tries again; "
-                          "see Settings > Sound engine > Status." if plugin.uses_sound_prints() else
-                          "MusicIP can't make mixes right now. The station plays on and tries again; if it lasts, "
-                          "restart the MusicIP server.", xbmcgui.NOTIFICATION_WARNING)
+                          "see Settings > Sound engine > Status.", xbmcgui.NOTIFICATION_WARNING)
         except Exception:
             pass
 
@@ -2777,7 +2774,7 @@ def run_metadata_refresh_tick(max_items: int = METADATA_REFRESH_BATCH_SIZE) -> i
 
 # --- AI Mix Assist ---------------------------------------------------------------------------
 # The plugin queues new mixes; the service tidies them up one at a time in a background thread, so the
-# service loop (Discovery, Radio, consistency) keeps running while Claude and MusicIP are busy.
+# service loop (Discovery, Radio, consistency) keeps running while Claude and the sound engine are busy.
 
 MIX_ASSIST_WORKER: threading.Thread | None = None
 
@@ -2834,82 +2831,15 @@ def run_mix_collage_tick() -> str:
     return ""
 
 
-# --- MusicIP's library: reloaded now and then in the background (not before every mix, which only made mixes
-# slower), and after Kodi's music library scan, so songs new to Kodi's library also reach the mixes. A reload scans
-# the music folders and takes in new songs, one at a time, minutes each, and MusicIP mixes little else meanwhile:
-# so not while Radio or Discovery plays (they need its mixes; the reload waits until they stop), and a reload that
-# doesn't answer in time is taking in songs (it goes on), not a failure. In a thread: the service loop must not wait.
+# --- New songs: Kodi's music library scan and the service's start time, for the sound engine's analysis (below).
+# MusicIP's library reload used them too; its code is dormant in musicip_dormant.py.
 
-MUSICIP_RELOAD_INTERVAL_SECONDS = 8 * 3600  # about three times a day
-MUSICIP_RELOAD_RETRY_SECONDS = 30 * 60      # after a failed reload (MusicIP not running)
-MUSICIP_RELOAD_STARTUP_DELAY_SECONDS = 120  # not while Kodi is still starting
-MUSICIP_RELOAD_MIN_TIMEOUT_SECONDS = 120
-MUSICIP_RELOAD = {"thread": None, "scan_finished": False, "first_tick_ts": 0.0}
+LIBRARY_UPDATE_STARTUP_DELAY_SECONDS = 120  # not while Kodi is still starting
+LIBRARY_UPDATE = {"scan_finished": False, "first_tick_ts": 0.0}
 
 
-def musicip_reload_state_path() -> str:
-    return os.path.join(get_profile_dir(), "musicip_reload.json")
-
-
-def reload_musicip_library(reason: str) -> bool:
-    """Ask MusicIP to reload its library (/server/reload). The time is kept, so a Kodi restart doesn't reload
-    again; a failure is retried later."""
-    plugin = load_plugin_module()
-    url = f"http://{plugin.get_server_host()}:{plugin.get_server_port()}/server/reload"
-    started = time.time()
-    record = load_json_file(musicip_reload_state_path())
-    try:
-        with urlopen(url, timeout=max(MUSICIP_RELOAD_MIN_TIMEOUT_SECONDS, plugin.get_timeout())) as response:
-            response.read()
-    except TimeoutError:  # connected, no answer yet: MusicIP is taking in new songs
-        save_json_file(musicip_reload_state_path(), {"last_ts": int(time.time())})
-        log_general(f"MusicIP library reload ({reason}): MusicIP is taking in new songs (no answer after "
-            f"{time.time() - started:.0f} s); it goes on by itself.", always=True)
-        return True
-    except Exception as exc:
-        log_general(f"MusicIP library reload ({reason}) failed for {url!r}: {exc}", xbmc.LOGWARNING, always=True)
-        save_json_file(musicip_reload_state_path(), dict(record, failed_ts=int(time.time())))
-        return False
-    save_json_file(musicip_reload_state_path(), {"last_ts": int(time.time())})
-    log_general(f"MusicIP library reloaded ({reason}) in {time.time() - started:.1f} s.", always=True)
-    return True
-
-
-def musicip_reload_due(now: float) -> str:
-    """Why MusicIP's library should be reloaded now ("" if not): Kodi's music library scan has finished, or the
-    last reload is MUSICIP_RELOAD_INTERVAL_SECONDS ago; never while Radio or Discovery plays."""
-    if radio_is_active() or load_discovery_state().get("enabled"):
-        return ""
-    if MUSICIP_RELOAD["scan_finished"]:
-        return "after Kodi's library scan"
-    if now - MUSICIP_RELOAD["first_tick_ts"] < MUSICIP_RELOAD_STARTUP_DELAY_SECONDS:
-        return ""
-    record = load_json_file(musicip_reload_state_path())
-    if now - int(record.get("failed_ts") or 0) < MUSICIP_RELOAD_RETRY_SECONDS:
-        return ""
-    return "scheduled" if now - int(record.get("last_ts") or 0) >= MUSICIP_RELOAD_INTERVAL_SECONDS else ""
-
-
-def run_musicip_reload_tick() -> threading.Thread | None:
-    """Start a background reload of MusicIP's library when one is due (not while one runs). Returns its thread."""
-    now = time.time()
-    if not MUSICIP_RELOAD["first_tick_ts"]:
-        MUSICIP_RELOAD["first_tick_ts"] = now
-    thread = MUSICIP_RELOAD["thread"]
-    if thread is not None and thread.is_alive():
-        return None
-    reason = musicip_reload_due(now)
-    if not reason:
-        return None
-    MUSICIP_RELOAD["scan_finished"] = False
-    thread = threading.Thread(target=reload_musicip_library, args=(reason,), name="MusicIP reload", daemon=True)
-    MUSICIP_RELOAD["thread"] = thread
-    thread.start()
-    return thread
-
-
-# --- The sound engine's analysis (when it makes the mixes instead of MusicIP): songs new to Kodi's library get
-# their sound prints after Kodi's music library scan and every few hours, in the same slot as MusicIP's reload. The
+# --- The sound engine's analysis: songs new to Kodi's library get
+# their sound prints after Kodi's music library scan and every few hours. The
 # analysis runs detached at low priority (soundprint.client.start_analysis), also while Radio plays: a song it
 # hasn't reached yet is analysed when it is a seed. Not started while one runs.
 
@@ -2925,26 +2855,24 @@ def soundprint_analysis_due(now: float, plugin) -> str:
     the last start is SOUNDPRINT_ANALYSIS_INTERVAL_SECONDS ago."""
     if not plugin.get_setting_bool("soundprint_auto_analyse", True):
         return ""
-    if MUSICIP_RELOAD["scan_finished"]:
+    if LIBRARY_UPDATE["scan_finished"]:
         return "after Kodi's library scan"
-    if now - MUSICIP_RELOAD["first_tick_ts"] < MUSICIP_RELOAD_STARTUP_DELAY_SECONDS:
+    if now - LIBRARY_UPDATE["first_tick_ts"] < LIBRARY_UPDATE_STARTUP_DELAY_SECONDS:
         return ""
     record = load_json_file(soundprint_analysis_state_path())
     return "scheduled" if now - int(record.get("last_ts") or 0) >= SOUNDPRINT_ANALYSIS_INTERVAL_SECONDS else ""
 
 
 def run_library_update_tick() -> bool:
-    """New songs for the suggestion engine: MusicIP's reload, or the sound engine's analysis. True if one began."""
+    """New songs for the sound engine: its analysis, when one is due. True if one began."""
     plugin = load_plugin_module()
-    if not plugin.uses_sound_prints():
-        return run_musicip_reload_tick() is not None
     now = time.time()
-    if not MUSICIP_RELOAD["first_tick_ts"]:
-        MUSICIP_RELOAD["first_tick_ts"] = now
+    if not LIBRARY_UPDATE["first_tick_ts"]:
+        LIBRARY_UPDATE["first_tick_ts"] = now
     reason = soundprint_analysis_due(now, plugin)
     if not reason:
         return False
-    MUSICIP_RELOAD["scan_finished"] = False
+    LIBRARY_UPDATE["scan_finished"] = False
     save_json_file(soundprint_analysis_state_path(), {"last_ts": int(now), "reason": reason})
     return plugin.start_soundprint_analysis(reason, quiet=True)
 
@@ -2955,20 +2883,32 @@ def reload_settings() -> None:
     settings change; otherwise the service keeps the values it started with (F39)."""
     global ADDON
     plugin = load_plugin_module()
-    before = plugin.engine_name()
     ADDON = xbmcaddon.Addon()
     plugin.ADDON = xbmcaddon.Addon()
     logs.ADDON = xbmcaddon.Addon(logs.ADDON_ID)
-    after = plugin.engine_name()
-    log_general(f"Settings changed: the service reads them again. Mixes come from {after}"
-                + (f" (before: {before})." if after != before else " (unchanged).")
-                + f" Logging: {logs.describe_switches()}.", always=True)
+    log_general(f"Settings changed: the service reads them again. Mix size {plugin.get_playlist_size()}, variety "
+                f"{plugin.get_mix_variety()}, no artist repeat within {plugin.get_mix_reject_size()}. "
+                f"Logging: {logs.describe_switches()}.", always=True)
+
+
+def announce_sound_engine_readiness() -> str:
+    """At the start: when the sound engine can't make mixes yet, say so and where to set it up. Returns why ("" when
+    it is ready)."""
+    plugin = load_plugin_module()
+    reason = plugin.soundprint.not_ready(plugin.soundprint_data())
+    if reason:
+        log_general(f"The sound engine can't make mixes yet: {reason}", xbmc.LOGWARNING, always=True)
+        try:
+            plugin.notify(f"{reason} {plugin.SOUND_ENGINE_SETUP_HINT}", xbmcgui.NOTIFICATION_WARNING)
+        except Exception:
+            pass
+    return reason
 
 
 class ServiceMonitor(xbmc.Monitor):
     def onScanFinished(self, library: str) -> None:
-        if library == "music":  # new songs in Kodi's library: the suggestion engine should know them too
-            MUSICIP_RELOAD["scan_finished"] = True
+        if library == "music":  # new songs in Kodi's library: the sound engine should know them too
+            LIBRARY_UPDATE["scan_finished"] = True
 
     def onSettingsChanged(self) -> None:
         reload_settings()
@@ -2998,6 +2938,7 @@ def main() -> None:
     )
 
     reset_discovery_mode_on_startup()
+    announce_sound_engine_readiness()
     clear_current_mix_on_startup()
     prune_statistics_on_startup()
     reset_radio_mode_on_startup()
@@ -3029,7 +2970,7 @@ def main() -> None:
         try:
             run_library_update_tick()
         except Exception as exc:
-            log_general(f"Library update tick (MusicIP reload or sound engine analysis) failed: {exc}", xbmc.LOGERROR)
+            log_general(f"Library update tick (sound engine analysis) failed: {exc}", xbmc.LOGERROR)
 
         now_for_metadata = int(time.time())
         if last_metadata_refresh_ts <= 0 or now_for_metadata - last_metadata_refresh_ts >= METADATA_REFRESH_INTERVAL_SECONDS:
