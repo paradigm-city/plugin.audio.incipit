@@ -324,8 +324,7 @@ class FavouriteStationsTest(RadioBase):
         self.assertEqual(item.getLabel(), f"1. {self.favourites()[0]['name']}")
         self.assertFalse(is_folder)
         self.assertEqual([label for label, _action in item.context_menu],
-                         ["Information", "Character: Balanced", "Drift: Drift slowly", "Intent: Mixed", "Rename",
-                          "Remove from favourites"])
+                         ["Information", "Station settings...", "Rename", "Remove from favourites"])
         self.assertTrue(item.getLabel2().endswith("| Balanced | Drift slowly"))
 
     def test_a_favourite_keeps_the_settings_it_was_saved_with(self):
@@ -333,7 +332,41 @@ class FavouriteStationsTest(RadioBase):
         self.save_playing_station()
         favourite = self.favourites()[0]
         self.assertEqual((favourite["openness"], favourite["drift"]), (3, 2))
-        self.assertEqual(self.radio()["settings"], {"openness": 3, "drift": 2, "perspective": 0})
+        self.assertEqual(self.radio()["settings"], {"variety": 0, "rejectsize": 0, "openness": 3, "drift": 2,
+                                                    "perspective": 0, "borderline": False})
+
+    def test_a_favourite_keeps_its_own_variety_artist_rule_and_borderline(self):
+        kodi.settings.update(radio_variety="5", radio_reject_size="4", radio_intent_borderline="true",
+                             mix_assist_radio_drift="1")
+        self.save_playing_station()
+        favourite = self.favourites()[0]
+        self.assertEqual((favourite["variety"], favourite["rejectsize"], favourite["borderline"]), (5, 4, True))
+        kodi.settings.update(radio_variety="0", radio_reject_size="0", radio_intent_borderline="false")
+        settings = main.favourite_settings(favourite)
+        self.assertEqual(main.radio_mix_parameters(75, settings), {"size": 75, "variety": 5, "rejectsize": 4})
+        self.assertEqual(main.get_station_strictness(settings), (1.2, True))
+        self.assertEqual(main.radio_mix_parameters(75, {}), {"size": 75, "variety": 0, "rejectsize": 0})
+
+    def test_the_station_settings_list_changes_one_of_them(self):
+        self.save_playing_station()
+        favourite_id = self.favourites()[0]["id"]
+        kodi.respond("select", 0)  # Variety
+        kodi.respond("numeric", "7")
+        self.run_plugin(action="radio_favourite_settings", id=favourite_id)
+        _method, (heading, lines), _kwargs = kodi.dialogs("select")[0]
+        self.assertEqual(heading, f"Settings of 1. {self.favourites()[0]['name']}")
+        self.assertEqual(lines, ["Variety: 0", "Artists: may repeat", "Character: Balanced", "Drift: Drift slowly",
+                                 "Intent: Mixed", "Accept borderline: off"])
+        self.assertEqual(self.favourites()[0]["variety"], 7)
+        self.assertEqual(self.radio()["settings"]["variety"], 7)  # the playing favourite follows
+        kodi.respond("select", 5, 1)  # Accept borderline -> On
+        self.run_plugin(action="radio_favourite_settings", id=favourite_id)
+        self.assertIs(self.favourites()[0]["borderline"], True)
+        kodi.respond("select", 1)
+        kodi.respond("numeric", "3")
+        self.run_plugin(action="radio_favourite_settings", id=favourite_id)
+        self.assertEqual(self.favourites()[0]["rejectsize"], 3)
+        self.assertIn("Artists: no repeat within 3 songs", main.favourite_setting_lines(self.favourites()[0])[1][0])
 
     def test_changing_a_favourites_settings(self):
         self.save_playing_station()

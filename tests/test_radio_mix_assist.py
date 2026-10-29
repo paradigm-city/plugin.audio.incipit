@@ -358,6 +358,14 @@ class RadioMixAssistTest(RadioBase):
         step = 1 - 0.5 ** (1 / 20)  # "Wander freely": half the way after 20 songs
         self.assertAlmostEqual(result["reference"]["energy"], 5 + step * 4)
 
+    def test_a_favourites_own_artist_rule_spaces_its_refills(self):
+        kodi.settings["radio_reject_size"] = "2"
+        chosen = {"chosen": [], "entries": {}, "seed_entry": None, "not_fitting": []}
+        with mock.patch.object(main.mix_assist, "choose_additions", return_value=chosen) as choose, \
+                mock.patch.object(main, "mix_assist_ask", return_value=lambda *args: {}):
+            CHECK_RADIO_REFILL("a", ["b"], 8, REFERENCE, ["w", "x", "y", "z"], settings={"rejectsize": 3})
+        self.assertEqual((choose.call_args[1]["artist_window"], choose.call_args[1]["before"]), (3, ["x", "y", "z"]))
+
     def test_station_strictness_is_its_own_setting(self):
         kodi.settings.update({"mix_assist_station_strictness": "1", "mix_assist_mix_strictness": "4"})
         self.assertEqual(main.get_station_strictness(), (1.1, False))
