@@ -719,10 +719,15 @@ class MoreLikeThisTest(MusicIPServerTestCase):
     def test_only_tracks_close_to_the_selected_song_are_inserted(self):
         result = {"intent": "dark, abstract", "chosen": [self.NEW[2], self.NEW[4]],
                   "not_fitting": [{"path": self.NEW[0], "label": "New 0", "reason": "too bright"}], "checked": True}
+        kodi.settings["mix_reject_size"] = "5"
         choose = self.more_like_this(result)
         args, kwargs = choose.call_args
         self.assertEqual((args[0], args[1], args[2]), (TRACKS[1], self.NEW, 2))  # this song, all new tracks, 2 wanted
-        self.assertEqual(kwargs["neighbours"], [TRACKS[0]] + TRACKS[2:])  # within the artist window
+        # the final mix around the insertion point, within the artist window
+        self.assertEqual((kwargs["before"], kwargs["after"], kwargs["artist_window"]), (TRACKS[:2], TRACKS[2:], 5))
+        kodi.settings["mix_reject_size"] = "0"
+        self.assertEqual(main.mix_reject_size_for({"mix_generation_parameters": {"rejectsize": 3}}), 3)  # its own
+        self.assertEqual(main.mix_reject_size_for({}), 0)  # else the setting's: 0, artists may repeat
         self.assertEqual(self.musicip.mix_requests()[0]["size"], "75")
         self.assertEqual(self.read_mix(self.cache_path), TRACKS[:2] + [self.NEW[2], self.NEW[4]] + TRACKS[2:])
         self.assertNotified("Inserted 2 track(s). AI Mix Assist skipped 1 that didn't fit (see the mix history).")

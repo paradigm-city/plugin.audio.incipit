@@ -301,7 +301,7 @@ class NearestTest(unittest.TestCase):
 
 
 class MixRulesTest(unittest.TestCase):
-    """The rules for a mix: songs per artist (the seed counted), each song once, variety."""
+    """The rules for a mix: no artist repeat within a window (the seed first), each song once, variety."""
 
     def setUp(self):
         self.store = store.Store(tempfile.mkdtemp())
@@ -324,10 +324,22 @@ class MixRulesTest(unittest.TestCase):
                                                 details=lambda path: self.details.get(path, ("", "")), **rules)
         return [path for path, _ in found], left_out
 
-    def test_at_most_so_many_songs_of_one_artist_with_the_seed_counted(self):
-        found, left_out = self.nearest(5, per_artist=2)
-        self.assertEqual(found, ["k1", "c1", "c2", "n1", "h1"])  # artist names compared without case
-        self.assertEqual(left_out, {"artist": 2, "same_song": 1})
+    def test_no_artist_repeat_within_the_window_the_seed_first(self):
+        found, left_out = self.nearest(4, window=1)
+        self.assertEqual(found, ["c1", "n1", "c3", "h1"])  # artist names compared loosely: "cluster" is Cluster
+        self.assertEqual(left_out, {"artist": 3, "same_song": 1})
+        found, left_out = self.nearest(5, window=2)
+        self.assertEqual(found, ["c1", "n1", "h1"])  # Cluster's third song came too soon after the first
+        self.assertEqual(left_out["artist"], 4)
+
+    def test_without_a_window_artists_may_repeat(self):
+        self.assertEqual(self.nearest(4)[0], ["k1", "k2", "c1", "c2"])
+
+    def test_the_window_holds_in_a_mix_chosen_with_variety(self):
+        for seed in range(20):
+            found, _ = self.nearest(3, window=1, variety=6, rng=random.Random(seed))
+            artists = [neighbours.artist_key(self.details[path][0]) for path in ["seed"] + found]
+            self.assertTrue(all(a != b for a, b in zip(artists, artists[1:])), (seed, found))
 
     def test_the_seed_itself_on_another_album_is_left_out_even_without_a_limit(self):
         found, left_out = self.nearest(3)
@@ -335,12 +347,16 @@ class MixRulesTest(unittest.TestCase):
         self.assertEqual(left_out["same_song"], 1)
 
     def test_variety_chooses_from_more_of_the_nearest_in_their_order(self):
-        found, _ = self.nearest(3, variety=6, rng=random.Random(4))
-        pool = ["k1", "k2", "c1", "c2", "n1", "c3", "h1"][:neighbours.pool_size(3, 6)]
-        self.assertEqual(len(found), 3)
-        self.assertTrue(set(found) <= set(pool))
-        self.assertEqual(found, sorted(found, key=pool.index))
-        self.assertNotEqual(self.nearest(3, variety=6, rng=random.Random(5))[0], found)
+        order = ["k1", "k2", "c1", "c2", "n1", "c3", "h1"]
+        mixes = {tuple(self.nearest(3, variety=6, rng=random.Random(seed))[0]) for seed in range(20)}
+        self.assertGreater(len(mixes), 1)
+        for found in mixes:  # 7 songs to choose from: now and then the choice runs out before 3
+            self.assertLessEqual(len(found), 3)
+            self.assertEqual(list(found), sorted(found, key=order.index))
+        full = [found for found in mixes if len(found) == 3]
+        reach = [max(order.index(path) for path in found) + 1 for found in full]
+        self.assertLessEqual(sum(reach) / len(reach), neighbours.pool_size(3, 6) + 1)  # about 5 deep, at most 7
+        self.assertEqual(self.nearest(3, variety=0, rng=random.Random(1))[0], ["k1", "k2", "c1"])
 
     def test_pool_size_grows_with_variety(self):
         self.assertEqual([neighbours.pool_size(30, variety) for variety in (0, 3, 9)], [30, 60, 120])
@@ -464,7 +480,7 @@ class CommandLineTest(unittest.TestCase):
         stored.close()
         with unittest.mock.patch("sys.stdout", new_callable=io.StringIO) as out:
             code = cli.main(["--userdata", userdata, "--data", folder, "neighbours", "seed.mp3", "--count", "5",
-                             "--per-artist", "2"])
+                             "--artist-window", "2"])
         answer = json.loads(out.getvalue())
         self.assertEqual(code, 0)
         self.assertEqual((answer["seed_vector"], answer["library"], answer["analysed"]), ("stored", "", 2))

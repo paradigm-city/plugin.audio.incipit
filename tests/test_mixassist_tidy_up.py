@@ -165,6 +165,22 @@ class ChecksTest(unittest.TestCase):
         self.assertIn("Seed: Seed – s", seen["message"])
         self.assertIn("1. Cand – c", seen["message"])
 
+    def test_music_the_rating_did_not_know_is_marked_as_little_known(self):
+        seen = {}
+
+        def ask(system, schema, message):
+            seen.update(system=system, message=message)
+            return {"character": "x", "tracks": []}
+
+        units = [self.unit("Seed", "s"), self.unit("Obscure", "o"), self.unit("Known", "k")]
+        entries = [{"familiarity": 2, "description": "cool"}, {"familiarity": 0, "description": "guessed synthpop"},
+                   {"familiarity": 1, "description": "warm"}]
+        checks.judge("i", units[0], entries[0], units[1:], entries[1:], ask, "emotional")
+        self.assertIn("1. Obscure – o (A, 1990) (little known) — guessed synthpop", seen["message"])
+        self.assertIn("2. Known – k (A, 1990) — warm", seen["message"])
+        self.assertNotIn("little known", seen["message"].split("Tracks:")[0])
+        self.assertIn('marked "(little known)"', seen["system"])
+
 
 class NameTest(unittest.TestCase):
     def unit(self, title):
@@ -457,8 +473,36 @@ class AssistTest(unittest.TestCase):
 
     def test_more_like_this_respects_the_artist_window(self):
         result = assist.choose_additions("seed", ["fit3", "cand1", "cand2", "cand3", "cand4"], 2, self.store,
-                                         self.ask, self.resolve, neighbours=["fit1", "fit2"], artist_window=5)
+                                         self.ask, self.resolve, before=["fit1", "fit2"], artist_window=5)
         self.assertEqual(result["chosen"], ["cand1"])  # fit3: an artist next to it; cand2..4: the same artist
+
+    def test_artists_are_spaced_as_in_the_final_mix(self):
+        # one song between two of the same artist is enough with a window of 1; a song waits until it is
+        self.add("solo1", exploration=9, form=1)
+        result = assist.choose_additions("seed", ["cand1", "cand2", "solo1", "cand3", "cand4"], 3, self.store,
+                                         self.ask, self.resolve, before=["seed"], artist_window=1)
+        self.assertEqual(result["chosen"], ["cand1", "solo1", "cand2"])
+        # the songs after the insertion point count too
+        result = assist.choose_additions("seed", ["cand1", "cand2", "solo1", "cand3", "cand4"], 1, self.store,
+                                         self.ask, self.resolve, before=["seed"], after=["cand9"], artist_window=2)
+        self.assertEqual(result["chosen"], ["solo1"])
+
+    def test_without_a_window_artists_may_repeat(self):
+        result = assist.choose_additions("seed", ["cand1", "cand2"], 2, self.store, self.ask, self.resolve,
+                                         before=["cand5"], after=["cand6"], artist_window=0)
+        self.assertEqual(result["chosen"], ["cand1", "cand2"])
+
+    def test_by_default_the_selected_song_comes_right_before_the_new_ones(self):
+        self.add("seed2", exploration=9, form=1)
+        result = assist.choose_additions("seed", ["seed2", "cand1", "cand2", "cand3", "cand4"], 2, self.store,
+                                         self.ask, self.resolve, artist_window=1)
+        self.assertEqual(result["chosen"], ["cand1", "seed2"])
+
+    def test_unchecked_songs_are_spaced_too(self):
+        result = assist.choose_additions("seed", ["cand1", "cand2", "fit1"], 2, self.store, self.ask, self.resolve,
+                                         before=["seed"], artist_window=1)  # too few rated songs to measure
+        self.assertFalse(result["checked"])
+        self.assertEqual(result["chosen"], ["cand1", "fit1"])
 
     def test_more_like_this_looks_further_with_the_same_intent(self):
         for index in range(1, 5):
@@ -472,7 +516,7 @@ class AssistTest(unittest.TestCase):
         # The first 10 candidates fit but are all by artists next to the insertion point.
         candidates = [f"cand{i}" for i in range(1, 5)] + [f"fit{i}" for i in range(1, 7)] + [f"solo{i}" for i in range(1, 5)]
         result = assist.choose_additions("seed", candidates, 1, self.store, ask, self.resolve,
-                                         neighbours=["cand1", "fit1"], artist_window=5)
+                                         before=["cand1", "fit1"], artist_window=5)
         self.assertEqual(result["chosen"], ["solo1"])
         self.assertEqual(systems, [checks.SEED_INTENT_PROMPT, checks.INTENT_PROMPT])
 
@@ -484,7 +528,7 @@ class AssistTest(unittest.TestCase):
             return self.ask(system, schema, message)
 
         candidates = [f"cand{i}" for i in range(1, 5)] + [f"fit{i}" for i in range(1, 7)] + ["fit7", "fit8"]
-        assist.choose_additions("seed", candidates, 1, self.store, ask, self.resolve, neighbours=["cand1", "fit1"],
+        assist.choose_additions("seed", candidates, 1, self.store, ask, self.resolve, before=["cand1", "fit1"],
                                 artist_window=5, perspective="cultural")
         self.assertEqual(systems, [checks.seed_intent_prompt("cultural"), checks.intent_prompt("cultural")])
         systems.clear()

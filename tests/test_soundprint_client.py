@@ -70,11 +70,11 @@ class ClientTest(unittest.TestCase):
 
     def test_neighbours_ask_the_tool_quietly_from_the_addon_folder(self):
         run = FakeRun(json.dumps(answer(NEAR)))
-        found = client.neighbours(self.data, "U", SEED, 25, per_artist=2, variety=3, runner=run)
+        found = client.neighbours(self.data, "U", SEED, 25, window=6, variety=3, runner=run)
         self.assertEqual([song["path"] for song in found["songs"]], NEAR)
         cmd, kwargs = run.calls[0]
         self.assertEqual(cmd[0], state.environment_python(self.data))
-        self.assertEqual(cmd[-8:], ["neighbours", SEED, "--count", "25", "--per-artist", "2", "--variety", "3"])
+        self.assertEqual(cmd[-8:], ["neighbours", SEED, "--count", "25", "--artist-window", "6", "--variety", "3"])
         self.assertEqual(kwargs["cwd"], client.ADDON_FOLDER)
         self.assertEqual(kwargs["timeout"], client.NEIGHBOURS_TIMEOUT)
         self.assertEqual(kwargs["creationflags"], client.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
@@ -226,23 +226,25 @@ class SoundEngineMixTest(KodiTestCase):
         self.addCleanup(patcher.stop)
 
     def test_mixes_come_from_the_sound_engine_with_the_seed_first(self):
-        kodi.settings["mix_variety"] = "4"
+        kodi.settings.update(mix_variety="4", mix_reject_size="6")
         self.assertEqual(main.fetch_mix(SEED, 20), [SEED] + NEAR)
-        data, userdata, seed, size, per_artist, variety = self.neighbours.call_args[0]
+        data, userdata, seed, size, window, variety = self.neighbours.call_args[0]
         self.assertEqual(data, os.path.join(main.get_profile_dir(), "soundprint"))
-        self.assertEqual((seed, size, per_artist, variety), (SEED, 20, 2, 4))
+        self.assertEqual((seed, size, window, variety), (SEED, 20, 6, 4))
 
-    def test_songs_per_artist_comes_from_the_settings(self):
-        kodi.settings["soundprint_per_artist"] = "0"
+    def test_the_artist_rule_is_musicips_reject_size_also_a_stations_own(self):
+        kodi.settings["mix_reject_size"] = "0"
         main.fetch_mix(SEED, 20)
-        self.assertEqual(self.neighbours.call_args[0][4], 0)
+        self.assertEqual(self.neighbours.call_args[0][4], 0)  # artists may repeat
+        main.fetch_mix(SEED, 20, {"variety": 3, "rejectsize": 6})  # a Radio station's parameters
+        self.assertEqual(self.neighbours.call_args[0][4:], (6, 3))
 
     def test_every_song_is_logged_with_its_similarity_artist_and_title(self):
         self.log_everything()
         main.fetch_mix(SEED, 20)
         log = kodi.log_text()
         self.assertIn("Sound engine mix request: seed", log)
-        self.assertIn("3 over the artist limit, 1 the same song again", log)
+        self.assertIn("3 for an artist played too recently, 1 the same song again", log)
         self.assertIn(f"1. {NEAR[0]} (similarity 0.900, A - T0)", log)
 
     def test_a_song_without_sound_print_is_an_empty_mix(self):
@@ -371,6 +373,38 @@ class SoundEngineAnalysisTickTest(MusicIPServerTestCase):
     def test_the_station_warning_names_the_sound_engine(self):
         service.musicip_outage({}, main, RuntimeError("x"))
         self.assertNotified("The sound engine can't make mixes right now")
+
+
+class StaleSettings:
+    """An xbmcaddon.Addon as Kodi gives it: with the settings as they were when it was made (F39)."""
+
+    def __init__(self, values):
+        self.values = dict(values)
+
+    def getSetting(self, key):
+        return self.values.get(key, "")
+
+    def getAddonInfo(self, key):
+        return kodi.addon_info.get(key, "")
+
+
+class SettingsChangeTest(KodiTestCase):
+    def test_the_service_reads_changed_settings_again(self):
+        kodi.settings["suggestion_engine"] = "0"
+        started_with = dict(kodi.settings)
+        logging = service.logs
+        for module in (service, main, logging):
+            patcher = mock.patch.object(module, "ADDON", StaleSettings(started_with))
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        kodi.settings["suggestion_engine"] = "1"  # chosen in the settings while Kodi runs
+        self.assertFalse(main.uses_sound_prints())  # the service's copy still has MusicIP
+        service.ServiceMonitor().onSettingsChanged()
+        self.assertTrue(main.uses_sound_prints())
+        for module in (service, main, logging):
+            self.assertNotIsInstance(module.ADDON, StaleSettings)
+        self.assertIn("Settings changed: the service reads them again. Mixes come from the sound engine "
+                      "(before: MusicIP).", kodi.log_text())
 
 
 if __name__ == "__main__":
