@@ -2744,7 +2744,7 @@ def insert_more_like_this_into_mix(seed: str, size: int, index: int, path: str, 
 
     target_count = get_more_like_this_target_size()
     checking = mix_assist_for_more_like_this() and \
-        mix_openness_index(get_saved_mix_metadata(target_cache_path, source_tracks)) != MIX_OPENNESS_OFF
+        not mix_checks_off(get_saved_mix_metadata(target_cache_path, source_tracks))
     request_size = mix_assist.MUSICIP_MAX_MIX if checking else get_playlist_size()
     submix_tracks = fetch_mix_with_defaults(path, request_size, progress=progress)
     existing = {
@@ -5129,13 +5129,13 @@ def describe_station_start(params: dict, favourite: dict | None, assisted: bool)
         return f"{station} | mix: {mix} | AI Mix Assist: off"
     settings = favourite_settings(favourite)
     source = {key: "favourite's own" if key in settings else "setting" for key in ("openness", "drift", "perspective")}
-    openness = max(0, min(4, station_setting_index(settings, "openness")))
+    openness = station_setting_index(settings, "openness")
     limit, borderline = get_station_strictness(settings)
     drift = max(0, min(2, station_setting_index(settings, "drift")))
     half_life = get_radio_drift_half_life(settings)
     return (f"{station} | mix: {mix} | AI Mix Assist: on, model {mix_assist_claude.DEFAULT_MODEL}, effort "
-            f"{mix_assist_claude.DEFAULT_EFFORT} | openness {MIX_OPENNESS_LABELS[openness]} ({source['openness']}; "
-            f"limit {limit}, borderline {'accepted' if borderline else 'rejected'}) | drift {RADIO_DRIFT_LABELS[drift]} "
+            f"{mix_assist_claude.DEFAULT_EFFORT} | Character {mix_openness_label(openness)} ({source['openness']}; "
+            f"limit {limit}) | Intent: borderline {'accepted' if borderline else 'rejected'} | drift {RADIO_DRIFT_LABELS[drift]} "
             f"({source['drift']}; {f'half-life {half_life} songs' if half_life else 'no drift'}) | perspective "
             f"{perspective_label(station_setting_index(settings, 'perspective'))} ({source['perspective']})")
 
@@ -5181,7 +5181,7 @@ def open_radio_station(seed: str, favourite: dict | None, progress) -> bool:
         "kind": "started", "ts": now, "seed": queue[0]["label"],
         "parameters": describe_mix_parameters(compact_mix_generation_parameters(params)),
         "assisted": assisted,
-        "openness": MIX_OPENNESS_LABELS[max(0, min(4, station_setting_index(favourite_settings(favourite), "openness")))],
+        "openness": mix_openness_label(station_setting_index(favourite_settings(favourite), "openness")),
         "drift": RADIO_DRIFT_LABELS[max(0, min(2, station_setting_index(favourite_settings(favourite), "drift")))],
         "perspective": perspective_label(station_setting_index(favourite_settings(favourite), "perspective")),
     }
@@ -5852,9 +5852,9 @@ def format_history_intent_edited(event: dict) -> list[str]:
 
 
 def format_history_assist_settings(event: dict) -> list[str]:
-    parts = [f"openness {event['openness']}"] if event.get("openness") else []
+    parts = [f"Character {event['openness']}"] if event.get("openness") else []
     if event.get("perspective"):
-        parts.append(f"the {str(event['perspective']).lower()} perspective")
+        parts.append(f"Intent {event['perspective']}")
     if event.get("intent"):
         parts.append(f"about \"{event['intent']}\"")
     who = "When you created the mix, you set AI Mix Assist to" if event.get("at_creation") else "You set AI Mix Assist to"
@@ -6509,19 +6509,18 @@ def mix_info_parts(cache_path: str) -> dict:
     # What it is about
     about: list[str] = []
     intent = section.get("listener_intent") or section.get("intent")
-    if intent or section.get("checked_ts") or "openness" in section:
+    if intent or section.get("checked_ts") or "openness" in section or "character" in section:
         if intent:
             about.append(str(intent))
             stated = str(section.get("intent_perspective") or mix_assist_checks.DEFAULT_PERSPECTIVE)
             about.append("(in your words)" if section.get("listener_intent") else
                          "(as the AI put it)" if stated == mix_assist_checks.DEFAULT_PERSPECTIVE else
                          f"(as the AI put it, from the {stated} perspective)")
-        index = mix_openness_index(meta)
-        state = (f"off for this mix" if index == MIX_OPENNESS_OFF else
-                 f"openness {mix_openness_label(index)}" + (" (chosen for this mix)" if "openness" in section else ""))
-        if index != MIX_OPENNESS_OFF and mix_perspective_index(meta) != 0:
-            state += f", {perspective_label(mix_perspective_index(meta)).lower()} perspective" + (
-                " (chosen for this mix)" if "perspective" in section else "")
+        index, perspective = mix_openness_index(meta), mix_perspective_index(meta)
+        own = "character" in section or "openness" in section
+        state = ("off for this mix" if mix_checks_off(meta) else
+                 f"Character {mix_openness_label(index)}" + (" (chosen for this mix)" if own else "")
+                 + f", Intent {perspective_label(perspective)}" + (" (chosen for this mix)" if "perspective" in section else ""))
         checked = f", last checked {format_sidecar_ts(section.get('checked_ts'))}" if section.get("checked_ts") else ""
         about.append(f"AI Mix Assist: {state}{checked}")
     info["about"] = about
@@ -7288,11 +7287,13 @@ def open_settings() -> None:
 # AI Mix Assist (docs/concept_ai_mix_assist.md): tidying up saved mixes on demand.
 # ---------------------------------------------------------------------------
 
-# The settings "Mix openness" and "Station openness" share one scale: Focused, Close, Balanced, Open, Adventurous.
-# Internally a level is a strictness:
-# Each level: the limit on a song's misfit, as a multiple of what MusicIP typically offers (1.2 = the pilot's
-# calibration), and whether new songs the AI calls "borderline" are accepted too.
-STRICTNESS_LEVELS = ((1.0, False), (1.1, False), (1.2, False), (1.35, False), (1.5, True))  # default: Balanced
+# The checks after the source: Character (the profile against the seed's) and Intent (the AI's judgement from a
+# listening perspective), each with an Off (CHECK_OFF), for mixes and Radio separately; a mix or a favourite
+# station can have its own. Character's levels, Focused ... Adventurous: the limit on a song's misfit, as a multiple
+# of the seed's typical one (1.2 = the pilot's calibration). Intent's "Accept borderline": songs the AI calls
+# borderline pass too (until 2026-10-29 only the level Adventurous did that).
+CHARACTER_LIMITS = (1.0, 1.1, 1.2, 1.35, 1.5)  # default: Balanced
+CHECK_OFF = -1
 MIX_ASSIST_SECTION = "mix_assist"
 MIX_ASSIST_MESSAGES = {
     mix_assist_claude.NOT_FOUND: "AI Mix Assist needs the Claude Code CLI. Install it, or set its path in the settings.",
@@ -7303,20 +7304,42 @@ MIX_ASSIST_MESSAGES = {
 }
 
 
-def strictness_level(index: int) -> tuple[float, bool]:
-    """(limit, accept borderline) of a level of the strictness scale."""
-    return STRICTNESS_LEVELS[max(0, min(len(STRICTNESS_LEVELS) - 1, index))]
+def character_limit(index) -> float | None:
+    """The limit of a Character level; None when Character is off."""
+    try:
+        index = int(index)
+    except (TypeError, ValueError):
+        index = 2
+    return None if index == CHECK_OFF else CHARACTER_LIMITS[max(0, min(len(CHARACTER_LIMITS) - 1, index))]
 
 
-def get_mix_assist_strictness() -> tuple[float, bool]:
-    """Setting "Mix openness": tidy-ups, new mixes and "More like this"."""
-    return strictness_level(get_setting_int("mix_assist_mix_strictness", 2))
+def mix_accepts_borderline() -> bool:
+    """Mixing > Intent > "Accept borderline"."""
+    return get_setting_bool("mix_intent_borderline", False)
 
 
-def get_station_strictness(settings: dict | None = None) -> tuple[float, bool]:
-    """Setting "Station openness": Radio (its first songs and every refill). A favourite station's own settings
-    (state["settings"]) take its place."""
-    return strictness_level(station_setting_index(settings, "openness"))
+def station_accepts_borderline(settings: dict | None = None) -> bool:
+    """Radio > Intent > "Accept borderline" (a favourite's own, if it has one)."""
+    if isinstance(settings, dict) and isinstance(settings.get("borderline"), bool):
+        return settings["borderline"]
+    return get_setting_bool("radio_intent_borderline", False)
+
+
+def get_mix_assist_strictness() -> tuple[float | None, bool]:
+    """Mixing's Character limit (None: off) and whether Intent accepts borderline songs."""
+    return character_limit(get_setting_int("mix_assist_mix_strictness", 2)), mix_accepts_borderline()
+
+
+def get_station_strictness(settings: dict | None = None) -> tuple[float | None, bool]:
+    """Radio's Character limit (None: off) and whether Intent accepts borderline songs, for the first songs and
+    every refill. A favourite station's own settings (state["settings"]) take their place."""
+    return character_limit(station_setting_index(settings, "openness")), station_accepts_borderline(settings)
+
+
+def station_checks_on(settings: dict | None = None) -> bool:
+    """Whether Character or Intent is on for a station."""
+    return not (station_setting_index(settings, "openness") == CHECK_OFF
+                and station_setting_index(settings, "perspective") == CHECK_OFF)
 
 
 def station_setting_index(settings: dict | None, key: str) -> int:
@@ -7332,6 +7355,47 @@ def station_setting_index(settings: dict | None, key: str) -> int:
 
 def mix_assist_cache_path() -> str:
     return os.path.join(get_profile_dir(), "mixassist", "ratings.db")
+
+
+# Character's fixed scale for a seed (F40): its nearest songs by sound that have a rating, so a loose candidate
+# list is measured as a cohesive one would be (mixassist.assist.character_scale). Kept per seed while Kodi runs.
+CHARACTER_SCALE_SONGS = 120
+CHARACTER_SCALE_UNITS = 35
+CHARACTER_SCALES: dict[str, list] = {}
+
+
+def character_reference(seed: str, store, recorded: dict | None = None) -> list[dict]:
+    """The ratings of the seed's nearest songs by sound (at most CHARACTER_SCALE_UNITS, an album once, not the
+    seed's own); [] when the sound engine can't say."""
+    key = normalize_track_identity(seed).lower()
+    if key in CHARACTER_SCALES:
+        return CHARACTER_SCALES[key]
+    started = time.time()
+    try:
+        answer = soundprint.neighbours(soundprint_data(), kodi_userdata(), seed, CHARACTER_SCALE_SONGS, 0, 0)
+        paths = [song["path"] for song in answer["songs"]]
+        units = mix_assist_library.resolve([seed] + paths, execute_jsonrpc, recorded or {})
+    except Exception as exc:
+        log_ai(f"Character's fixed scale for {seed!r}: none ({exc}); the tracks' own scale is used.")
+        return []
+    seen, entries = {units[0]["key"]}, []
+    for unit in units[1:]:
+        if unit["key"] in seen:
+            continue
+        seen.add(unit["key"])
+        entry = store.get(unit["key"])
+        if entry:
+            entries.append(entry)
+            if len(entries) >= CHARACTER_SCALE_UNITS:
+                break
+    log_ai(f"Character's fixed scale for {seed!r}: {len(entries)} rated unit(s) among its nearest {len(paths)} songs "
+           f"by sound, in {time.time() - started:.1f} s"
+           + ("." if len(entries) >= mix_assist.SCALE_MIN_ENTRIES
+              else f"; fewer than {mix_assist.SCALE_MIN_ENTRIES}: the tracks' own scale is used."))
+    if len(CHARACTER_SCALES) > 200:
+        CHARACTER_SCALES.clear()
+    CHARACTER_SCALES[key] = entries
+    return entries
 
 
 def mix_assist_ask():
@@ -7379,19 +7443,21 @@ def compute_mix_assist_plan(tracks: list[str], meta: dict, progress=None, find_r
     recorded = mix_assist_track_metadata(meta)
     ask = mix_assist_ask()
     store = mix_assist_cache.RatingCache(mix_assist_cache_path())
+    strictness, borderline = mix_strictness_for(meta)
     try:
         return mix_assist.tidy_up(
             tracks, store, ask,
             resolve=lambda paths: mix_assist_library.resolve(paths, execute_jsonrpc, recorded),
             fetch_mix=fetch_mix,
             intent=str(section.get("listener_intent") or ""),
-            strictness=mix_strictness_for(meta)[0],
+            strictness=strictness,
             artist_window=mix_reject_size_for(meta),
             model=mix_assist_claude.DEFAULT_MODEL,
             progress=progress,
             find_replacements=find_replacements,
-            accept_borderline=mix_strictness_for(meta)[1],
+            accept_borderline=borderline,
             perspective=perspective_key(mix_perspective_index(meta)),
+            scale_entries=character_reference(tracks[0], store, recorded) if strictness is not None and tracks else (),
         )
     finally:
         store.close()
@@ -7457,6 +7523,8 @@ def run_mix_assist_on_saved_mix(cache_path: str) -> dict:
     if len(tracks) < 2:
         raise MusicIPError("This mix is too short to tidy up.")
     meta = get_saved_mix_metadata(cache_path, tracks)
+    if mix_checks_off(meta):
+        raise MusicIPError("Character and Intent are both off for this mix: there is nothing to check.")
     with BackgroundProgress("AI Mix Assist") as progress:
         plan = compute_mix_assist_plan(tracks, meta, progress=mix_assist_step_reporter(progress, MIX_ASSIST_STEPS))
     record_mix_assist_result(cache_path, tracks, plan, automatic=False)
@@ -7550,17 +7618,20 @@ def check_more_like_this(cache_path: str, tracks: list[str], selected: int, cand
     try:
         ask = mix_assist_ask()
         store = mix_assist_cache.RatingCache(mix_assist_cache_path())
+        strictness, borderline = mix_strictness_for(meta)
+        recorded = mix_assist_track_metadata(meta)
         try:
             return mix_assist.choose_additions(
                 tracks[selected], candidates, count, store, ask,
-                resolve=lambda paths: mix_assist_library.resolve(paths, execute_jsonrpc, mix_assist_track_metadata(meta)),
+                resolve=lambda paths: mix_assist_library.resolve(paths, execute_jsonrpc, recorded),
                 before=tracks[max(0, selected + 1 - window):selected + 1], after=tracks[selected + 1:selected + 1 + window],
-                strictness=mix_strictness_for(meta)[0],
+                strictness=strictness,
                 artist_window=window,
                 model=mix_assist_claude.DEFAULT_MODEL,
                 progress=mix_assist_step_reporter(progress, MORE_LIKE_THIS_STEPS, start=60),
-                accept_borderline=mix_strictness_for(meta)[1],
+                accept_borderline=borderline,
                 perspective=perspective_key(mix_perspective_index(meta)),
+                scale_entries=character_reference(tracks[selected], store, recorded) if strictness is not None else (),
             )
         finally:
             store.close()
@@ -7571,7 +7642,7 @@ def check_more_like_this(cache_path: str, tracks: list[str], selected: int, cand
 
 # --- AI Mix Assist per mix: openness and description, chosen in the generate dialog or later -------------
 
-MIX_OPENNESS_OFF = -1
+MIX_OPENNESS_OFF = CHECK_OFF
 MIX_OPENNESS_LABELS = ("Focused", "Close", "Balanced", "Open", "Adventurous")
 MIX_ASSIST_DIALOG_FIRST = 4  # the generate dialog's lines for AI Mix Assist follow the mix's four lines
 PENDING_MIX_ASSIST_CHOICES: dict[str, dict] = {}  # mix_cache_key -> choices made in the dialog, until the mix is stored
@@ -7584,17 +7655,28 @@ def mix_openness_label(index: int) -> str:
 
 
 def default_mix_openness() -> int:
-    return max(0, min(len(MIX_OPENNESS_LABELS) - 1, get_setting_int("mix_assist_mix_strictness", 2)))
+    """Mixing's Character level (CHECK_OFF: off)."""
+    index = get_setting_int("mix_assist_mix_strictness", 2)
+    return index if index == CHECK_OFF else max(0, min(len(MIX_OPENNESS_LABELS) - 1, index))
 
 
 def mix_openness_index(meta: dict) -> int:
-    """This mix's openness: its own choice, else the "Mix openness" setting. MIX_OPENNESS_OFF: no automatic checks."""
+    """This mix's Character level: its own choice ("character"; older mixes kept it as "openness", whose Off switched
+    every check off), else the setting. CHECK_OFF: Character is off."""
     section = get_mix_assist_section(meta)
-    try:
-        index = int(section["openness"])
-    except (KeyError, TypeError, ValueError):
-        return default_mix_openness()
-    return index if index == MIX_OPENNESS_OFF else max(0, min(len(MIX_OPENNESS_LABELS) - 1, index))
+    for key in ("character", "openness"):
+        if key in section:
+            try:
+                index = int(section[key])
+            except (TypeError, ValueError):
+                break
+            return index if index == CHECK_OFF else max(0, min(len(MIX_OPENNESS_LABELS) - 1, index))
+    return default_mix_openness()
+
+
+def mix_checks_off(meta: dict) -> bool:
+    """Whether Character and Intent are both off for a mix."""
+    return mix_openness_index(meta) == CHECK_OFF and mix_perspective_index(meta) == CHECK_OFF
 
 
 # Listening perspectives: from which point of view the AI states what a mix or station is about and judges its
@@ -7606,19 +7688,23 @@ PERSPECTIVE_HINTS = ("intention and qualities", "how it is made", "what the arti
 
 
 def perspective_index(index) -> int:
+    """A perspective's number, or CHECK_OFF (Intent is off)."""
     try:
-        return max(0, min(len(PERSPECTIVE_LABELS) - 1, int(index)))
+        index = int(index)
     except (TypeError, ValueError):
         return 0
+    return CHECK_OFF if index == CHECK_OFF else max(0, min(len(PERSPECTIVE_LABELS) - 1, index))
 
 
 def perspective_label(index) -> str:
-    return PERSPECTIVE_LABELS[perspective_index(index)]
+    index = perspective_index(index)
+    return "Off" if index == CHECK_OFF else PERSPECTIVE_LABELS[index]
 
 
-def perspective_key(index) -> str:
-    """mixassist's name of a perspective ("mixed", "technical", ...)."""
-    return mix_assist_checks.PERSPECTIVES[perspective_index(index)]
+def perspective_key(index) -> str | None:
+    """mixassist's name of a perspective ("mixed", "technical", ...); None when Intent is off."""
+    index = perspective_index(index)
+    return None if index == CHECK_OFF else mix_assist_checks.PERSPECTIVES[index]
 
 
 def default_mix_perspective() -> int:
@@ -7626,33 +7712,40 @@ def default_mix_perspective() -> int:
 
 
 def mix_perspective_index(meta: dict) -> int:
-    """This mix's perspective: its own choice, else the "Mix perspective" setting."""
+    """This mix's Intent: its own perspective (CHECK_OFF: off), else the setting. An older mix whose openness was Off
+    has every check off."""
     section = get_mix_assist_section(meta)
-    return perspective_index(section["perspective"]) if "perspective" in section else default_mix_perspective()
+    if "perspective" in section:
+        return perspective_index(section["perspective"])
+    if "character" not in section and str(section.get("openness")) == str(CHECK_OFF):
+        return CHECK_OFF
+    return default_mix_perspective()
 
 
 def select_perspective(heading: str, current: int, default: int) -> int | None:
-    """One of the perspectives; None when cancelled."""
-    labels = [f"{label}: {hint}" + (" (default)" if index == default else "")
-              for index, (label, hint) in enumerate(zip(PERSPECTIVE_LABELS, PERSPECTIVE_HINTS))]
-    choice = xbmcgui.Dialog().select(heading, labels, preselect=perspective_index(current))
+    """Off or one of the perspectives; None when cancelled."""
+    options = [CHECK_OFF] + list(range(len(PERSPECTIVE_LABELS)))
+    labels = ["Off: no AI judgement" + (" (default)" if default == CHECK_OFF else "")] + [
+        f"{label}: {hint}" + (" (default)" if index == default else "")
+        for index, (label, hint) in enumerate(zip(PERSPECTIVE_LABELS, PERSPECTIVE_HINTS))]
+    current = perspective_index(current)
+    choice = xbmcgui.Dialog().select(heading, labels, preselect=options.index(current) if current in options else 1)
     if choice is None or choice < 0 or choice >= len(labels):
         return None
-    return choice
+    return options[choice]
 
 
-def mix_strictness_for(meta: dict) -> tuple[float, bool]:
-    """(limit, accept borderline) for a mix; when it is off, a tidy-up you start uses the default level."""
-    index = mix_openness_index(meta)
-    return strictness_level(default_mix_openness() if index == MIX_OPENNESS_OFF else index)
+def mix_strictness_for(meta: dict) -> tuple[float | None, bool]:
+    """A mix's Character limit (None: off) and whether Intent accepts borderline songs."""
+    return character_limit(mix_openness_index(meta)), mix_accepts_borderline()
 
 
 def mix_assist_dialog_lines(params: dict) -> list[str]:
     openness = int(params.get("assist_openness", default_mix_openness()))
     intent = str(params.get("assist_intent") or "").strip()
     perspective = perspective_index(params.get("assist_perspective", default_mix_perspective()))
-    return [f"AI Mix Assist: {mix_openness_label(openness)}",
-            f"Perspective: {perspective_label(perspective)}",
+    return [f"Character: {mix_openness_label(openness)}",
+            f"Intent: {perspective_label(perspective)}",
             plain(f"What this mix is about: {shorten(intent, 50) if intent else '<worked out by the AI>'}")]
 
 
@@ -7664,12 +7757,12 @@ def edit_mix_assist_dialog_choice(params: dict, line: int) -> dict:
     updated = dict(params)
     if line == 0:
         current = int(updated.get("assist_openness", default_mix_openness()))
-        choice = select_mix_openness("AI Mix Assist for this mix", current)
+        choice = select_mix_openness("Character of this mix", current)
         if choice is not None:
             updated["assist_openness"] = choice
     elif line == 1:
         current = perspective_index(updated.get("assist_perspective", default_mix_perspective()))
-        choice = select_perspective("Perspective of this mix", current, default_mix_perspective())
+        choice = select_perspective("Intent of this mix", current, default_mix_perspective())
         if choice is not None:
             updated["assist_perspective"] = choice
     else:
@@ -7680,9 +7773,9 @@ def edit_mix_assist_dialog_choice(params: dict, line: int) -> dict:
 
 
 def select_mix_openness(heading: str, current: int) -> int | None:
-    """Off or one of the openness levels; None when cancelled."""
-    options = [MIX_OPENNESS_OFF] + list(range(len(MIX_OPENNESS_LABELS)))
-    labels = ["Off: no automatic checks"] + [
+    """Off or one of the Character levels; None when cancelled."""
+    options = [CHECK_OFF] + list(range(len(MIX_OPENNESS_LABELS)))
+    labels = ["Off: the profile isn't compared" + (" (default)" if default_mix_openness() == CHECK_OFF else "")] + [
         label + (" (default)" if index == default_mix_openness() else "") for index, label in enumerate(MIX_OPENNESS_LABELS)]
     choice = xbmcgui.Dialog().select(heading, labels, preselect=options.index(current) if current in options else 0)
     if choice is None or choice < 0:
@@ -7695,7 +7788,7 @@ def remember_mix_assist_choices(key: str, params: dict) -> None:
     key: mix_cache_key() of the seed and size."""
     choices = {}
     if "assist_openness" in params and int(params["assist_openness"]) != default_mix_openness():
-        choices["openness"] = int(params["assist_openness"])
+        choices["character"] = int(params["assist_openness"])
     if "assist_perspective" in params and perspective_index(params["assist_perspective"]) != default_mix_perspective():
         choices["perspective"] = perspective_index(params["assist_perspective"])
     if str(params.get("assist_intent") or "").strip():
@@ -7717,7 +7810,7 @@ def apply_mix_assist_choices(cache_path: str, tracks: list[str]) -> None:
     meta[MIX_ASSIST_SECTION] = section
     save_json_file(mix_meta_path_from_cache_path(cache_path), meta)
     record_mix_history(cache_path, "assist_settings", at_creation=True,
-                       openness=mix_openness_label(choices["openness"]) if "openness" in choices else "",
+                       openness=mix_openness_label(choices["character"]) if "character" in choices else "",
                        perspective=perspective_label(choices["perspective"]) if "perspective" in choices else "",
                        intent=choices.get("listener_intent", ""))
 
@@ -7729,8 +7822,8 @@ def choose_from_mix_assist_menu(cache_path: str) -> str:
     intent = str(section.get("listener_intent") or section.get("intent") or "")
     entries = [
         (f"What this mix is about: {shorten(intent, 50) if intent else '<not worked out yet>'}", "mix_assist_edit_intent"),
-        (f"Openness: {mix_openness_label(mix_openness_index(meta))}", "mix_assist_openness"),
-        (f"Perspective: {perspective_label(mix_perspective_index(meta))}", "mix_assist_perspective"),
+        (f"Character: {mix_openness_label(mix_openness_index(meta))}", "mix_assist_openness"),
+        (f"Intent: {perspective_label(mix_perspective_index(meta))}", "mix_assist_perspective"),
     ] + ([(f"Name: {mix_name(meta) or '<given at the first check>'}", "mix_assist_rename")]
          if mix_naming_enabled() and is_mix_saved(meta) else []) + [
         ("Run AI Mix Assist", "mix_assist_tidy_up"),
@@ -7746,11 +7839,14 @@ def choose_from_mix_assist_menu(cache_path: str) -> str:
 def choose_mix_openness(cache_path: str) -> bool:
     meta = get_saved_mix_metadata(cache_path, load_mix_by_cache_path(cache_path))
     current = mix_openness_index(meta)
-    choice = select_mix_openness("Openness of this mix", current)
+    choice = select_mix_openness("Character of this mix", current)
     if choice is None or choice == current:
         return False
     section = get_mix_assist_section(meta)
-    section["openness"] = choice
+    if "perspective" not in section and "character" not in section and str(section.get("openness")) == str(CHECK_OFF):
+        section["perspective"] = CHECK_OFF  # an older mix's Off was every check: Intent stays off
+    section.pop("openness", None)
+    section["character"] = choice
     meta[MIX_ASSIST_SECTION] = section
     save_json_file(mix_meta_path_from_cache_path(cache_path), meta)
     record_mix_history(cache_path, "assist_settings", openness=mix_openness_label(choice))
@@ -7760,7 +7856,7 @@ def choose_mix_openness(cache_path: str) -> bool:
 def choose_mix_perspective(cache_path: str) -> bool:
     meta = get_saved_mix_metadata(cache_path, load_mix_by_cache_path(cache_path))
     current = mix_perspective_index(meta)
-    choice = select_perspective("Perspective of this mix", current, default_mix_perspective())
+    choice = select_perspective("Intent of this mix", current, default_mix_perspective())
     if choice is None or choice == current:
         return False
     section = get_mix_assist_section(meta)
@@ -7825,8 +7921,8 @@ def queue_mix_assist_for_new_mix(cache_path: str, tracks: list[str]) -> None:
     apply_mix_assist_choices(cache_path, tracks)
     if not mix_assist_for_new_mixes() or len(tracks) < 2:
         return
-    if mix_openness_index(get_saved_mix_metadata(cache_path, tracks)) == MIX_OPENNESS_OFF:
-        log_ai(f"AI Mix Assist: off for {cache_path!r}; not queued.")
+    if mix_checks_off(get_saved_mix_metadata(cache_path, tracks)):
+        log_ai(f"AI Mix Assist: Character and Intent are off for {cache_path!r}; not queued.")
         return
     try:
         queue = [entry for entry in load_json_file(mix_assist_queue_path()).get("entries", [])
@@ -7949,8 +8045,9 @@ RADIO_DRIFT_HALF_LIFE = (0, 60, 20)  # stay close to the picked song, drift slow
 
 
 def mix_assist_for_radio() -> bool:
-    """Setting "Keep Radio on track", and the Claude CLI is there (without it, Radio works as before)."""
-    return get_setting_bool("mix_assist_auto_radio", True) and mix_assist_available()
+    """Setting "Keep Radio on track", Character or Intent on, and the Claude CLI is there (without it, Radio works as
+    before)."""
+    return get_setting_bool("mix_assist_auto_radio", True) and station_checks_on() and mix_assist_available()
 
 
 MIX_ASSIST_AVAILABLE = {"checked": 0.0, "found": False}
@@ -8000,7 +8097,8 @@ def radio_mix_parameters(size: int, settings: dict | None = None) -> dict:
 
 
 def radio_check_batches(settings: dict | None = None) -> int:
-    return RADIO_CHECK_BATCHES[max(0, min(len(RADIO_CHECK_BATCHES) - 1, station_setting_index(settings, "openness")))]
+    index = station_setting_index(settings, "openness")
+    return RADIO_CHECK_BATCHES[2 if index == CHECK_OFF else max(0, min(len(RADIO_CHECK_BATCHES) - 1, index))]
 
 
 def radio_more_candidates(seeds: list[str], seen, settings: dict | None = None, picked: str = ""):
@@ -8067,8 +8165,9 @@ def check_radio_refill(reference_song: str, candidates: list[str], count: int, r
         perspective = perspective_key(station_setting_index(settings, "perspective"))
         profile = "the station's drifting profile" if reference else "the song's own profile"
         log_radio(f"Radio mode: checking {len(candidates)} candidate(s) for {reference_song!r}: {count} wanted, "
-                  f"strictness {strictness}{', borderline accepted' if borderline else ''}, {perspective} "
-                  f"perspective, at most "
+                  f"Character {'off' if strictness is None else f'within {strictness}'}, Intent "
+                  f"{'off' if perspective is None else perspective + (' (borderline accepted)' if borderline else '')}"
+                  f", at most "
                   f"{radio_check_batches(settings)} batch(es), drift half-life {get_radio_drift_half_life(settings)} "
                   f"song(s), measured against {profile}, "
                   + (f"no artist repeat within {window} songs of the station's queue." if window
@@ -8077,6 +8176,7 @@ def check_radio_refill(reference_song: str, candidates: list[str], count: int, r
             reference_song, candidates, count, store, mix_assist_ask(),
             resolve=lambda paths: mix_assist_library.resolve(paths, execute_jsonrpc, {}),
             before=neighbours[len(neighbours) - window:] if window else [],
+            scale_entries=character_reference(reference_song, store) if strictness is not None else (),
             strictness=strictness,
             artist_window=window,
             model=mix_assist_claude.DEFAULT_MODEL,
@@ -8408,7 +8508,7 @@ def favourite_settings(favourite: dict | None) -> dict:
 
 def favourite_setting_labels(favourite: dict) -> tuple[str, str]:
     settings = favourite_settings(favourite)
-    openness = MIX_OPENNESS_LABELS[max(0, min(4, station_setting_index(settings, "openness")))]
+    openness = mix_openness_label(station_setting_index(settings, "openness"))
     drift = RADIO_DRIFT_LABELS[max(0, min(2, station_setting_index(settings, "drift")))]
     return openness, drift
 
@@ -8429,10 +8529,12 @@ def change_favourite_setting(favourite_id: str, key: str) -> None:
     heading = f"{key.capitalize()} of {plain(favourite_title(station))}"
     if key == "perspective":
         choice = select_perspective(heading, current, perspective_index(get_setting_int("mix_assist_station_perspective", 0)))
+    elif key == "openness":
+        choice = select_mix_openness(f"Character of {plain(favourite_title(station))}", current)
     else:
-        labels = MIX_OPENNESS_LABELS if key == "openness" else RADIO_DRIFT_LABELS
-        choice = xbmcgui.Dialog().select(heading, list(labels), preselect=current)
-    if choice is None or choice < 0 or choice == current:
+        choice = xbmcgui.Dialog().select(heading, list(RADIO_DRIFT_LABELS), preselect=current)
+        choice = None if choice is None or choice < 0 else choice
+    if choice is None or choice == current:
         return
     station[key] = choice
     save_radio_favourites(stations)

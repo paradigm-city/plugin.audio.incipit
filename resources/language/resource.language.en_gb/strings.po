@@ -68,10 +68,6 @@ msgctxt "#30318"
 msgid "Replaces missing files in saved mixes on its own when the library has a safe match (the same song, moved or re-tagged). Uncertain cases are left for \"Auto-repair this mix\" in the mix's context menu."
 msgstr ""
 
-msgctxt "#30400"
-msgid "AI Mix Assist"
-msgstr ""
-
 msgctxt "#30402"
 msgid "Keep new mixes on track"
 msgstr ""
@@ -89,11 +85,11 @@ msgid "Before \"More like this\" inserts tracks, AI Mix Assist checks the sound 
 msgstr ""
 
 msgctxt "#30406"
-msgid "Mix openness"
+msgid "Tolerance"
 msgstr ""
 
 msgctxt "#30407"
-msgid "How much variety a mix welcomes when AI Mix Assist checks a new mix, tidies one up or adds tracks with \"More like this\". Focused stays with the heart of the mix's style; Adventurous welcomes wide variation, including tracks the AI calls borderline. Balanced is the tested default."
+msgid "How far a song's profile (energy, exploration, mood, making, danceability, production, form and the sounding year, rated by the AI) may be from the seed's. Focused stays close; Adventurous lets in wide differences. The limit is measured on a fixed scale for each seed, from its nearest songs by sound. Off: the profile isn't compared. A mix can have its own, in its \"AI Mix Assist...\" menu."
 msgstr ""
 
 msgctxt "#30408"
@@ -117,11 +113,11 @@ msgid "Adventurous"
 msgstr ""
 
 msgctxt "#30413"
-msgid "Mix perspective"
+msgid "Perspective"
 msgstr ""
 
 msgctxt "#30414"
-msgid "From which point of view AI Mix Assist works out what a mix is about and judges its tracks. Mixed: the music's intention and its qualities together, the tested default. Technical: how it is made (harmony, rhythm, form, musicianship), as a musician hears it. Emotional: the emotion the artist sets out to express, and how seriously it is meant. Cultural: where it comes from (scene, era, tradition). Functional: what it is for (a party, a drive, focus, falling asleep). Lyrical: what the words are about; for instrumental music, the story it suggests. A mix can have its own, in its \"AI Mix Assist...\" menu."
+msgid "From which point of view the AI works out what a mix is about and judges its tracks. Mixed: the music's intention and its qualities together, the tested default. Technical: how it is made (harmony, rhythm, form, musicianship), as a musician hears it. Emotional: the emotion the artist sets out to express, and how seriously it is meant. Cultural: where it comes from (scene, era, tradition). Functional: what it is for (a party, a drive, focus, falling asleep). Lyrical: what the words are about; for instrumental music, the story it suggests. Off: no AI judgement. A mix can have its own, in its \"AI Mix Assist...\" menu."
 msgstr ""
 
 msgctxt "#30415"
@@ -184,12 +180,36 @@ msgctxt "#30429"
 msgid "Deletes the statistics counted so far (after asking). Statistics are kept for a year."
 msgstr ""
 
-msgctxt "#30600"
-msgid "Radio"
+msgctxt "#30431"
+msgid "Checks"
 msgstr ""
 
-msgctxt "#30601"
-msgid "AI Mix Assist"
+msgctxt "#30432"
+msgid "Character"
+msgstr ""
+
+msgctxt "#30433"
+msgid "Intent"
+msgstr ""
+
+msgctxt "#30434"
+msgid "Accept borderline"
+msgstr ""
+
+msgctxt "#30435"
+msgid "Also take songs the AI calls borderline: they share part of what the seed is about, not all of it. Off: only songs the AI says fit."
+msgstr ""
+
+msgctxt "#30436"
+msgid "Also take songs the AI calls borderline: they share part of what the station is about, not all of it, for bolder steps. Off: only songs the AI says fit."
+msgstr ""
+
+msgctxt "#30437"
+msgid "Off"
+msgstr ""
+
+msgctxt "#30600"
+msgid "Radio"
 msgstr ""
 
 msgctxt "#30602"
@@ -221,11 +241,11 @@ msgid "Wander freely"
 msgstr ""
 
 msgctxt "#30609"
-msgid "Station openness"
+msgid "Tolerance"
 msgstr ""
 
 msgctxt "#30610"
-msgid "How much each new song on the radio may surprise you. Focused keeps every song close to the one before; Adventurous welcomes bold steps, including songs the AI calls borderline. Same scale as Mix openness, set separately."
+msgid "How far a song's profile (energy, exploration, mood, making, danceability, production, form and the sounding year, rated by the AI) may be from the seed's. Focused stays close; Adventurous lets in wide differences. The limit is measured on a fixed scale for each seed, from its nearest songs by sound. Off: the profile isn't compared. A favourite station can have its own."
 msgstr ""
 
 msgctxt "#30611"
@@ -249,11 +269,11 @@ msgid "Adventurous"
 msgstr ""
 
 msgctxt "#30616"
-msgid "Station perspective"
+msgid "Perspective"
 msgstr ""
 
 msgctxt "#30617"
-msgid "From which point of view AI Mix Assist works out what a station is about and chooses its songs. Mixed: the music's intention and its qualities together, the tested default. Technical: how it is made (harmony, rhythm, form, musicianship), as a musician hears it. Emotional: the emotion the artist sets out to express, and how seriously it is meant. Cultural: where it comes from (scene, era, tradition). Functional: what it is for (a party, a drive, focus, falling asleep). Lyrical: what the words are about; for instrumental music, the story it suggests. A favourite station can have its own."
+msgid "From which point of view the AI works out what a station is about and chooses its songs. Mixed: the music's intention and its qualities together, the tested default. Technical: how it is made (harmony, rhythm, form, musicianship), as a musician hears it. Emotional: the emotion the artist sets out to express, and how seriously it is meant. Cultural: where it comes from (scene, era, tradition). Functional: what it is for (a party, a drive, focus, falling asleep). Lyrical: what the words are about; for instrumental music, the story it suggests. Off: no AI judgement. A favourite station can have its own."
 msgstr ""
 
 msgctxt "#30618"

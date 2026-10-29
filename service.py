@@ -2901,18 +2901,28 @@ RADIO_SETTINGS_FROM = {"radio_variety": "mix_variety", "radio_reject_size": "mix
 RADIO_SETTINGS_MIGRATED_MARKER = "radio_settings_migrated"
 
 
+def stored_settings() -> dict:
+    """The add-on's settings as Kodi stored them: {setting: (value, whether it is Kodi's default)}."""
+    try:
+        root = ElementTree.parse(os.path.join(get_profile_dir(), "settings.xml")).getroot()
+    except (OSError, ElementTree.ParseError):
+        return {}
+    return {node.get("id"): (node.text or "", node.get("default") == "true") for node in root.iter("setting")}
+
+
+def mark_migrated(marker: str) -> None:
+    try:
+        with open(os.path.join(get_profile_dir(), marker), "w", encoding="utf-8") as handle:
+            handle.write("1\n")
+    except OSError:
+        pass
+
+
 def migrate_radio_settings() -> dict:
     """Once: Radio's own settings from the shared ones they replace. Returns {setting: value} copied."""
-    profile = get_profile_dir()
-    marker = os.path.join(profile, RADIO_SETTINGS_MIGRATED_MARKER)
-    if os.path.exists(marker):
+    if os.path.exists(os.path.join(get_profile_dir(), RADIO_SETTINGS_MIGRATED_MARKER)):
         return {}
-    stored = {}
-    try:
-        root = ElementTree.parse(os.path.join(profile, "settings.xml")).getroot()
-        stored = {node.get("id"): (node.text or "", node.get("default") == "true") for node in root.iter("setting")}
-    except (OSError, ElementTree.ParseError):
-        pass
+    stored = stored_settings()
     copied = {}
     for setting, source in RADIO_SETTINGS_FROM.items():
         value, is_default = stored.get(source, ("", True))
@@ -2921,16 +2931,37 @@ def migrate_radio_settings() -> dict:
             continue  # the shared value was never changed, or Radio has its own already
         ADDON.setSetting(setting, value)
         copied[setting] = value
-    try:
-        os.makedirs(profile, exist_ok=True)
-        with open(marker, "w", encoding="utf-8") as handle:
-            handle.write("1\n")
-    except OSError:
-        pass
+    mark_migrated(RADIO_SETTINGS_MIGRATED_MARKER)
     log_general("Radio's own settings: " + (", ".join(f"{key} = {value!r} (from {RADIO_SETTINGS_FROM[key]})"
                                                       for key, value in copied.items()) or "nothing to copy")
                 + ".", always=bool(copied))
     return copied
+
+
+# "Accept borderline" (Intent), until 2026-10-29 part of the openness level Adventurous: on once where that level
+# was chosen, so such mixes and stations go on taking the songs the AI calls borderline.
+BORDERLINE_FROM = {"mix_intent_borderline": "mix_assist_mix_strictness",
+                   "radio_intent_borderline": "mix_assist_station_strictness"}
+BORDERLINE_MIGRATED_MARKER = "intent_borderline_migrated"
+ADVENTUROUS = "4"
+
+
+def migrate_intent_borderline() -> dict:
+    """Once: "Accept borderline" on where Character's level was Adventurous. Returns {setting: "true"} set."""
+    if os.path.exists(os.path.join(get_profile_dir(), BORDERLINE_MIGRATED_MARKER)):
+        return {}
+    stored = stored_settings()
+    turned_on = {}
+    for setting, source in BORDERLINE_FROM.items():
+        value, is_default = stored.get(source, ("", True))
+        if not is_default and value.strip() == ADVENTUROUS:
+            ADDON.setSettingBool(setting, True)
+            turned_on[setting] = "true"
+    mark_migrated(BORDERLINE_MIGRATED_MARKER)
+    if turned_on:
+        log_general("Intent's \"Accept borderline\" turned on where the openness was Adventurous: "
+                    + ", ".join(turned_on) + ".", always=True)
+    return turned_on
 
 
 def announce_sound_engine_readiness() -> str:
@@ -2965,6 +2996,7 @@ def main() -> None:
 
     migrated = logs.migrate_old_switches()
     migrate_radio_settings()
+    migrate_intent_borderline()
     ensure_musicip_keymap_installed()
 
     log_general(

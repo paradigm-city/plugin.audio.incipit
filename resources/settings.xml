@@ -27,7 +27,7 @@
                     <control type="toggle"/>
                 </setting>
             </group>
-            <group id="2" label="30400">
+            <group id="2" label="30431">
                 <setting id="mix_assist_auto_new_mixes" type="boolean" label="30402" help="30403">
                     <level>0</level>
                     <default>true</default>
@@ -38,11 +38,14 @@
                     <default>true</default>
                     <control type="toggle"/>
                 </setting>
+            </group>
+            <group id="5" label="30432">
                 <setting id="mix_assist_mix_strictness" type="integer" label="30406" help="30407">
                     <level>0</level>
                     <default>2</default>
                     <constraints>
                         <options>
+                            <option label="30437">-1</option>
                             <option label="30408">0</option>
                             <option label="30409">1</option>
                             <option label="30410">2</option>
@@ -52,11 +55,14 @@
                     </constraints>
                     <control type="spinner" format="string"/>
                 </setting>
+            </group>
+            <group id="6" label="30433">
                 <setting id="mix_assist_mix_perspective" type="integer" label="30413" help="30414">
                     <level>0</level>
                     <default>0</default>
                     <constraints>
                         <options>
+                            <option label="30437">-1</option>
                             <option label="30415">0</option>
                             <option label="30416">1</option>
                             <option label="30417">2</option>
@@ -66,6 +72,11 @@
                         </options>
                     </constraints>
                     <control type="spinner" format="string"/>
+                </setting>
+                <setting id="mix_intent_borderline" type="boolean" label="30434" help="30435">
+                    <level>0</level>
+                    <default>false</default>
+                    <control type="toggle"/>
                 </setting>
             </group>
             <group id="3" label="30500">
@@ -120,7 +131,7 @@
                     <control type="toggle"/>
                 </setting>
             </group>
-            <group id="2" label="30601">
+            <group id="2" label="30431">
                 <setting id="mix_assist_auto_radio" type="boolean" label="30602" help="30603">
                     <level>0</level>
                     <default>true</default>
@@ -138,11 +149,14 @@
                     </constraints>
                     <control type="spinner" format="string"/>
                 </setting>
+            </group>
+            <group id="4" label="30432">
                 <setting id="mix_assist_station_strictness" type="integer" label="30609" help="30610">
                     <level>0</level>
                     <default>2</default>
                     <constraints>
                         <options>
+                            <option label="30437">-1</option>
                             <option label="30611">0</option>
                             <option label="30612">1</option>
                             <option label="30613">2</option>
@@ -152,11 +166,14 @@
                     </constraints>
                     <control type="spinner" format="string"/>
                 </setting>
+            </group>
+            <group id="5" label="30433">
                 <setting id="mix_assist_station_perspective" type="integer" label="30616" help="30617">
                     <level>0</level>
                     <default>0</default>
                     <constraints>
                         <options>
+                            <option label="30437">-1</option>
                             <option label="30618">0</option>
                             <option label="30619">1</option>
                             <option label="30620">2</option>
@@ -166,6 +183,11 @@
                         </options>
                     </constraints>
                     <control type="spinner" format="string"/>
+                </setting>
+                <setting id="radio_intent_borderline" type="boolean" label="30434" help="30436">
+                    <level>0</level>
+                    <default>false</default>
+                    <control type="toggle"/>
                 </setting>
             </group>
             <group id="3" label="30629">
