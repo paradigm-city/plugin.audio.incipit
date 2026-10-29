@@ -200,7 +200,7 @@ def status_lines(data: str, now: float = 0.0, alive: Callable[[str], dict] = run
     now = now or time.time()
     reason = not_ready(data)
     if reason:
-        return [reason, "Settings > Sound engine > Set up the sound engine."]
+        return [reason, "Settings > Advanced > Set up the sound engine."]
     status, stored = read_status(data), counts(data)
     lines = [f"Sound prints stored: {stored['analysed']:,} song(s); {stored['failed']:,} file(s) could not be read."]
     state = status.get("state")

@@ -330,6 +330,29 @@ def get_mix_variety() -> int:
     return max(0, min(9, get_setting_int("mix_variety", 0)))
 
 
+# Radio has its own variety, artist rule, naming and snippets for "Scan stations" (Settings > Radio); until
+# 2026-10-29 it shared Mixing's (service.migrate_radio_settings copied them over once).
+def get_radio_variety() -> int:
+    return max(0, min(9, get_setting_int("radio_variety", 0)))
+
+
+def get_radio_reject_size() -> int:
+    return max(0, min(20, get_setting_int("radio_reject_size", 0)))
+
+
+def radio_naming_enabled() -> bool:
+    """Setting "Name stations": the AI's short name instead of the picked song."""
+    return get_setting_bool("radio_name_stations", True)
+
+
+def get_radio_excerpt_seconds() -> int:
+    return max(5, min(60, get_setting_int("radio_excerpt_seconds", 20)))
+
+
+def get_radio_offset_percent() -> int:
+    return max(0, min(90, get_setting_int("radio_offset_percent", 33)))
+
+
 # --- The source of mixes: the sound engine, sound prints made on this computer (soundprint/). MusicIP made them
 # until 2026-10-29; its code is kept dormant in musicip_dormant.py. ----------------------------------------------
 def soundprint_data() -> str:
@@ -2467,7 +2490,7 @@ def fetch_sound_mix(seed_song: str, size: int, params: dict, progress=None) -> l
     return prepend_seed_track(seed_song, [song["path"] for song in songs])
 
 
-SOUND_ENGINE_SETUP_HINT = "Set it up in Settings > Sound engine > Set up the sound engine."
+SOUND_ENGINE_SETUP_HINT = "Set it up in Settings > Advanced > Set up the sound engine."
 
 
 def fetch_mix(seed_song: str, size: int, mix_params: dict | None = None, progress=None) -> list[str]:
@@ -4843,8 +4866,8 @@ def begin_discovery_playback(owner: str = "") -> dict:
         "startup_in_progress": True,
         "started_ts": int(time.time()),
         "stopped_ts": 0,
-        "excerpt_seconds": get_discovery_excerpt_seconds(),
-        "offset_percent": get_discovery_offset_percent(),
+        "excerpt_seconds": get_radio_excerpt_seconds() if owner == "radio" else get_discovery_excerpt_seconds(),
+        "offset_percent": get_radio_offset_percent() if owner == "radio" else get_discovery_offset_percent(),
         "stop_reason": "",
         "resume_allowed": True,
         "current_started_ts": 0,
@@ -6230,7 +6253,7 @@ def reset_mix_assist_statistics() -> None:
         notify("Statistics deleted.")
 
 
-# --- The sound engine's set-up and analysis (Settings > Sound engine) ---------------------------------------------
+# --- The sound engine's set-up and analysis (Settings > Advanced) -------------------------------------------------
 SOUND_ENGINE_HEADING = "Sound engine"
 
 
@@ -6246,7 +6269,7 @@ def start_soundprint_analysis(reason: str = "asked for in the settings", quiet: 
     except soundprint.SoundprintError as exc:
         log_general(f"Sound engine analysis ({reason}) not started: {exc}", xbmc.LOGWARNING, always=True)
         if not quiet:
-            xbmcgui.Dialog().ok(SOUND_ENGINE_HEADING, plain(f"{exc}\n\nSettings > Sound engine > Set up the sound engine."))
+            xbmcgui.Dialog().ok(SOUND_ENGINE_HEADING, plain(f"{exc}\n\nSettings > Advanced > Set up the sound engine."))
         return False
     if not started["started"]:
         log_general(f"Sound engine analysis ({reason}): one is running already (process {started['pid']}).",
@@ -6275,7 +6298,7 @@ def set_up_soundprint() -> None:
     pythons = soundprint.base_pythons(get_setting("soundprint_base_python", "").strip())
     if not pythons:
         xbmcgui.Dialog().ok(SOUND_ENGINE_HEADING, "No Python was found. Install Python 3.9 or later (python.org), or "
-                                                  "enter where it is in Settings > Sound engine > Python for the set-up.")
+                                                  "enter where it is in Settings > Advanced > Python for the set-up.")
         return
     if not xbmcgui.Dialog().yesno(SOUND_ENGINE_HEADING, plain(
             f"Set up the sound engine with {pythons[0]}?\n\nIt makes its own Python environment in the add-on's data "
@@ -7751,7 +7774,7 @@ def choose_mix_perspective(cache_path: str) -> bool:
 # --- Names: what a mix or station is about in a few words (by the AI at the first check, or by the listener) --
 
 def mix_naming_enabled() -> bool:
-    """Setting "Name mixes and stations": the AI's short name instead of the seed song."""
+    """Setting "Name mixes": the AI's short name instead of the seed song (stations: radio_naming_enabled)."""
     return get_setting_bool("mix_assist_name_mixes", True)
 
 
@@ -7968,9 +7991,9 @@ RADIO_STAY_CLOSE_MIN_VARIETY = 2
 
 
 def radio_mix_parameters(size: int, settings: dict | None = None) -> dict:
-    """The parameters of a station's mixes: the configured ones; a station that stays close to the picked
-    song gets at least RADIO_STAY_CLOSE_MIN_VARIETY."""
-    params = get_effective_mix_parameters(size_override=size)
+    """The parameters of a station's mixes: Radio's variety and artist rule; a station that stays close to the
+    picked song gets at least RADIO_STAY_CLOSE_MIN_VARIETY."""
+    params = {"size": max(1, int(size)), "variety": get_radio_variety(), "rejectsize": get_radio_reject_size()}
     if get_radio_drift_half_life(settings) == 0:
         params["variety"] = max(int(params.get("variety") or 0), RADIO_STAY_CLOSE_MIN_VARIETY)
     return params
@@ -8039,7 +8062,7 @@ def check_radio_refill(reference_song: str, candidates: list[str], count: int, r
     "reference": the station's profile after this refill (drifted towards the chosen songs)."""
     store = mix_assist_cache.RatingCache(mix_assist_cache_path())
     try:
-        window = get_mix_reject_size()
+        window = get_radio_reject_size()
         strictness, borderline = get_station_strictness(settings)
         perspective = perspective_key(station_setting_index(settings, "perspective"))
         profile = "the station's drifting profile" if reference else "the song's own profile"
@@ -8082,7 +8105,7 @@ RADIO_DRIFT_LABELS = ("Stay close to the picked song", "Drift slowly", "Wander f
 def station_name(state: dict) -> str:
     """The station's name: a favourite's (with its number), else the AI's (from the check of its first songs); ""
     without one."""
-    if not mix_naming_enabled() and not state.get("favourite_id"):
+    if not radio_naming_enabled() and not state.get("favourite_id"):
         return ""
     name = str(state.get("name") or "").strip()
     favourite = find_radio_favourite(favourite_id=str(state["favourite_id"])) if name and state.get("favourite_id") else None

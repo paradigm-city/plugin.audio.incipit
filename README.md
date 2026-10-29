@@ -15,11 +15,9 @@ Kodi music add-on that can create a mix from the currently playing audio track o
 
 ## Settings
 
-- **Sound engine**: its analysis of the library (automatic, status, analyse now, stop) and its set-up
-- **Mixing**: mix parameters (playlist size, variety, no artist repeat) and saved mixes (consistency check, its interval, automatic repair)
-- **AI Mix Assist**: new mixes and "More like this" (on track, openness, perspective, names), Claude Code (CLI path, statistics)
-- **Radio**: AI Mix Assist for stations (on track, drift, openness, perspective)
-- **Discovery mode**: excerpt length, start offset
+- **Mixing**: mix parameters (playlist size, variety, no artist repeat, names), AI Mix Assist for new mixes and "More like this" (on track, openness, perspective), Discovery mode (excerpt length, start offset) and saved mixes (consistency check, its interval, automatic repair)
+- **Radio**: the stations' own variety, artist rule and names, AI Mix Assist for stations (on track, drift, openness, perspective) and "Scan stations" (excerpt length, start offset)
+- **Advanced**: the sound engine (automatic analysis, status, analyse now, stop, set-up) and Claude Code (CLI path, statistics)
 - **Logging**: one switch per area (General, Mixing, AI Mix Assist, Radio, Discovery mode, Saved-mix checks). With a switch on, that area writes detailed messages to `kodi.log`, each line tagged with its area, e.g. `[plugin.audio.musicip] [radio] ...`. Errors and warnings are always logged. AI Mix Assist logs every request to the AI in full, with its answer.
 
 ## Install
@@ -28,7 +26,7 @@ Kodi music add-on that can create a mix from the currently playing audio track o
 2. Zip that folder itself, not only its contents.
 3. In Kodi, go to **Add-ons** -> **Install from ZIP file**.
 4. Install the zip.
-5. Set up the sound engine in the add-on's settings (**Sound engine** -> **Set up the sound engine**); it then analyses the library in the background.
+5. Set up the sound engine in the add-on's settings (**Advanced** -> **Set up the sound engine**); it then analyses the library in the background.
 6. Open **Music** -> **Music add-ons** -> **MusicIP**.
 
 ## Notes

@@ -37,7 +37,7 @@ msgid "Do not repeat artist within this many tracks"
 msgstr ""
 
 msgctxt "#30311"
-msgid "Keeps an artist from appearing again within this many tracks of the finished mix. 0 allows repeats. The sound engine keeps to it when it makes a mix (the seed is the first track), and so does AI Mix Assist when it adds or replaces songs: in a saved mix with the value the mix was made with, on a Radio station counting the songs already queued."
+msgid "Keeps an artist from appearing again within this many tracks of the finished mix. 0 allows repeats. The sound engine keeps to it when it makes a mix (the seed is the first track), and so does AI Mix Assist when it adds or replaces songs, in a saved mix with the value the mix was made with. Radio has its own."
 msgstr ""
 
 msgctxt "#30312"
@@ -70,10 +70,6 @@ msgstr ""
 
 msgctxt "#30400"
 msgid "AI Mix Assist"
-msgstr ""
-
-msgctxt "#30401"
-msgid "Mixes"
 msgstr ""
 
 msgctxt "#30402"
@@ -153,11 +149,11 @@ msgid "Lyrical"
 msgstr ""
 
 msgctxt "#30421"
-msgid "Name mixes and stations"
+msgid "Name mixes"
 msgstr ""
 
 msgctxt "#30422"
-msgid "At its first check, AI Mix Assist gives a mix or radio station a short name of 2 to 4 words saying what it is about, like \"Cosmic Analog Journeys\". It is shown instead of the seed song and suggested when you save a mix; a mix can be renamed in its \"AI Mix Assist...\" menu. Off: mixes and stations are named after their seed song, unless you name them yourself."
+msgid "At its first check, AI Mix Assist gives a mix a short name of 2 to 4 words saying what it is about, like \"Cosmic Analog Journeys\". It is shown instead of the seed song and suggested when you save the mix; a mix can be renamed in its \"AI Mix Assist...\" menu. Off: mixes are named after their seed song, unless you name them yourself. Radio has its own."
 msgstr ""
 
 msgctxt "#30423"
@@ -284,6 +280,34 @@ msgctxt "#30623"
 msgid "Lyrical"
 msgstr ""
 
+msgctxt "#30624"
+msgid "Stations"
+msgstr ""
+
+msgctxt "#30625"
+msgid "How far a station's songs may reach from the song they come from. 0: the nearest songs by sound, a very cohesive station; each step reaches further out and draws more of the far songs; at 9 the songs come from the whole library, across genres. A station that stays close to its picked song uses at least 2, so its refills don't repeat. Mixing has its own."
+msgstr ""
+
+msgctxt "#30626"
+msgid "Keeps an artist from playing again within this many songs of the station, counting the songs already queued. 0 allows repeats. Mixing has its own."
+msgstr ""
+
+msgctxt "#30627"
+msgid "Name stations"
+msgstr ""
+
+msgctxt "#30628"
+msgid "At its first check, AI Mix Assist gives a station a short name of 2 to 4 words saying what it is about, like \"Cosmic Analog Journeys\". Off: stations are named after their picked song; a favourite keeps the name you gave it. Mixing has its own."
+msgstr ""
+
+msgctxt "#30629"
+msgid "Scan stations"
+msgstr ""
+
+msgctxt "#30630"
+msgid "How many seconds of each song \"Scan stations\" plays. Discovery mode has its own."
+msgstr ""
+
 msgctxt "#30500"
 msgid "Discovery mode"
 msgstr ""
@@ -293,7 +317,7 @@ msgid "Excerpt length (seconds)"
 msgstr ""
 
 msgctxt "#30502"
-msgid "How many seconds of each song Discovery mode and Radio's \"Scan stations\" play."
+msgid "How many seconds of each song Discovery mode plays. Radio's \"Scan stations\" has its own."
 msgstr ""
 
 msgctxt "#30503"
@@ -356,10 +380,6 @@ msgctxt "#30712"
 msgid "The background check of saved mixes: missing files, the library's state, repair candidates with their scores, and every repair made."
 msgstr ""
 
-msgctxt "#30800"
-msgid "Sound engine"
-msgstr ""
-
 msgctxt "#30806"
 msgid "Sound engine"
 msgstr ""
@@ -414,4 +434,8 @@ msgstr ""
 
 msgctxt "#30821"
 msgid "The Python program the set-up uses (python.exe). Empty: the first Python on the PATH."
+msgstr ""
+
+msgctxt "#30900"
+msgid "Advanced"
 msgstr ""

@@ -16,6 +16,7 @@ import threading
 import time
 import urllib.parse
 import unicodedata
+from xml.etree import ElementTree
 
 import xbmc
 import xbmcaddon
@@ -1767,7 +1768,7 @@ def source_outage(state: dict, plugin, error: Exception) -> None:
         add_radio_event(state, "musicip_failed", error=str(error))
         try:
             plugin.notify("The sound engine can't make mixes right now. The station plays on and tries again; "
-                          "see Settings > Sound engine > Status.", xbmcgui.NOTIFICATION_WARNING)
+                          "see Settings > Advanced > Status.", xbmcgui.NOTIFICATION_WARNING)
         except Exception:
             pass
 
@@ -2886,9 +2887,50 @@ def reload_settings() -> None:
     ADDON = xbmcaddon.Addon()
     plugin.ADDON = xbmcaddon.Addon()
     logs.ADDON = xbmcaddon.Addon(logs.ADDON_ID)
-    log_general(f"Settings changed: the service reads them again. Mix size {plugin.get_playlist_size()}, variety "
-                f"{plugin.get_mix_variety()}, no artist repeat within {plugin.get_mix_reject_size()}. "
+    log_general(f"Settings changed: the service reads them again. Mixing: size {plugin.get_playlist_size()}, variety "
+                f"{plugin.get_mix_variety()}, no artist repeat within {plugin.get_mix_reject_size()}; Radio: variety "
+                f"{plugin.get_radio_variety()}, no artist repeat within {plugin.get_radio_reject_size()}. "
                 f"Logging: {logs.describe_switches()}.", always=True)
+
+
+# Radio's own settings, until 2026-10-29 shared with Mixing and Discovery mode: copied over once from those, so a
+# station plays on as before. A Radio value the listener has set already (not marked as Kodi's default) is kept.
+RADIO_SETTINGS_FROM = {"radio_variety": "mix_variety", "radio_reject_size": "mix_reject_size",
+                       "radio_name_stations": "mix_assist_name_mixes", "radio_excerpt_seconds": "discovery_excerpt_seconds",
+                       "radio_offset_percent": "discovery_offset_percent"}
+RADIO_SETTINGS_MIGRATED_MARKER = "radio_settings_migrated"
+
+
+def migrate_radio_settings() -> dict:
+    """Once: Radio's own settings from the shared ones they replace. Returns {setting: value} copied."""
+    profile = get_profile_dir()
+    marker = os.path.join(profile, RADIO_SETTINGS_MIGRATED_MARKER)
+    if os.path.exists(marker):
+        return {}
+    stored = {}
+    try:
+        root = ElementTree.parse(os.path.join(profile, "settings.xml")).getroot()
+        stored = {node.get("id"): (node.text or "", node.get("default") == "true") for node in root.iter("setting")}
+    except (OSError, ElementTree.ParseError):
+        pass
+    copied = {}
+    for setting, source in RADIO_SETTINGS_FROM.items():
+        value, is_default = stored.get(source, ("", True))
+        own = stored.get(setting)
+        if is_default or (own is not None and not own[1]):
+            continue  # the shared value was never changed, or Radio has its own already
+        ADDON.setSetting(setting, value)
+        copied[setting] = value
+    try:
+        os.makedirs(profile, exist_ok=True)
+        with open(marker, "w", encoding="utf-8") as handle:
+            handle.write("1\n")
+    except OSError:
+        pass
+    log_general("Radio's own settings: " + (", ".join(f"{key} = {value!r} (from {RADIO_SETTINGS_FROM[key]})"
+                                                      for key, value in copied.items()) or "nothing to copy")
+                + ".", always=bool(copied))
+    return copied
 
 
 def announce_sound_engine_readiness() -> str:
@@ -2922,6 +2964,7 @@ def main() -> None:
     song_cache: list[dict] = []
 
     migrated = logs.migrate_old_switches()
+    migrate_radio_settings()
     ensure_musicip_keymap_installed()
 
     log_general(
