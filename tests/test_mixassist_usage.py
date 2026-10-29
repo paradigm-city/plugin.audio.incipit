@@ -55,7 +55,7 @@ class CountingTest(UsageTestCase):
 
     def test_the_rating_cache_counts_hits_misses_and_new_ratings(self):
         store = RatingCache(os.path.join(kodi.root, "ratings.db"))
-        store.put("rg:a", {key: 5 for key in rating.ALL_KEYS} | {"sounding_year": 1990}, model="m", source="t")
+        store.put("rg:a", {**{key: 5 for key in rating.ALL_KEYS}, "sounding_year": 1990}, model="m", source="t")
         units = [{"key": key, "kind": "album", "item": {"title": key}} for key in ("rg:a", "rg:b", "rg:c")]
         with mock.patch.object(rating, "parse_ratings", return_value={}):
             rating.rate_missing(units, store, ask=lambda *args: {})
