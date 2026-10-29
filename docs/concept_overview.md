@@ -1,17 +1,17 @@
-# MusicIP Kodi Add-on – Current Concept Snapshot
+# Incipit (formerly MusicIP): Concept Snapshot
 
 Version: 1.0.88 documentation snapshot  
 Base code: 1.0.87
 
 ## Purpose
 
-The add-on integrates a local MusicIP server with Kodi. It can create MusicIP mixes from the currently playing song, from a selected Kodi library song, or from a song discovered through Discovery mode. Radio mode plays an endless mix from a song found by tuning through random snippets.
+The add-on makes mixes from the currently playing song, from a selected Kodi library song, or from a song discovered through Discovery mode. Radio mode plays an endless mix from a song found by tuning through random snippets.
 
-The core idea is simple: use Kodi for library browsing and playback, use MusicIP for similarity-based mix generation, and keep saved mixes stable and repairable when files are moved or renamed.
+The core idea: use Kodi for library browsing and playback, the sound engine (sound prints of the whole library, made on this computer) for the songs that sound alike, Character and Intent to keep a mix true to its first song, and keep saved mixes stable and repairable when files are moved or renamed. How a mix is made is in [concept_incipit.md](concept_incipit.md). Until 2026-10-29 a local MusicIP server made the mixes; its code is dormant in `musicip_dormant.py`.
 
 ## Current major feature areas
 
-1. MusicIP mix generation
+1. Mix generation (the sound engine; Character and Intent)
 2. Mix parameter dialog
 3. The current mix and saved mixes
 4. Mix consistency checking
@@ -37,15 +37,7 @@ Version 1.0.87 is the active feature baseline.
 
 The experimental crossfade build 1.0.86 was discarded and is not part of this documentation baseline.
 
-## MusicIP API parameter naming
+## Mix parameters
 
-The add-on stores mix parameters internally with simple lowercase keys. When sending the HTTP request to MusicIP, these keys are mapped to the API spelling expected by the server.
-
-Important outgoing API keys:
-
-- `sizeType=tracks`
-- `rejectType=tracks`
-- `content=text`
-
-The lowercase internal keys `sizetype` and `rejecttype` should not be sent directly to the MusicIP server.
+A mix is made with a size, a variety (0 to 9) and an artist rule (no artist repeat within N tracks); they are recorded with the mix (`mix_generation_parameters`). Mixes MusicIP made keep its parameters too (style, filter) and are described as MusicIP's.
 

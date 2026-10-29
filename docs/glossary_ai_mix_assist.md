@@ -1,4 +1,23 @@
-# Glossary: AI Mix Assist
+# Glossary: Incipit's checks (formerly AI Mix Assist)
+
+## Names since 2026-10-29
+
+| Now | Before | Meaning |
+|---|---|---|
+| **Incipit** | MusicIP (the add-on) | The add-on; its ID stays `plugin.audio.musicip` |
+| **Source** | MusicIP (the server) | Where a mix's songs come from: the sound engine |
+| **Sound engine** | | Sound prints of every song (DCLAP, 6 snippets), the nearest by cosine; `soundprint/` |
+| **Checks** | AI Mix Assist | Character and Intent together; "Checks..." in a mix's context menu |
+| **Character** | the profile check, the vector signal | Each song's 8-value profile against the seed's |
+| **Tolerance** | openness, strictness | How far a profile may be off: Focused, Close, Balanced, Open, Adventurous, or Off |
+| **Intent** | the AI check, the holistic signal | The AI's judgement of what the seed is about, from a perspective |
+| **Perspective** | | Mixed, Technical, Emotional, Cultural, Functional, Lyrical, or Off |
+| **Accept borderline** | part of the level Adventurous | Intent also takes songs it calls borderline |
+| **Fixed scale** | | Character's typical misfit from the seed's nearest rated songs by sound (F40) |
+| **Variety** | MusicIP's variety | How far into the order by sound a mix reaches, 0 to 9 |
+| **No artist repeat within N** | MusicIP's reject size | The one artist rule, counted over the finished mix |
+
+The rest of this glossary keeps the terms as they were developed; where it says AI Mix Assist, read the checks.
 
 Terms used in [concept_ai_mix_assist.md](concept_ai_mix_assist.md) and in the pilot (`tools/style_pilot` on the branch `style-pilot`). Where a term replaces earlier wording, the retired words are listed so older notes stay readable.
 

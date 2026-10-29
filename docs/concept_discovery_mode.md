@@ -45,7 +45,7 @@ If the user cancels:
 
 ## External playback takeover
 
-If the user starts playback outside MusicIP while Discovery mode is active, Discovery mode stops itself without touching the new playback.
+If the user starts playback outside the add-on while Discovery mode is active, Discovery mode stops itself without touching the new playback.
 
 The current playing file is compared against the Discovery queue. If it is outside the queue, the add-on sets:
 

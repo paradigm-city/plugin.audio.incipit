@@ -1,20 +1,22 @@
-# MusicIP Add-on Documentation
+# Incipit Documentation
 
-This folder contains the current concept documentation and flow diagrams for the MusicIP Kodi add-on.
+This folder contains the concept documentation and flow diagrams for Incipit, the Kodi add-on formerly called
+MusicIP (its ID is still `plugin.audio.musicip`).
 
 Current documentation baseline: **1.0.88**  
 Feature baseline: **1.0.87**
 
 ## Documents
 
+- `concept_incipit.md`: **how mixes are made and kept now**: Source (the sound engine), Character, Intent
 - `concept_overview.md`
 - `concept_discovery_mode.md`
 - `concept_radio_mode.md`
 - `concept_repair_strategy.md`
 - `concept_sidecar_metadata.md`
-- `concept_ai_mix_assist.md`: AI Mix Assist, which keeps mixes true to their seed (being built)
-- `glossary_ai_mix_assist.md`: terms used for AI Mix Assist
-- `concept_suggestion_engine.md`: suggestions from a map of related artists instead of MusicIP (draft)
+- `concept_ai_mix_assist.md`: background: how the checks (then AI Mix Assist) were developed and calibrated
+- `glossary_ai_mix_assist.md`: terms, with today's names and the retired ones
+- `concept_suggestion_engine.md`: background: how MusicIP came to be replaced by the sound engine
 - `testing_quality_notes.md`
 - `findings.md`: known problems in the code and their status
 

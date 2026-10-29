@@ -1,6 +1,9 @@
 # AI Mix Assist Concept
 
-Status: **being built** on the branch `ai-mix-assist`. The concept is backed by a pilot (`tools/style_pilot` on the
+Status: **background** since 2026-10-29. The feature's name has gone: its two checks are now called
+**Character** (the profile) and **Intent** (the AI's judgement), each can be switched off, and the mixes come from
+the sound engine instead of MusicIP. The current concept is [concept_incipit.md](concept_incipit.md); this document
+keeps how the checks were developed and calibrated. Earlier status: being built on the branch `ai-mix-assist`. The concept is backed by a pilot (`tools/style_pilot` on the
 branch `style-pilot`), which developed it under the working title *style consistency*.
 Terms are defined in [glossary_ai_mix_assist.md](glossary_ai_mix_assist.md).
 
