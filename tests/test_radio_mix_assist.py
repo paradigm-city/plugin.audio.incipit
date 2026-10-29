@@ -69,7 +69,7 @@ class RadioMixAssistTest(RadioBase):
 
     def test_a_station_starts_small(self):
         self.start()
-        self.assertEqual(self.musicip.mix_requests()[0]["size"], str(main.RADIO_ASSISTED_START_SIZE))
+        self.assertEqual(self.source.mix_requests()[0]["size"], str(main.RADIO_ASSISTED_START_SIZE))
 
     def new_songs(self, count):
         """Library songs the station hasn't queued."""
@@ -129,7 +129,7 @@ class RadioMixAssistTest(RadioBase):
         self.tick()
         self.finish_check()
         self.tick()  # applies it; 2 songs left: the first refill
-        self.assertEqual(self.musicip.mix_requests()[-1]["song"], queue[2])
+        self.assertEqual(self.source.mix_requests()[-1]["song"], queue[2])
         self.finish_check()
         self.tick()
         unchecked = self.new_songs(1)
@@ -149,7 +149,7 @@ class RadioMixAssistTest(RadioBase):
         self.assertEqual(set(radio["rejected"]), {main.normalize_track_identity(path) for path in turned_down})
         seed = service.refill_seed_entries(radio, True)[0]["file"]
         fresh = [song for song in self.new_songs(len(SONGS)) if song not in turned_down][:2]
-        self.musicip.set_mix(seed, turned_down + fresh)
+        self.source.set_mix(seed, turned_down + fresh)
         service.refill_radio_queue(radio, checked=True)
         self.finish_check()
         args, kwargs = self.refill_check.call_args
@@ -180,7 +180,7 @@ class RadioMixAssistTest(RadioBase):
         self.tick()
         kodi.go_to(2)
         self.tick()
-        self.assertEqual(self.musicip.mix_requests()[-1]["song"], queue[0])
+        self.assertEqual(self.source.mix_requests()[-1]["song"], queue[0])
 
     def test_a_stricter_station_examines_more(self):
         self.assertEqual([main.radio_check_batches({"openness": level}) for level in range(5)], [6, 4, 2, 2, 2])
@@ -241,7 +241,7 @@ class RadioMixAssistTest(RadioBase):
     def test_a_station_that_stays_close_asks_musicip_with_variety(self):
         kodi.settings.update({"mix_variety": "0", "mix_assist_radio_drift": "0"})
         self.started_station()
-        self.assertEqual({query["variety"] for query in self.musicip.mix_requests()}, {"2"})  # start and refill
+        self.assertEqual({query["variety"] for query in self.source.mix_requests()}, {"2"})  # start and refill
         self.assertIn("variety 2", self.radio()["events"][0]["parameters"])
 
     def test_a_refill_may_look_further_from_earlier_checked_songs_and_the_picked_song(self):
@@ -270,10 +270,10 @@ class RadioMixAssistTest(RadioBase):
         self.tick()
         kodi.go_to(1)
         self.tick()
-        self.assertEqual(len(self.musicip.mix_requests()), 1)  # 3 songs left: no refill yet
+        self.assertEqual(len(self.source.mix_requests()), 1)  # 3 songs left: no refill yet
         kodi.go_to(2)
         self.tick()
-        self.assertEqual(self.musicip.mix_requests()[-1]["size"], str(service.RADIO_CHECK_SIZE))
+        self.assertEqual(self.source.mix_requests()[-1]["size"], str(service.RADIO_CHECK_SIZE))
         self.assertEqual(self.files(), before)  # nothing queued while the check runs
         self.finish_check()
         radio = self.tick()
@@ -301,7 +301,7 @@ class RadioMixAssistTest(RadioBase):
         self.assertEqual(self.files(), before)
         self.assertEqual(radio["refill_seed_offset"], 1)
         self.tick(service.RADIO_REFILL_RETRY_SECONDS)
-        self.assertEqual(self.musicip.mix_requests()[-1]["song"], before[-2])
+        self.assertEqual(self.source.mix_requests()[-1]["song"], before[-2])
 
     def test_a_failed_check_keeps_the_station_going_unchecked(self):
         self.refill_check.side_effect = main.mix_assist_claude.ClaudeError(main.mix_assist_claude.USAGE_LIMIT, "limit")
@@ -477,7 +477,7 @@ class RadioMixAssistTest(RadioBase):
     def test_without_the_claude_cli_radio_works_as_before(self):
         with mock.patch.object(main, "mix_assist_available", return_value=False):
             self.start()
-            self.assertEqual(self.musicip.mix_requests()[0]["size"], str(main.get_playlist_size()))
+            self.assertEqual(self.source.mix_requests()[0]["size"], str(main.get_playlist_size()))
             kodi.go_to(3)
             self.tick()
         self.start_check.assert_not_called()

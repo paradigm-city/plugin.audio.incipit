@@ -13,7 +13,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit
 
 import fake_kodi
 from fake_kodi import ADDON_DIR, kodi
-from fake_musicip import FakeMusicIP
+from fake_source import FakeSource
 
 PLUGIN_URL = "plugin://plugin.audio.musicip/"
 HANDLE = 7
@@ -85,7 +85,7 @@ class KodiTestCase(unittest.TestCase):
         service.METADATA_REFRESH_PENDING_VIEW_REFRESH = False
         service.METADATA_REFRESH_LAST_SELECTION_TOKEN = ""
         service.METADATA_REFRESH_LAST_REFRESH_TS = 0
-        service.MUSICIP_RELOAD.update(thread=None, scan_finished=False, first_tick_ts=0.0)
+        service.LIBRARY_UPDATE.update(scan_finished=False, first_tick_ts=0.0)
         service.RADIO_TICK_SUMMARY["text"] = ""
 
         # Keep tests independent of the user's locale settings in Kodi.
@@ -158,25 +158,17 @@ class KodiTestCase(unittest.TestCase):
         )
 
 
-class MusicIPServerTestCase(KodiTestCase):
-    """Runs a fake MusicIP server on localhost for the tests in the class."""
+class SourceTestCase(KodiTestCase):
+    """Mixes come from a stand-in for the sound engine (fake_source.FakeSource), set per test with set_mix."""
 
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.musicip = FakeMusicIP().start()
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.musicip.stop()
-        super().tearDownClass()
+        cls.source = FakeSource()
 
     def setUp(self):
         super().setUp()
-        self.musicip.reset()
-        kodi.settings["host"] = "127.0.0.1"
-        kodi.settings["port"] = str(self.musicip.port)
-        # Never route localhost requests through a system proxy.
-        patcher = mock.patch.dict(os.environ, {"NO_PROXY": "*", "no_proxy": "*"})
+        self.source.reset()
+        patcher = mock.patch.object(main.soundprint, "neighbours", self.source.neighbours)
         patcher.start()
         self.addCleanup(patcher.stop)

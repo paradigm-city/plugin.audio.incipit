@@ -8,12 +8,12 @@ from unittest import mock
 
 import fake_kodi
 from fake_kodi import kodi
-from support import MusicIPServerTestCase, context_radio, main, plugin_query, service
+from support import SourceTestCase, context_radio, main, plugin_query, service
 
 SONGS = [f"D:\\music\\Artist {n}\\Album\\{n:02d} Song {n}.mp3" for n in range(1, 41)]
 
 
-class RadioTestCase(MusicIPServerTestCase):
+class RadioTestCase(SourceTestCase):
     def setUp(self):
         super().setUp()
         self.clock = self.use_clock()
@@ -21,7 +21,7 @@ class RadioTestCase(MusicIPServerTestCase):
             kodi.library.add_song(file, title=f"Song {n}", artist=f"Artist {n}", duration=240)
         # Each seed's mix: the next four library songs, wrapping around, so the station never runs dry.
         for index, seed in enumerate(SONGS):
-            self.musicip.set_mix(seed, [SONGS[(index + k) % len(SONGS)] for k in range(1, 5)])
+            self.source.set_mix(seed, [SONGS[(index + k) % len(SONGS)] for k in range(1, 5)])
 
     def radio(self):
         return main.get_radio_state()
@@ -190,12 +190,12 @@ class TuningTest(RadioTestCase):
 
 class StartRadioTest(RadioTestCase):
     def test_start_plays_the_station_without_a_dialog(self):
-        kodi.settings.update({"playlist_size": "10", "mix_style_preference": "5", "mix_variety": "3"})
+        kodi.settings.update({"playlist_size": "10", "mix_variety": "3"})
         seed = self.start()
 
         self.assertEqual([call for call in kodi.dialog_calls if not call[0].startswith("progress")], [])  # no questions
-        query = self.musicip.mix_requests()[0]
-        self.assertEqual((query["song"], query["size"], query["style"], query["variety"]), (seed, "10", "100", "3"))
+        query = self.source.mix_requests()[0]
+        self.assertEqual((query["song"], query["size"], query["variety"]), (seed, "10", "3"))
 
         radio = self.radio()
         self.assertEqual(radio["phase"], "playing")
@@ -235,24 +235,24 @@ class StartRadioTest(RadioTestCase):
 
     def test_server_error_keeps_tuning(self):
         self.turn_on()
-        self.musicip.mix_status = 500
+        self.source.mix_status = 500
         self.run_plugin(action="radio_play")
         self.assertEqual(self.radio()["phase"], "seeking")
         discovery = main.get_discovery_state()
         self.assertTrue(discovery["enabled"])
         self.assertFalse(discovery["mix_dialog_active"])
-        self.assertNotified("Radio could not start: MusicIP server returned HTTP 500.")
+        self.assertNotified("Radio could not start: The sound engine failed: server error")
 
     def test_start_only_while_tuning(self):
         self.run_plugin(action="radio_play")
-        self.assertEqual(self.musicip.mix_requests(), [])
+        self.assertEqual(self.source.mix_requests(), [])
         self.assertEqual(self.radio().get("phase", "off"), "off")
 
     def test_the_log_has_the_stations_parameters(self):
-        kodi.settings.update({"playlist_size": "10", "mix_style_preference": "5", "mix_variety": "3", "log_radio": "true"})
+        kodi.settings.update({"playlist_size": "10", "mix_variety": "3", "log_radio": "true"})
         self.start()
         (line,) = [message for message, _level in kodi.logs if "Radio mode: station parameters:" in message]
-        self.assertIn("new station | mix: size 10, variety 3, style 5/10", line)
+        self.assertIn("new station | mix: size 10, variety 3, artists may repeat", line)
         self.assertIn("AI Mix Assist: off", line)
 
 
@@ -289,7 +289,7 @@ class StartFromAnySongTest(RadioTestCase):
         self.assertEqual(radio["seeds"], [SONGS[5]])
         self.assertEqual(kodi.playlist_files()[0], SONGS[5])
         self.assertEqual((kodi.player.position, kodi.player.file), (0, SONGS[5]))
-        self.assertEqual(self.musicip.mix_requests()[0]["size"], "10")
+        self.assertEqual(self.source.mix_requests()[0]["size"], "10")
         self.assertEqual([call for call in kodi.dialog_calls if not call[0].startswith("progress")], [])  # no questions
         self.assertNotified("Station picked.")
         self.assertFalse(main.get_discovery_state().get("enabled"))
@@ -344,16 +344,16 @@ class StartFromAnySongTest(RadioTestCase):
         return item
 
     def test_server_error_changes_nothing(self):
-        self.musicip.mix_status = 500
+        self.source.mix_status = 500
         self.start_from(SONGS[5])
         self.assertEqual(self.radio().get("phase", "off"), "off")
         self.assertEqual(kodi.playlist, [])
-        self.assertNotified("Radio could not start: MusicIP server returned HTTP 500.")
+        self.assertNotified("Radio could not start: The sound engine failed: server error")
 
     def test_no_seed(self):
         self.run_plugin(action="radio_start_seed")
         self.assertNotified("No song was supplied to start the radio from.")
-        self.assertEqual(self.musicip.mix_requests(), [])
+        self.assertEqual(self.source.mix_requests(), [])
 
 
 class ChangeStationTest(RadioTestCase):
@@ -458,14 +458,14 @@ class StationTest(RadioTestCase):
     def test_no_top_up_while_enough_songs_remain(self):
         self.start()
         self.tick()
-        self.assertEqual(len(self.musicip.mix_requests()), 1)
+        self.assertEqual(len(self.source.mix_requests()), 1)
 
     def test_tops_up_from_the_last_queued_song(self):
         self.start()
         kodi.go_to(3)  # one song left after this one
         radio = self.tick()
         last_before = radio["seeds"][-1]
-        self.assertEqual(self.musicip.mix_requests()[-1]["song"], last_before)
+        self.assertEqual(self.source.mix_requests()[-1]["song"], last_before)
         self.assertEqual(len(radio["queue"]), 9)
         self.assertEqual(kodi.playlist_files(), [entry["file"] for entry in radio["queue"]])
         self.assertEqual(len(set(kodi.playlist_files())), 9)  # nothing repeats
@@ -508,66 +508,65 @@ class StationTest(RadioTestCase):
     def test_empty_mix_tries_an_earlier_song(self):
         self.start()
         last, before = self.radio()["queue"][-1]["file"], self.radio()["queue"][-2]["file"]
-        self.musicip.set_mix(last, [])
+        self.source.set_mix(last, [])
         kodi.go_to(3)
         radio = self.tick()
-        self.assertEqual([query["song"] for query in self.musicip.mix_requests()[1:]], [last, before])
+        self.assertEqual([query["song"] for query in self.source.mix_requests()[1:]], [last, before])
         self.assertEqual(radio["seeds"][-1], before)
         self.assertGreater(len(radio["queue"]), 5)
 
     def test_nothing_new_waits_before_retrying(self):
         seed = self.start()
         for file in [entry["file"] for entry in self.radio()["queue"]]:
-            self.musicip.set_mix(file, [seed])  # only songs already heard
+            self.source.set_mix(file, [seed])  # only songs already heard
         kodi.go_to(3)
         radio = self.tick()
-        self.assertEqual(len(self.musicip.mix_requests()), 1 + service.RADIO_REFILL_SEEDS)
+        self.assertEqual(len(self.source.mix_requests()), 1 + service.RADIO_REFILL_SEEDS)
         self.assertGreater(radio["next_refill_ts"], int(self.clock.now))
 
         self.tick(10)
-        self.assertEqual(len(self.musicip.mix_requests()), 1 + service.RADIO_REFILL_SEEDS)
+        self.assertEqual(len(self.source.mix_requests()), 1 + service.RADIO_REFILL_SEEDS)
         self.tick(service.RADIO_REFILL_RETRY_SECONDS)
-        self.assertGreater(len(self.musicip.mix_requests()), 1 + service.RADIO_REFILL_SEEDS)
+        self.assertGreater(len(self.source.mix_requests()), 1 + service.RADIO_REFILL_SEEDS)
 
     def test_server_error_waits_before_retrying(self):
         self.start()
-        self.musicip.mix_status = 500
+        self.source.mix_status = 500
         kodi.go_to(3)
         radio = self.tick()
-        self.assertEqual(len(self.musicip.mix_requests()), 3)  # the last song, then the one before it; no more
-        self.assertEqual(self.musicip.reload_count(), 0)  # MusicIP's library is not reloaded
+        self.assertEqual(len(self.source.mix_requests()), 3)  # the last song, then the one before it; no more
         self.assertEqual(radio["next_refill_ts"], int(self.clock.now) + service.RADIO_REFILL_RETRY_SECONDS)
         self.assertEqual((radio["phase"], radio["musicip_failures"]), ("playing", 1))
         self.assertEqual(radio["events"][-1]["kind"], "musicip_failed")
-        self.assertIn("HTTP 500", radio["events"][-1]["error"])
-        self.assertEqual(len([m for m in kodi.notification_messages() if "MusicIP can't make mixes" in m]), 1)
+        self.assertIn("The sound engine failed", radio["events"][-1]["error"])
+        self.assertEqual(len([m for m in kodi.notification_messages() if "The sound engine can't make mixes" in m]), 1)
 
-    def test_musicip_failing_again_and_again_is_asked_less_often(self):
+    def test_a_source_failing_again_and_again_is_asked_less_often(self):
         self.start()
-        self.musicip.mix_status = 500
+        self.source.mix_status = 500
         kodi.go_to(3)
         waits = []
         for _ in range(6):
             radio = self.tick(max(0, int(self.radio().get("next_refill_ts") or 0) - int(self.clock.now)))
             waits.append(radio["next_refill_ts"] - int(self.clock.now))
         self.assertEqual(waits, [60, 120, 240, 480, 600, 600])
-        self.assertEqual(len([m for m in kodi.notification_messages() if "MusicIP can't make mixes" in m]), 1)
+        self.assertEqual(len([m for m in kodi.notification_messages() if "The sound engine can't make mixes" in m]), 1)
         self.assertEqual([event["kind"] for event in radio["events"]].count("musicip_failed"), 1)
 
-        self.musicip.mix_status = 200
+        self.source.mix_status = 200
         radio = self.tick(radio["next_refill_ts"] - int(self.clock.now))
         self.assertEqual(radio["musicip_failures"], 0)
         self.assertIn("musicip_back", [event["kind"] for event in radio["events"]])
         self.assertGreater(len(radio["queue"]), 5)
-        self.assertIn("MusicIP makes mixes again", main.build_radio_history(radio["events"]))
+        self.assertIn("Mixes can be made again", main.build_radio_history(radio["events"]))
 
-    def test_a_song_musicip_fails_on_is_passed_over(self):
+    def test_a_song_the_source_fails_on_is_passed_over(self):
         self.start()
         last, before = self.radio()["queue"][-1]["file"], self.radio()["queue"][-2]["file"]
-        self.musicip.failing_seeds = {last}
+        self.source.failing_seeds = {last}
         kodi.go_to(3)
         radio = self.tick()
-        self.assertEqual([query["song"] for query in self.musicip.mix_requests()[1:]], [last, before])
+        self.assertEqual([query["song"] for query in self.source.mix_requests()[1:]], [last, before])
         self.assertEqual(radio["seeds"][-1], before)
         self.assertNotIn("musicip_failed", [event["kind"] for event in radio["events"]])
         self.assertEqual(int(radio.get("musicip_failures") or 0), 0)

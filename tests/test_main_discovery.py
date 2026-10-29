@@ -6,7 +6,7 @@ import unittest
 from unittest import mock
 
 from fake_kodi import kodi
-from support import KodiTestCase, MusicIPServerTestCase, main, plugin_query
+from support import KodiTestCase, SourceTestCase, main, plugin_query
 
 SONGS = [(f"D:\\music\\Artist {n}\\Album\\0{n} Song.mp3", f"Song {n}", f"Artist {n}", 200 + n) for n in range(1, 4)]
 
@@ -167,7 +167,7 @@ class NextTest(KodiTestCase):
         self.assertIs(main.update_discovery_state_for_playlist_position({"queue": "x"}, 0)["queue"], "x")
 
 
-class MixFromDiscoverySongTest(MusicIPServerTestCase):
+class MixFromDiscoverySongTest(SourceTestCase):
     def setUp(self):
         super().setUp()
         add_library_songs()
@@ -176,7 +176,7 @@ class MixFromDiscoverySongTest(MusicIPServerTestCase):
 
     def test_mix_replaces_discovery_playback(self):
         mix_track = "D:\\music\\Other\\Album\\01 Mixed.mp3"
-        self.musicip.set_mix(self.seed, [mix_track])
+        self.source.set_mix(self.seed, [mix_track])
         kodi.respond("select", 0)
 
         self.run_plugin(action="discovery_mix_current")
@@ -219,11 +219,11 @@ class MixFromDiscoverySongTest(MusicIPServerTestCase):
         self.assertEqual(main.get_discovery_state()["current_playlist_position"], 1)
 
     def test_server_error_resumes_discovery(self):
-        self.musicip.mix_status = 500
+        self.source.mix_status = 500
         kodi.respond("select", 0)
         self.run_plugin(action="discovery_mix_current")
         self.assertTrue(main.get_discovery_state()["enabled"])
-        self.assertNotified("HTTP 500")
+        self.assertNotified("The sound engine failed")
 
     def test_no_current_song(self):
         main.save_discovery_state({"enabled": True})

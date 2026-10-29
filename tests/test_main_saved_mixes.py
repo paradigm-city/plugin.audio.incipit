@@ -6,7 +6,7 @@ import unittest
 from unittest import mock
 
 from fake_kodi import kodi
-from support import KodiTestCase, MusicIPServerTestCase, main
+from support import KodiTestCase, SourceTestCase, main
 
 A, B, C, D = (f"D:\\music\\Artist\\Album\\0{n} Song {n}.mp3" for n in range(1, 5))
 DAY = 24 * 3600
@@ -29,7 +29,7 @@ class StorageTest(KodiTestCase):
         self.assertNotEqual(main.mix_cache_key(A, 20), main.mix_cache_key(B, 20))
 
     def test_sidecar_metadata(self):
-        main.remember_mix_generation_parameters(A, 20, {"size": 20, "style_ui": 3})
+        main.remember_mix_generation_parameters(A, 20, {"size": 20, "variety": 3})
         cache_path = main.create_current_mix(A, 20, [A, B], track_metadata_list=[
             {"title": "Song 1", "artist": "Artist", "library_freshest_ts": 100},
             {"title": "Song 2", "library_freshest_ts": 200},
@@ -37,7 +37,7 @@ class StorageTest(KodiTestCase):
         sidecar = self.read_json(main.mix_meta_path_from_cache_path(cache_path))
         self.assertEqual((sidecar["seed"], sidecar["size"], sidecar["track_count"]), (A, 20, 2))
         self.assertEqual(sidecar["label"], "01 Song 1")
-        self.assertEqual(sidecar["mix_generation_parameters"]["style_ui"], 3)
+        self.assertEqual(sidecar["mix_generation_parameters"]["variety"], 3)
         self.assertEqual(sidecar["track_metadata_library_freshest_ts"], 200)
         self.assertEqual(sorted(sidecar["track_metadata_by_path"]), sorted(main.canonical_audio_path(p) for p in (A, B)))
 
@@ -124,7 +124,7 @@ class RemoveTrackTest(KodiTestCase):
         self.assertEqual(main.find_track_position(tracks, 9, D), 2)
 
 
-class MoreAndLessLikeThisTest(MusicIPServerTestCase):
+class MoreAndLessLikeThisTest(SourceTestCase):
     def setUp(self):
         super().setUp()
         kodi.settings["playlist_size"] = "10"  # More like this inserts 20 % = 2 tracks
@@ -133,14 +133,14 @@ class MoreAndLessLikeThisTest(MusicIPServerTestCase):
     def test_more_like_this_inserts_new_tracks_after_selection(self):
         kodi.settings["mix_assist_auto_more_like_this"] = "false"  # AI Mix Assist off: MusicIP's tracks as they come
         new1, new2, new3 = (f"E:\\new\\{n}.mp3" for n in range(3))
-        self.musicip.set_mix(B, [A, new1, C, new2, new3])
+        self.source.set_mix(B, [A, new1, C, new2, new3])
         self.assertEqual(main.insert_more_like_this_into_mix(A, 3, 1, B, cache_path=self.cache_path), 2)
         self.assertEqual(self.read_mix(self.cache_path), [A, B, new1, new2, C])
-        self.assertEqual(self.musicip.mix_requests()[0]["size"], "10")
+        self.assertEqual(self.source.mix_requests()[0]["size"], "10")
 
     def test_tracks_from_more_like_this_say_so(self):
         new1, new2 = "E:\\new\\1.mp3", "E:\\new\\2.mp3"
-        self.musicip.set_mix(B, [new1, new2])
+        self.source.set_mix(B, [new1, new2])
         main.insert_more_like_this_into_mix(A, 3, 1, B, cache_path=self.cache_path)
         for track in (A, B, C, new1, new2):
             kodi.add_media(track)  # present: a missing file's second text says so instead
@@ -156,15 +156,15 @@ class MoreAndLessLikeThisTest(MusicIPServerTestCase):
         self.assertTrue(items[2].getMusicInfoTag().getComment().startswith("Added by More like this for "))
 
     def test_more_like_this_without_new_tracks(self):
-        self.musicip.set_mix(B, [A, C])
+        self.source.set_mix(B, [A, C])
         with self.assertRaisesRegex(main.MusicIPError, "No new tracks"):
             main.insert_more_like_this_into_mix(A, 3, 1, B, cache_path=self.cache_path)
 
     def test_less_like_this_removes_selection_and_similar_tracks(self):
-        self.musicip.set_mix(B, [C])
+        self.source.set_mix(B, [C])
         self.assertEqual(main.remove_less_like_this_from_mix(A, 3, 1, B, cache_path=self.cache_path), 2)
         self.assertEqual(self.read_mix(self.cache_path), [A])
-        self.assertEqual(self.musicip.mix_requests()[0]["size"], "20")
+        self.assertEqual(self.source.mix_requests()[0]["size"], "20")
 
     def test_seed_track_is_required(self):
         with self.assertRaisesRegex(main.MusicIPError, "No seed track"):

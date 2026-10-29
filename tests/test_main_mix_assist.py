@@ -5,7 +5,7 @@ import unittest
 from unittest import mock
 
 from fake_kodi import kodi
-from support import KodiTestCase, MusicIPServerTestCase, main, service
+from support import KodiTestCase, SourceTestCase, main, service
 
 TRACKS = [
     "D:\\music\\#jazz\\Seed.mp3",
@@ -387,10 +387,10 @@ class PerMixLevelTest(MixAssistTestCase):
         self.assertIn("AI Mix Assist: off for this mix", main.build_mix_info_page(self.cache_path))
 
 
-class GenerateDialogTest(MusicIPServerTestCase):
+class GenerateDialogTest(SourceTestCase):
     def setUp(self):
         super().setUp()
-        self.musicip.set_mix(TRACKS[0], TRACKS[1:])
+        self.source.set_mix(TRACKS[0], TRACKS[1:])
 
     @property
     def cache_path(self):
@@ -405,12 +405,12 @@ class GenerateDialogTest(MusicIPServerTestCase):
     def test_the_dialog_shows_the_ai_mix_assist_lines(self):
         params = main.confirm_mix_generation({}) or {}
         choices = kodi.dialogs("select")[0][1][1]
-        self.assertEqual(choices[6:], ["AI Mix Assist: Balanced", "Perspective: Mixed",
+        self.assertEqual(choices[4:], ["AI Mix Assist: Balanced", "Perspective: Mixed",
                                        "What this mix is about: <worked out by the AI>"])
         self.assertEqual(params, {})  # cancelled
 
     def test_a_perspective_chosen_when_generating_is_kept_with_the_mix(self):
-        kodi.respond("select", 7, 5, 0)  # Perspective -> Lyrical, Generate
+        kodi.respond("select", 5, 5, 0)  # Perspective -> Lyrical, Generate
         self.run_plugin(action="browse_mix", seed=TRACKS[0], size="20")
         self.assertEqual(self.sidecar()["mix_assist"]["perspective"], 5)
         self.assertIn("When you created the mix, you set AI Mix Assist to the lyrical perspective",
@@ -418,7 +418,7 @@ class GenerateDialogTest(MusicIPServerTestCase):
         self.assertNotIn("assist_perspective", self.sidecar()["mix_generation_parameters"])
 
     def test_choices_made_when_generating_are_kept_with_the_mix(self):
-        kodi.respond("select", 6, 5, 8, 0)  # AI Mix Assist -> Adventurous, What it is about -> ..., Generate
+        kodi.respond("select", 4, 5, 6, 0)  # AI Mix Assist -> Adventurous, What it is about -> ..., Generate
         kodi.respond("keyboard", "  dark cosmic electronics  ")
         self.run_plugin(action="browse_mix", seed=TRACKS[0], size="20")
         section = self.sidecar()["mix_assist"]
@@ -431,7 +431,7 @@ class GenerateDialogTest(MusicIPServerTestCase):
         self.assertNotIn("assist_openness", self.sidecar()["mix_generation_parameters"])  # MusicIP's stay clean
 
     def test_a_mix_created_with_ai_mix_assist_off_is_not_tidied_up(self):
-        kodi.respond("select", 6, 0, 0)  # AI Mix Assist -> Off, Generate
+        kodi.respond("select", 4, 0, 0)  # AI Mix Assist -> Off, Generate
         self.run_plugin(action="browse_mix", seed=TRACKS[0], size="20")
         self.assertEqual(self.sidecar()["mix_assist"]["openness"], main.MIX_OPENNESS_OFF)
         self.assertEqual(self.queued(), [])
@@ -593,9 +593,9 @@ class NewMixQueueTest(KodiTestCase):
         self.assertEqual(main.pop_mix_assist_request(), {})
 
 
-class NewMixGenerationQueueTest(MusicIPServerTestCase):
+class NewMixGenerationQueueTest(SourceTestCase):
     def test_a_generated_mix_is_queued(self):
-        self.musicip.set_mix(TRACKS[0], TRACKS[1:])
+        self.source.set_mix(TRACKS[0], TRACKS[1:])
         kodi.respond("select", 0)
         self.run_plugin(action="browse_mix", seed=TRACKS[0], size="20")
         entries = self.read_json(main.mix_assist_queue_path()).get("entries", [])
@@ -694,7 +694,7 @@ class ProcessNewMixTest(MixAssistTestCase):
         self.assertEqual(kodi.playlist_files(), [TRACKS[0], TRACKS[2]])
 
 
-class MoreLikeThisTest(MusicIPServerTestCase):
+class MoreLikeThisTest(SourceTestCase):
     NEW = [f"E:\\new\\{n}.mp3" for n in range(6)]
 
     def setUp(self):
@@ -702,7 +702,7 @@ class MoreLikeThisTest(MusicIPServerTestCase):
         kodi.settings["playlist_size"] = "10"  # More like this adds 20 % = 2 tracks
         kodi.info_labels["Container.PluginName"] = "plugin.audio.musicip"
         self.cache_path = self.save_mix(TRACKS)
-        self.musicip.set_mix(TRACKS[1], [TRACKS[0]] + self.NEW)
+        self.source.set_mix(TRACKS[1], [TRACKS[0]] + self.NEW)
         patcher = mock.patch.object(main, "mix_assist_ask", return_value=lambda *args: {})
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -728,7 +728,7 @@ class MoreLikeThisTest(MusicIPServerTestCase):
         kodi.settings["mix_reject_size"] = "0"
         self.assertEqual(main.mix_reject_size_for({"mix_generation_parameters": {"rejectsize": 3}}), 3)  # its own
         self.assertEqual(main.mix_reject_size_for({}), 0)  # else the setting's: 0, artists may repeat
-        self.assertEqual(self.musicip.mix_requests()[0]["size"], "75")
+        self.assertEqual(self.source.mix_requests()[0]["size"], "75")
         self.assertEqual(self.read_mix(self.cache_path), TRACKS[:2] + [self.NEW[2], self.NEW[4]] + TRACKS[2:])
         self.assertNotified("Inserted 2 track(s). AI Mix Assist skipped 1 that didn't fit (see the mix history).")
         self.assertNotIn("intent", self.section())  # the song's intent is not the mix's
@@ -749,7 +749,7 @@ class MoreLikeThisTest(MusicIPServerTestCase):
         self.more_like_this({"intent": "x", "chosen": [], "checked": True,
                              "not_fitting": [{"path": p, "label": p, "reason": "no"} for p in self.NEW]})
         self.assertEqual(self.read_mix(self.cache_path), TRACKS)
-        self.assertNotified("none of MusicIP's tracks is close enough to this song")
+        self.assertNotified("none of the suggested tracks is close enough to this song")
 
     def test_claude_problems_fall_back_to_musicips_tracks(self):
         error = main.mix_assist_claude.ClaudeError(main.mix_assist_claude.USAGE_LIMIT, "limit")

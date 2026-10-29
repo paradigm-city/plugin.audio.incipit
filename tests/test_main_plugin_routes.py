@@ -8,7 +8,7 @@ import unittest
 from unittest import mock
 
 from fake_kodi import ADDON_DIR, kodi
-from support import HANDLE, PLUGIN_URL, KodiTestCase, MusicIPServerTestCase, main, plugin_query
+from support import HANDLE, PLUGIN_URL, KodiTestCase, SourceTestCase, main, plugin_query
 
 SEED = "D:\\music\\Motorhead\\Ace of Spades (1980)\\01 Ace of Spades.mp3"
 T1 = "D:\\music\\Motorhead\\Overkill (1979)\\01 Overkill.mp3"
@@ -245,7 +245,7 @@ class SkinHighlightTest(KodiTestCase):
 class MixInfoTest(KodiTestCase):
     def setUp(self):
         super().setUp()
-        main.remember_mix_generation_parameters(SEED, 2, {"size": 2, "style_ui": 5, "rejectsize": 2})
+        main.remember_mix_generation_parameters(SEED, 2, {"size": 2, "rejectsize": 2})
         self.cache_path = self.save_mix([SEED, T1], size=2)
 
     def test_info_window(self):
@@ -259,8 +259,8 @@ class MixInfoTest(KodiTestCase):
         tabs = [properties.get(f"tab{number}") for number in range(1, 7)]
         self.assertEqual(tabs, ["Overview", "Sound", "Changes", "History", None, None])  # no course without ratings
         self.assertEqual((window.focus, properties["tab"], properties["image"]), (201, "1", ""))
-        self.assertIn("[B]How it was made[/B]\nMusicIP: 2 tracks, variety 0, style 5/10, no artist repeat within 2 "
-                      "tracks, no filter", properties["text"])
+        self.assertIn("[B]How it was made[/B]\nSound engine: 2 tracks, variety 0, no artist repeat within 2 "
+                      "tracks\n", properties["text"])
         self.assertIn("[B]Files[/B]\nNot checked yet", properties["text"])
         window.onFocus(202)
         self.assertEqual((properties["tab"], properties["image"]), ("2", ""))
@@ -297,7 +297,7 @@ class MixInfoTest(KodiTestCase):
         heading, text = kodi.dialogs("textviewer")[0][1]
         self.assertEqual(heading, "MusicIP mix information")
         self.assertIn("[B]How it was made[/B]", text)
-        self.assertIn("MusicIP: 2 tracks, variety 0, style 5/10, no artist repeat within 2 tracks, no filter", text)
+        self.assertIn("Sound engine: 2 tracks, variety 0, no artist repeat within 2 tracks", text)
         self.assertIn("[B]Files[/B]\nNot checked yet", text)
 
     def test_the_window_file_is_shipped(self):
@@ -346,17 +346,17 @@ class MixInfoTest(KodiTestCase):
         self.assertIn("Could not read mix information.", kodi.dialogs("ok")[0][1][1])
 
 
-class BrowseMixTest(MusicIPServerTestCase):
+class BrowseMixTest(SourceTestCase):
     def setUp(self):
         super().setUp()
         kodi.add_media(SEED)
         kodi.add_media(T1)
-        self.musicip.set_mix(SEED, [T1, T2])
+        self.source.set_mix(SEED, [T1, T2])
 
     def test_stored_mix_is_listed_without_contacting_musicip(self):
         cache_path = self.save_mix([SEED, T1, T2], size=20)
         self.run_plugin(action="browse_mix", seed=SEED, size="20")
-        self.assertEqual(self.musicip.requests, [])
+        self.assertEqual(self.source.requests, [])
         self.assertEqual(self.listed_labels(), [
             "1. (Unknown Artist) - 01 Ace of Spades  [COLOR FF8C929C]Seed[/COLOR]",  # the seed says so
             "2. (Unknown Artist) - 01 Overkill",
@@ -449,7 +449,7 @@ class BrowseMixTest(MusicIPServerTestCase):
         self.assertEqual(kodi.builtins.count("Action(Down)"), 2)
 
 
-class BrowseSavedMixTest(MusicIPServerTestCase):
+class BrowseSavedMixTest(SourceTestCase):
     def setUp(self):
         super().setUp()
         self.cache_path = self.save_mix([SEED, T1], size=20)
@@ -460,7 +460,7 @@ class BrowseSavedMixTest(MusicIPServerTestCase):
         self.assertIn(("setPluginCategory", "Saved MusicIP mix: 01 Ace of Spades"), kodi.directory_calls)
 
     def test_refresh_makes_a_new_current_mix(self):
-        self.musicip.set_mix(SEED, [T2])
+        self.source.set_mix(SEED, [T2])
         kodi.respond("select", 0)
         self.run_plugin(action="browse_saved_mix", cache_path=self.cache_path, refresh="1")
         self.assertEqual(self.current_mix_tracks(), [SEED, T2])
@@ -475,10 +475,10 @@ class BrowseSavedMixTest(MusicIPServerTestCase):
         self.assertEqual(self.listed_labels(), ["Mix is empty. Use Refresh mix to generate a new one."])
 
     def test_refresh_failure_keeps_stored_mix(self):
-        self.musicip.mix_status = 500
+        self.source.mix_status = 500
         kodi.respond("select", 0)
         self.run_plugin(action="browse_saved_mix", cache_path=self.cache_path, refresh="1")
-        self.assertNotified("HTTP 500")
+        self.assertNotified("The sound engine failed")
         self.assertFalse(kodi.ended[-1]["succeeded"])
         self.assertEqual(self.read_mix(self.cache_path), [SEED, T1])
 
@@ -490,10 +490,10 @@ class BrowseSavedMixTest(MusicIPServerTestCase):
         self.assertNotified("No stored mix path was supplied.")
 
 
-class GenerateFromPlayingAudioTest(MusicIPServerTestCase):
+class GenerateFromPlayingAudioTest(SourceTestCase):
     def test_generates_saves_and_plays_mix(self):
         kodi.play_file(SEED, title="Ace of Spades")
-        self.musicip.set_mix(SEED, [T1, T2])
+        self.source.set_mix(SEED, [T1, T2])
         kodi.respond("select", 0)
 
         self.run_plugin(action="generate_current_mix")
@@ -511,15 +511,15 @@ class GenerateFromPlayingAudioTest(MusicIPServerTestCase):
 
     def test_server_error_is_listed(self):
         kodi.play_file(SEED)
-        self.musicip.mix_status = 500
+        self.source.mix_status = 500
         kodi.respond("select", 0)
         self.run_plugin(action="generate_current_mix")
-        self.assertEqual(self.listed_labels(), ["MusicIP mix failed: MusicIP server returned HTTP 500."])
+        self.assertEqual(self.listed_labels(), ["MusicIP mix failed: The sound engine failed: server error"])
         self.assertEqual(kodi.playlist, [])
 
     def test_playback_failure_is_listed(self):
         kodi.play_file(SEED)
-        self.musicip.set_mix(SEED, [T1])
+        self.source.set_mix(SEED, [T1])
         kodi.respond("select", 0)
         with mock.patch("fake_kodi.Player.play", side_effect=RuntimeError("player busy")):
             self.run_plugin(action="generate_current_mix")
@@ -545,7 +545,7 @@ class PlayTrackTest(KodiTestCase):
         self.assertFalse(kodi.resolved[0][0])
 
 
-class MixEditingRoutesTest(MusicIPServerTestCase):
+class MixEditingRoutesTest(SourceTestCase):
     def setUp(self):
         super().setUp()
         kodi.settings["playlist_size"] = "10"
@@ -568,14 +568,14 @@ class MixEditingRoutesTest(MusicIPServerTestCase):
         self.assertTrue(main.is_addon_mix_container_active())
 
     def test_more_like_this(self):
-        self.musicip.set_mix(T1, ["E:\\new\\1.mp3"])
+        self.source.set_mix(T1, ["E:\\new\\1.mp3"])
         self.run_plugin(action="more_like_this", seed=SEED, size="10", index="1", path=T1, cache_path=self.cache_path)
         self.assertEqual(self.read_mix(self.cache_path), [SEED, T1, "E:\\new\\1.mp3", T2])
         self.assertNotified("Inserted 1 track(s).")
         self.assertEqual(plugin_query(kodi.builtins[-1])["focus_index"], "1")
 
     def test_less_like_this(self):
-        self.musicip.set_mix(T1, [T2])
+        self.source.set_mix(T1, [T2])
         self.run_plugin(action="less_like_this", seed=SEED, size="10", index="1", path=T1, cache_path=self.cache_path)
         self.assertEqual(self.read_mix(self.cache_path), [SEED])
         self.assertNotified("Removed 2 track(s).")
@@ -583,11 +583,11 @@ class MixEditingRoutesTest(MusicIPServerTestCase):
 
     def test_edit_errors_are_notified(self):
         self.run_plugin(action="more_like_this", seed=SEED, size="10", index="1", path=T1, cache_path=self.cache_path)
-        self.assertNotified("MusicIP returned an empty mix.")
+        self.assertNotified("The sound engine returned an empty mix.")
         self.assertEqual(kodi.notifications[-1][2], "error")
 
 
-class FolderEntriesTest(MusicIPServerTestCase):
+class FolderEntriesTest(SourceTestCase):
     """Kodi expects every folder entry to answer with a directory listing (endOfDirectory)."""
 
     def folder_actions(self):
@@ -604,14 +604,14 @@ class FolderEntriesTest(MusicIPServerTestCase):
 
     def prepare_for(self, action):
         kodi.reset()
-        kodi.settings.update({"host": "127.0.0.1", "port": str(self.musicip.port)})
+        kodi.settings.update({"host": "127.0.0.1", "port": str(self.source.port)})
         for n in range(1, 4):
             kodi.library.add_song(f"D:\\music\\{n}.mp3", title=f"Song {n}", duration=240)
         if action in ("discovery_next", "discovery_stop", "discovery_mix_current"):
             self.run_plugin(action="discovery_start")
         kodi.play_file(SEED)
-        self.musicip.set_mix(SEED, [T1])
-        self.musicip.set_mix("D:\\music\\1.mp3", [T1])
+        self.source.set_mix(SEED, [T1])
+        self.source.set_mix("D:\\music\\1.mp3", [T1])
         kodi.respond("select", 0)
         kodi.ended.clear()
 

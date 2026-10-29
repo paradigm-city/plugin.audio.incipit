@@ -5,7 +5,7 @@ import unittest
 from unittest import mock
 
 from fake_kodi import kodi
-from support import KodiTestCase, MusicIPServerTestCase, main
+from support import KodiTestCase, SourceTestCase, main
 from test_repair_matching import KING_BISCUIT_RETAGGED, MISSING_PATH, add_to_library
 
 A, B, C, D = (f"D:\\music\\Artist\\Album\\0{n} Song {n}.mp3" for n in range(1, 5))
@@ -22,12 +22,12 @@ class HistoryTestCase(KodiTestCase):
 
 class MixHistoryTest(HistoryTestCase):
     def test_creating_and_saving(self):
-        main.remember_mix_generation_parameters(A, 3, {"size": 3, "variety": 4, "style_ui": 0, "rejectsize": 6})
+        main.remember_mix_generation_parameters(A, 3, {"size": 3, "variety": 4, "rejectsize": 6})
         cache_path = self.save_mix([A, B, C], size=3)
         created, saved = self.history(cache_path)
         self.assertEqual((created["kind"], created["tracks"]), ("created", 3))
         self.assertEqual(created["seed"], main.path_to_label(A))
-        self.assertEqual(created["parameters"], "variety 4, style 0/10, no artist repeat within 6 tracks, no filter")
+        self.assertEqual(created["parameters"], "variety 4, no artist repeat within 6 tracks")
         self.assertEqual((saved["kind"], saved["name"]), ("saved", main.path_to_label(A)))
         text = main.build_mix_history_text(self.read_json(main.mix_meta_path_from_cache_path(cache_path)))
         self.assertIn(f'Saved as "{main.path_to_label(A)}"', text)
@@ -116,7 +116,7 @@ class MixInformationPageTest(HistoryTestCase):
         self.assertIn("Created from", page.split("[B]History[/B]")[1])
 
 
-class EditingHistoryAndProgressTest(MusicIPServerTestCase, HistoryTestCase):
+class EditingHistoryAndProgressTest(SourceTestCase, HistoryTestCase):
     def setUp(self):
         super().setUp()
         kodi.settings["playlist_size"] = "10"  # More/Less like this change 20 % = 2 tracks
@@ -124,18 +124,18 @@ class EditingHistoryAndProgressTest(MusicIPServerTestCase, HistoryTestCase):
         self.cache_path = self.save_mix([A, B, C, D], size=4)
 
     def test_more_like_this(self):
-        self.musicip.set_mix(B, [A, NEW1, NEW2])
+        self.source.set_mix(B, [A, NEW1, NEW2])
         self.run_plugin(action="more_like_this", seed=A, size="4", index="1", path=B, cache_path=self.cache_path)
         event = self.history(self.cache_path)[-1]
         self.assertEqual((event["kind"], event["song"]), ("more_like_this", main.path_to_label(B)))
         self.assertEqual(event["added"], [main.path_to_label(NEW1), main.path_to_label(NEW2)])
         calls = self.progress_calls()
         self.assertEqual(calls[0], ("progress.create", ("More like this", ""), {}))
-        self.assertIn(("progress.update", (15, "More like this", "MusicIP is mixing"), {}), calls)
+        self.assertIn(("progress.update", (15, "More like this", "Looking for songs that sound alike"), {}), calls)
         self.assertEqual(calls[-1][0], "progress.close")
 
     def test_less_like_this(self):
-        self.musicip.set_mix(B, [C])
+        self.source.set_mix(B, [C])
         self.run_plugin(action="less_like_this", seed=A, size="4", index="1", path=B, cache_path=self.cache_path)
         event = self.history(self.cache_path)[-1]
         self.assertEqual((event["kind"], event["removed"]), ("less_like_this", [main.path_to_label(B), main.path_to_label(C)]))
@@ -143,18 +143,18 @@ class EditingHistoryAndProgressTest(MusicIPServerTestCase, HistoryTestCase):
         self.assertEqual(self.progress_calls()[-1][0], "progress.close")
 
     def test_the_progress_bar_closes_when_musicip_fails(self):
-        self.musicip.mix_status = 500
+        self.source.mix_status = 500
         self.run_plugin(action="less_like_this", seed=A, size="4", index="1", path=B, cache_path=self.cache_path)
         self.assertEqual(self.progress_calls()[-1][0], "progress.close")
         self.assertEqual(self.history(self.cache_path)[-1]["kind"], "saved")  # nothing recorded since
 
     def test_creating_a_mix_shows_progress(self):
-        self.musicip.set_mix(C, [C, A, B])
+        self.source.set_mix(C, [C, A, B])
         kodi.respond("select", 0)
         self.run_plugin(action="browse_mix", seed=C, size="3")
         calls = self.progress_calls()
-        self.assertEqual(calls[0], ("progress.create", ("Creating a MusicIP mix", ""), {}))
-        self.assertIn(("progress.update", (15, "Creating a MusicIP mix", "MusicIP is mixing"), {}), calls)
+        self.assertEqual(calls[0], ("progress.create", ("Creating a mix", ""), {}))
+        self.assertIn(("progress.update", (15, "Creating a mix", "Looking for songs that sound alike"), {}), calls)
         self.assertEqual(calls[-1][0], "progress.close")
 
 

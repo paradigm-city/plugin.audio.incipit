@@ -4,7 +4,7 @@ import os
 import unittest
 
 from fake_kodi import kodi
-from support import KodiTestCase, MusicIPServerTestCase, main, plugin_query, service
+from support import KodiTestCase, SourceTestCase, main, plugin_query, service
 
 SEED = "D:\\music\\Motorhead\\Ace of Spades (1980)\\01 Ace of Spades.mp3"
 T1 = "D:\\music\\Motorhead\\Overkill (1979)\\01 Overkill.mp3"
@@ -167,17 +167,17 @@ class SaveFromTheMixTest(KodiTestCase):
         self.assertNotIn("Saved: not yet", info)
 
 
-class BrowseMixUsesTheCurrentMixTest(MusicIPServerTestCase):
+class BrowseMixUsesTheCurrentMixTest(SourceTestCase):
     def test_the_current_mix_of_the_same_song_is_shown(self):
         cache_path = main.create_current_mix(SEED, 20, [SEED, T1])
         self.run_plugin(action="browse_mix", seed=SEED, size="20")
-        self.assertEqual(self.musicip.requests, [])
+        self.assertEqual(self.source.requests, [])
         self.assertEqual(main.get_current_mix_cache_path(), cache_path)
         self.assertEqual(len(kodi.directory_items), 2)
 
     def test_another_song_makes_a_new_current_mix(self):
         saved = self.save_mix([T2, T1], size=20)
-        self.musicip.set_mix(SEED, [T1])
+        self.source.set_mix(SEED, [T1])
         kodi.respond("select", 0)
         self.run_plugin(action="browse_mix", seed=SEED, size="20")
         self.assertNotEqual(main.get_current_mix_cache_path(), saved)
@@ -185,7 +185,7 @@ class BrowseMixUsesTheCurrentMixTest(MusicIPServerTestCase):
         self.assertEqual(main.list_saved_mix_cache_paths(), [saved])  # listed once it is saved
 
 
-class RefreshRedrawTest(MusicIPServerTestCase):
+class RefreshRedrawTest(SourceTestCase):
     """Findings F25: Kodi runs the "Refresh mix" URL again whenever it redraws the folder."""
 
     def refresh_query(self, cache_path):
@@ -196,7 +196,7 @@ class RefreshRedrawTest(MusicIPServerTestCase):
     def test_a_redraw_after_refreshing_does_not_mix_again(self):
         unsaved = main.create_current_mix(SEED, 20, [SEED, T1])
         query = self.refresh_query(unsaved)
-        self.musicip.set_mix(SEED, [T2])
+        self.source.set_mix(SEED, [T2])
         kodi.respond("select", 0)
         self.run_plugin(**query)
         refreshed = main.get_current_mix_cache_path()
@@ -210,7 +210,7 @@ class RefreshRedrawTest(MusicIPServerTestCase):
 
     def test_refreshing_again_mixes_again(self):
         saved = self.save_mix([SEED, T1], size=20)
-        self.musicip.set_mix(SEED, [T2])
+        self.source.set_mix(SEED, [T2])
         kodi.respond("select", 0, 0)
         self.run_plugin(**self.refresh_query(saved))
         first = main.get_current_mix_cache_path()
@@ -219,7 +219,7 @@ class RefreshRedrawTest(MusicIPServerTestCase):
         self.assertNotEqual(main.get_current_mix_cache_path(), first)
 
     def test_a_redraw_of_a_library_song_mix_after_refreshing(self):
-        self.musicip.set_mix(SEED, [T1])
+        self.source.set_mix(SEED, [T1])
         kodi.respond("select", 0)
         query = {"action": "browse_mix", "seed": SEED, "size": "20", "refresh": "1", "nonce": "123"}
         self.run_plugin(**query)

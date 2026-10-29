@@ -276,7 +276,8 @@ class ServiceLoggingTest(KodiTestCase):
         main.enqueue_metadata_refresh_for_tracks(["D:\music\gone.mp3"])
         kodi.settings["service_auto_repair_enabled"] = "true"
         kodi.logs.clear()
-        service.main()
+        with mock.patch.object(main.soundprint, "not_ready", return_value=""):  # a sound engine that is set up
+            service.main()
         below_error = [message for message, level in kodi.logs if level < 3]
         self.assertEqual(len(below_error), 1)
         self.assertTrue(below_error[0].startswith("[plugin.audio.musicip] [general] MusicIP service started. version="))

@@ -8,7 +8,7 @@ from unittest import mock
 
 import fake_kodi
 from fake_kodi import kodi
-from support import KodiTestCase, MusicIPServerTestCase, logs, main, service
+from support import KodiTestCase, SourceTestCase, logs, main, service
 
 from mixassist import claude, trace
 
@@ -108,17 +108,17 @@ class MigrationTest(KodiTestCase):
         self.assertIn("checks on (turned on from the old extended logging switches).", line)
 
 
-class MixingLogTest(MusicIPServerTestCase):
+class MixingLogTest(SourceTestCase):
     def test_a_mix_request_and_its_songs(self):
-        self.musicip.set_mix(SONGS[0], SONGS[1:4])
+        self.source.set_mix(SONGS[0], SONGS[1:4])
         main.fetch_mix(SONGS[0], 3)
-        self.assertNotIn("MusicIP mix request", kodi.log_text())
+        self.assertNotIn("Sound engine mix request", kodi.log_text())
         kodi.settings["log_mixing"] = "true"
         main.fetch_mix(SONGS[0], 3)
         text = kodi.log_text()
-        self.assertIn(f"[mixing] MusicIP mix request: seed {SONGS[0]!r}", text)
-        self.assertIn("size 3, parameters {", text)
-        self.assertIn(f"with 3 song(s) for {SONGS[0]!r}\n  1. {SONGS[1]}\n  2. {SONGS[2]}\n  3. {SONGS[3]}", text)
+        self.assertIn(f"[mixing] Sound engine mix request: seed {SONGS[0]!r}", text)
+        self.assertIn("size 3, artists may repeat, variety 0.", text)
+        self.assertIn(f"with 3 song(s) for {SONGS[0]!r} ( - ):\n  1. {SONGS[1]} (similarity 0.900, rank 1,  - )", text)
 
     def test_mix_history_events(self):
         kodi.settings["log_mixing"] = "true"
@@ -128,14 +128,14 @@ class MixingLogTest(MusicIPServerTestCase):
                       kodi.log_text())
 
 
-class RadioLogTest(MusicIPServerTestCase):
+class RadioLogTest(SourceTestCase):
     def setUp(self):
         super().setUp()
         self.clock = self.use_clock()
         for n, file in enumerate(SONGS, start=1):
             kodi.library.add_song(file, title=f"Song {n}", artist=f"Artist {n}", duration=240)
         for index, seed in enumerate(SONGS):
-            self.musicip.set_mix(seed, [SONGS[(index + k) % len(SONGS)] for k in range(1, 5)])
+            self.source.set_mix(seed, [SONGS[(index + k) % len(SONGS)] for k in range(1, 5)])
         kodi.settings["log_radio"] = "true"
         self.run_plugin(action="radio_on")
         self.run_plugin(action="radio_play")

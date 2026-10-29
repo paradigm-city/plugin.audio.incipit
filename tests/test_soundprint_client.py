@@ -13,7 +13,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from fake_kodi import kodi
-from support import KodiTestCase, MusicIPServerTestCase, main, service
+from support import KodiTestCase, SourceTestCase, main, service
 
 from soundprint import client, state
 
@@ -221,7 +221,6 @@ class StatusTextTest(unittest.TestCase):
 class SoundEngineMixTest(KodiTestCase):
     def setUp(self):
         super().setUp()
-        kodi.settings["suggestion_engine"] = "1"
         patcher = mock.patch.object(main.soundprint, "neighbours", return_value=answer(NEAR))
         self.neighbours = patcher.start()
         self.addCleanup(patcher.stop)
@@ -262,13 +261,8 @@ class SoundEngineMixTest(KodiTestCase):
         self.neighbours.side_effect = client.SoundprintError(client.NOT_SET_UP, "The sound engine isn't set up yet.")
         with self.assertRaises(main.MusicIPError) as caught:
             main.fetch_mix(SEED, 20)
-        self.assertEqual(str(caught.exception), "The sound engine isn't set up yet.")
+        self.assertEqual(str(caught.exception), f"The sound engine isn't set up yet. {main.SOUND_ENGINE_SETUP_HINT}")
         self.assertIn("failed (not_set_up)", kodi.log_text())  # an error is always logged
-
-    def test_musicip_by_default(self):
-        kodi.settings.pop("suggestion_engine")
-        self.assertFalse(main.uses_sound_prints())
-        self.assertEqual(main.engine_name(), "MusicIP")
 
 
 class SoundEngineSettingsTest(KodiTestCase):
@@ -326,11 +320,10 @@ class SoundEngineSettingsTest(KodiTestCase):
         self.assertIn("setup.log", kodi.dialogs("ok")[0][1][1])
 
 
-class SoundEngineAnalysisTickTest(MusicIPServerTestCase):
+class SoundEngineAnalysisTickTest(SourceTestCase):
     def setUp(self):
         super().setUp()
         self.clock = self.use_clock()
-        kodi.settings["suggestion_engine"] = "1"
         patcher = mock.patch.object(main.soundprint, "start_analysis",
                                     return_value={"started": True, "pid": 7, "command": ["py"]})
         self.start = patcher.start()
@@ -340,13 +333,12 @@ class SoundEngineAnalysisTickTest(MusicIPServerTestCase):
         self.clock.advance(seconds)
         return service.run_library_update_tick()
 
-    def test_not_while_kodi_starts_then_every_8_hours_instead_of_musicips_reload(self):
+    def test_not_while_kodi_starts_then_every_8_hours(self):
         self.assertFalse(self.tick())
-        self.assertTrue(self.tick(service.MUSICIP_RELOAD_STARTUP_DELAY_SECONDS))
+        self.assertTrue(self.tick(service.LIBRARY_UPDATE_STARTUP_DELAY_SECONDS))
         self.assertFalse(self.tick(service.SOUNDPRINT_ANALYSIS_INTERVAL_SECONDS - 1))
         self.assertTrue(self.tick(1))
         self.assertEqual(self.start.call_count, 2)
-        self.assertEqual(self.musicip.reload_count(), 0)
         self.assertIn("Sound engine analysis started (scheduled)", kodi.log_text())
 
     def test_after_kodis_music_library_scan_at_once(self):
@@ -357,27 +349,37 @@ class SoundEngineAnalysisTickTest(MusicIPServerTestCase):
         self.assertIn("(after Kodi's library scan)", kodi.log_text())
         self.assertFalse(self.tick(1))
 
-    def test_not_when_switched_off_and_not_with_musicip(self):
+    def test_not_when_switched_off(self):
         kodi.settings["soundprint_auto_analyse"] = "false"
         self.tick()
-        self.assertFalse(self.tick(service.MUSICIP_RELOAD_STARTUP_DELAY_SECONDS))
-        kodi.settings["suggestion_engine"] = "0"
-        self.assertTrue(self.tick(1))  # MusicIP's reload instead
-        service.MUSICIP_RELOAD["thread"].join(10)
-        self.assertEqual(self.musicip.reload_count(), 1)
+        self.assertFalse(self.tick(service.LIBRARY_UPDATE_STARTUP_DELAY_SECONDS))
+        self.assertFalse(self.tick(service.SOUNDPRINT_ANALYSIS_INTERVAL_SECONDS))
         self.start.assert_not_called()
 
     def test_a_tool_that_is_not_set_up_is_tried_again_only_at_the_next_time(self):
         self.start.side_effect = client.SoundprintError(client.NOT_SET_UP, "not set up")
         self.tick()
-        self.assertFalse(self.tick(service.MUSICIP_RELOAD_STARTUP_DELAY_SECONDS))
+        self.assertFalse(self.tick(service.LIBRARY_UPDATE_STARTUP_DELAY_SECONDS))
         self.assertFalse(self.tick(60))
         self.assertEqual(self.start.call_count, 1)
         self.assertEqual(kodi.dialogs("ok"), [])  # quiet in the background
 
     def test_the_station_warning_names_the_sound_engine(self):
-        service.musicip_outage({}, main, RuntimeError("x"))
+        service.source_outage({}, main, RuntimeError("x"))
         self.assertNotified("The sound engine can't make mixes right now")
+
+
+class ReadinessTest(KodiTestCase):
+    def test_at_the_start_a_sound_engine_that_is_not_set_up_says_where_to_set_it_up(self):
+        with mock.patch.object(main.soundprint, "not_ready", return_value="The sound engine isn't set up yet."):
+            self.assertEqual(service.announce_sound_engine_readiness(), "The sound engine isn't set up yet.")
+        self.assertNotified(f"The sound engine isn't set up yet. {main.SOUND_ENGINE_SETUP_HINT}")
+        self.assertIn("The sound engine can't make mixes yet", kodi.log_text())
+
+    def test_a_ready_sound_engine_is_not_announced(self):
+        with mock.patch.object(main.soundprint, "not_ready", return_value=""):
+            self.assertEqual(service.announce_sound_engine_readiness(), "")
+        self.assertEqual(kodi.notification_messages(), [])
 
 
 class StaleSettings:
@@ -395,21 +397,21 @@ class StaleSettings:
 
 class SettingsChangeTest(KodiTestCase):
     def test_the_service_reads_changed_settings_again(self):
-        kodi.settings["suggestion_engine"] = "0"
+        kodi.settings["mix_variety"] = "0"
         started_with = dict(kodi.settings)
         logging = service.logs
         for module in (service, main, logging):
             patcher = mock.patch.object(module, "ADDON", StaleSettings(started_with))
             patcher.start()
             self.addCleanup(patcher.stop)
-        kodi.settings["suggestion_engine"] = "1"  # chosen in the settings while Kodi runs
-        self.assertFalse(main.uses_sound_prints())  # the service's copy still has MusicIP
+        kodi.settings["mix_variety"] = "7"  # chosen in the settings while Kodi runs
+        self.assertEqual(main.get_mix_variety(), 0)  # the service's copy still has the old value
         service.ServiceMonitor().onSettingsChanged()
-        self.assertTrue(main.uses_sound_prints())
+        self.assertEqual(main.get_mix_variety(), 7)
         for module in (service, main, logging):
             self.assertNotIsInstance(module.ADDON, StaleSettings)
-        self.assertIn("Settings changed: the service reads them again. Mixes come from the sound engine "
-                      "(before: MusicIP).", kodi.log_text())
+        self.assertIn("Settings changed: the service reads them again. Mix size 20, variety 7, no artist repeat "
+                      "within 0.", kodi.log_text())
 
 
 if __name__ == "__main__":
