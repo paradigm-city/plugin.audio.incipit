@@ -145,7 +145,10 @@ class FavouriteNumberTest(RadioBase):
             self.assertAlmostEqual((bottom - top) / image.height, main.FAVOURITE_NUMBER_HEIGHT, delta=0.02)
             self.assertGreater(left, image.width / 2)  # lower right
             self.assertGreater(top, image.height / 2)
-            self.assertAlmostEqual(image.getextrema()[1], round(255 * main.FAVOURITE_NUMBER_OPACITY), delta=12)  # white, see-through
+            # white, see-through: the number's typical brightness (JPEG lets single edge pixels overshoot; with
+            # GitHub's fonts the brightest one was 167 instead of 153)
+            drawn = sorted(value for value in image.crop(box).getdata() if value > 40)
+            self.assertAlmostEqual(drawn[len(drawn) // 2], round(255 * main.FAVOURITE_NUMBER_OPACITY), delta=12)
         self.assertEqual(Image.open(fanart).convert("L").getbbox(), None)  # the station's own collage stays as it is
 
     def test_artwork_saved_before_numbers_gets_its_number(self):
