@@ -234,6 +234,11 @@ class PlanTest(unittest.TestCase):
                          ["changed.mp3", "new.mp3", "old_version.mp3"])
         self.assertEqual(counts, {"unchanged": 1, "failed_before": 1, "missing": 1})
 
+    def test_songs_that_failed_before_are_analysed_again_when_asked(self):
+        todo, counts = analyse.plan(list(self.files.values()), self.store, analysis_version(6), retry_failed=True)
+        self.assertIn("failed.mp3", [os.path.basename(path) for path, _, _ in todo])
+        self.assertEqual(counts["failed_before"], 0)
+
     def test_nothing_to_do_finishes_at_once(self):
         status = analyse.run([self.files["same"]], self.folder, "", 6, 1, 1, low=False, say=lambda line: None)
         self.assertEqual((status["state"], status["todo"]), ("finished", 0))
@@ -502,6 +507,46 @@ def write_wave(path, seconds, channels=2, rate=44100):
         handle.writeframes((signal * 32767).astype("<i2").tobytes())
 
 
+def id3_tag(size, footer=False):
+    """An ID3v2.3 tag of size bytes in all (padding after one text frame); flagged with a footer, 10 more."""
+    body = size - 10
+    syncsafe = bytes([(body >> 21) & 0x7F, (body >> 14) & 0x7F, (body >> 7) & 0x7F, body & 0x7F])
+    frame = b"TIT2" + (6).to_bytes(4, "big") + b"\x00\x00" + b"\x00Title"
+    tag = b"ID3\x03\x00" + (b"\x10" if footer else b"\x00") + syncsafe + frame
+    return tag + b"\x00" * (size - len(tag)) + (b"3DI" + b"\x00" * 7 if footer else b"")
+
+
+class TagTest(unittest.TestCase):
+    def setUp(self):
+        self.path = os.path.join(tempfile.mkdtemp(), "song.mp3")
+
+    def write(self, data):
+        with open(self.path, "wb") as handle:
+            handle.write(data)
+
+    def test_the_end_of_an_id3_tag_counts_its_header_and_footer(self):
+        self.write(id3_tag(2210) + b"RIFF")
+        self.assertEqual(audio.tag_end(self.path), 2210)
+        self.write(id3_tag(300, footer=True) + b"MP+")
+        self.assertEqual(audio.tag_end(self.path), 310)
+
+    def test_a_file_without_tag_ends_none(self):
+        self.write(b"RIFF" + b"\x00" * 20)
+        self.assertEqual(audio.tag_end(self.path), 0)
+
+    def test_a_file_seen_from_the_tags_end_reads_and_seeks_from_there(self):
+        self.write(b"x" * 100 + b"0123456789")
+        view = audio.FileFrom(self.path, 100)
+        try:
+            self.assertEqual(view.read(4), b"0123")
+            self.assertEqual(view.tell(), 4)
+            self.assertEqual(view.seek(2), 2)
+            self.assertEqual(view.read(2), b"23")
+            self.assertEqual(view.seek(0, os.SEEK_END), 10)
+        finally:
+            view.close()
+
+
 @unittest.skipUnless(HAVE_AV, "needs av (PyAV), as in the tool's own environment")
 class DecodingTest(unittest.TestCase):
     def setUp(self):
@@ -522,6 +567,19 @@ class DecodingTest(unittest.TestCase):
     def test_channels_are_averaged(self):
         write_wave(self.path, 3.0, channels=2)  # right = -left
         self.assertLess(float(np.abs(audio.decode(self.path)).max()), 1e-3)
+
+    def test_a_wave_file_behind_an_id3_tag_is_read_after_the_tag(self):
+        # as some MP3s in a WAV file: FFmpeg doesn't look for the RIFF header behind the tag
+        with open(self.path, "rb") as handle:
+            wave_data = handle.read()
+        tagged = os.path.join(os.path.dirname(self.path), "tagged.mp3")
+        with open(tagged, "wb") as handle:
+            handle.write(id3_tag(2210) + wave_data)
+        self.assertAlmostEqual(audio.length_of(tagged), 30.0, places=1)
+        whole = audio.decode(self.path)
+        self.assertLess(float(np.abs(audio.decode(tagged) - whole).max()), 1e-6)
+        part = audio.decode(tagged, 12.0, 5.0)
+        self.assertLess(float(np.abs(part - whole[12 * audio.RATE:17 * audio.RATE]).max()), 2e-3)
 
 
 @unittest.skipUnless(HAVE_AV and not model.missing(MODEL_FOLDER) if HAVE_AV else False,
