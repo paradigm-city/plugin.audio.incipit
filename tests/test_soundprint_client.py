@@ -35,7 +35,8 @@ def ready_data_folder():
 def answer(songs, **fields):
     return dict({"seed": SEED, "seed_vector": "stored", "seed_details": ["Kraftwerk", "Radioaktivitat"],
                  "analysed": 1000, "left_out": {"artist": 3, "same_song": 1}, "seconds": 0.3,
-                 "songs": [{"path": path, "similarity": 0.9 - 0.01 * number, "artist": "A", "title": f"T{number}"}
+                 "reach": 25, "songs": [{"path": path, "similarity": 0.9 - 0.01 * number, "rank": 1 + 2 * number,
+                                    "artist": "A", "title": f"T{number}"}
                            for number, path in enumerate(songs)]}, **fields)
 
 
@@ -245,7 +246,11 @@ class SoundEngineMixTest(KodiTestCase):
         log = kodi.log_text()
         self.assertIn("Sound engine mix request: seed", log)
         self.assertIn("3 for an artist played too recently, 1 the same song again", log)
-        self.assertIn(f"1. {NEAR[0]} (similarity 0.900, A - T0)", log)
+        self.assertIn(f"1. {NEAR[0]} (similarity 0.900, rank 1, A - T0)", log)
+        self.assertIn("variety 0: the nearest songs", log)
+        kodi.settings["mix_variety"] = "9"
+        main.fetch_mix(SEED, 20)
+        self.assertIn("variety 9: drawn from the nearest 25, the nearer the likelier", kodi.log_text())
 
     def test_a_song_without_sound_print_is_an_empty_mix(self):
         self.neighbours.side_effect = client.SoundprintError(client.NOT_ANALYSED, "no sound print (not analysed)")

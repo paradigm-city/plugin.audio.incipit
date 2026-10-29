@@ -288,13 +288,13 @@ class NearestTest(unittest.TestCase):
     def test_nearest_first_without_the_seed(self):
         found, source, left_out = neighbours.nearest(self.store, "seed", 2)
         self.assertEqual(source, "stored")
-        self.assertEqual([path for path, _ in found], ["close", "middle"])
+        self.assertEqual([(path, rank) for path, _, rank in found], [("close", 1), ("middle", 2)])
         self.assertGreater(found[0][1], found[1][1])
         self.assertEqual(left_out, {"artist": 0, "same_song": 0})
 
     def test_count_larger_than_the_store(self):
         found, _, _ = neighbours.nearest(self.store, "seed", 50)
-        self.assertEqual([path for path, _ in found], ["close", "middle", "far"])
+        self.assertEqual([path for path, _, _ in found], ["close", "middle", "far"])
 
     def test_a_seed_without_vector_and_without_model_gives_nothing(self):
         self.assertEqual(neighbours.nearest(self.store, "D:\\nowhere.mp3", 5)[:2], ([], "not a local file"))
@@ -322,7 +322,7 @@ class MixRulesTest(unittest.TestCase):
     def nearest(self, count, **rules):
         found, _, left_out = neighbours.nearest(self.store, "seed", count,
                                                 details=lambda path: self.details.get(path, ("", "")), **rules)
-        return [path for path, _ in found], left_out
+        return [path for path, _, _ in found], left_out
 
     def test_no_artist_repeat_within_the_window_the_seed_first(self):
         found, left_out = self.nearest(4, window=1)
@@ -346,20 +346,73 @@ class MixRulesTest(unittest.TestCase):
         self.assertEqual(found, ["k1", "k2", "c1"])
         self.assertEqual(left_out["same_song"], 1)
 
-    def test_variety_chooses_from_more_of_the_nearest_in_their_order(self):
+    def test_variety_draws_at_random_from_further_out(self):
         order = ["k1", "k2", "c1", "c2", "n1", "c3", "h1"]
         mixes = {tuple(self.nearest(3, variety=6, rng=random.Random(seed))[0]) for seed in range(20)}
-        self.assertGreater(len(mixes), 1)
-        for found in mixes:  # 7 songs to choose from: now and then the choice runs out before 3
-            self.assertLessEqual(len(found), 3)
-            self.assertEqual(list(found), sorted(found, key=order.index))
-        full = [found for found in mixes if len(found) == 3]
-        reach = [max(order.index(path) for path in found) + 1 for found in full]
-        self.assertLessEqual(sum(reach) / len(reach), neighbours.pool_size(3, 6) + 1)  # about 5 deep, at most 7
+        self.assertGreater(len(mixes), 3)
+        self.assertTrue(all(len(found) == 3 and set(found) <= set(order) for found in mixes))
+        self.assertTrue(any(list(found) != sorted(found, key=order.index) for found in mixes))  # near and far mixed
         self.assertEqual(self.nearest(3, variety=0, rng=random.Random(1))[0], ["k1", "k2", "c1"])
 
-    def test_pool_size_grows_with_variety(self):
-        self.assertEqual([neighbours.pool_size(30, variety) for variety in (0, 3, 9)], [30, 60, 120])
+
+class VarietyTest(unittest.TestCase):
+    """Variety: how far into the order by sound a mix reaches, each song drawn with a weight of 1 / rank ** power."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.store = store.Store(tempfile.mkdtemp())
+        cls.store.put("seed", 1, 1.0, "v", 1.0, unit(1, 0))
+        for number in range(1, 3001):  # song n is the n-th nearest
+            angle = number / 3001 * 3
+            cls.store.put(f"s{number}", 1, 1.0, "v", 1.0, unit(np.cos(angle), np.sin(angle)))
+        cls.store.commit()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.store.close()
+
+    def ranks(self, variety, seed, count=20, window=0):
+        def details(path):
+            return (f"artist {int(path[1:]) % 4}", path) if path != "seed" else ("seed artist", "seed")
+        found, _, _ = neighbours.nearest(self.store, "seed", count, variety=variety, rng=random.Random(seed),
+                                         details=details if window else None, window=window)
+        self.assertEqual([path for path, _, _ in found], [f"s{rank}" for _, _, rank in found])
+        return [rank for _, _, rank in found]
+
+    def test_the_reach_grows_by_the_same_factor_with_each_step(self):
+        self.assertEqual([neighbours.reach(25, variety, 153000) for variety in (0, 1, 3, 5, 7, 9)],
+                         [25, 66, 457, 3175, 22039, 153000])
+        self.assertEqual(neighbours.reach(25, 9, 3000), 3000)  # a smaller store: all of it
+        self.assertEqual(neighbours.reach(25, 12, 153000), 153000)
+        self.assertEqual(neighbours.reach(100, 9, 50), 100)
+
+    def test_the_far_songs_weigh_more_with_each_step(self):
+        self.assertEqual([round(neighbours.draw_power(variety), 3) for variety in (0, 3, 9, 12)],
+                         [1.0, 0.9, 0.7, 0.7])
+
+    def test_variety_0_takes_the_nearest_nearest_first(self):
+        self.assertEqual(self.ranks(0, seed=1), list(range(1, 21)))
+
+    def test_a_loose_mix_spreads_from_near_to_far(self):
+        mixes = [self.ranks(9, seed) for seed in range(40)]
+        self.assertTrue(all(len(ranks) == 20 and len(set(ranks)) == 20 for ranks in mixes))
+        everything = [rank for ranks in mixes for rank in ranks]
+        near, far = sum(rank <= 30 for rank in everything), sum(rank > 1000 for rank in everything)
+        self.assertGreater(near / len(everything), 0.1)  # the nearer the likelier, but far songs weigh more at 9
+        self.assertGreater(far / len(everything), 0.2)
+        firsts = [ranks[0] for ranks in mixes]  # the first song is drawn like the others: near or far
+        self.assertGreater(max(firsts), 100)
+
+    def test_each_step_reaches_further(self):
+        deepest = [sorted(max(self.ranks(variety, seed)) for seed in range(15))[7] for variety in (0, 3, 6, 9)]
+        self.assertEqual(deepest[0], 20)
+        self.assertEqual(deepest, sorted(deepest))
+        self.assertLess(deepest[2], deepest[3])
+        self.assertTrue(all(max(self.ranks(3, seed)) <= neighbours.reach(20, 3, 3000) for seed in range(15)))
+
+    def test_when_the_rules_pass_over_the_draws_the_mix_goes_on_further_out(self):
+        ranks = self.ranks(1, seed=3, count=20, window=3)  # 4 artists in turn: many draws are passed over
+        self.assertEqual(len(ranks), 20)
 
 
 class SongListTest(unittest.TestCase):
@@ -485,7 +538,8 @@ class CommandLineTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual((answer["seed_vector"], answer["library"], answer["analysed"]), ("stored", "", 2))
         self.assertEqual(answer["songs"], [{"path": "near.mp3", "similarity": answer["songs"][0]["similarity"],
-                                            "artist": "", "title": ""}])
+                                            "rank": 1, "artist": "", "title": ""}])
+        self.assertEqual(answer["reach"], 5)  # variety 0: the nearest 5
         self.assertEqual(answer["left_out"], {"artist": 0, "same_song": 0})
 
 
