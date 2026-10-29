@@ -52,6 +52,12 @@ def normalize(text: str) -> str:
     return re.sub(r"[\W_]+", " ", plain).strip()
 
 
+def artist_key(artist: str) -> str:
+    """Artist names compared loosely: "Medeski Martin & Wood" and "Medeski, Martin and Wood" are the same. One rule
+    for "the same artist" everywhere: AI Mix Assist's artist spacing and the sound engine's."""
+    return " ".join(word for word in normalize(artist).split() if word not in ("and", "the"))
+
+
 def album_key(artist: str, title: str, release_group_mbid: str = "") -> str:
     if release_group_mbid:
         return f"rg:{release_group_mbid}"

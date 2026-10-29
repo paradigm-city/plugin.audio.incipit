@@ -85,15 +85,15 @@ def last_line(text: str) -> str:
     return lines[-1] if lines else ""
 
 
-def neighbours(data: str, userdata: str, seed: str, count: int, per_artist: int = 0, variety: int = 0,
+def neighbours(data: str, userdata: str, seed: str, count: int, window: int = 0, variety: int = 0,
                runner: Callable = subprocess.run) -> dict:
     """The tool's answer (see soundprint.__main__.neighbours): songs nearest to seed, with similarity, artist and
-    title; raises SoundprintError when there are none."""
+    title, no artist repeated within window songs; raises SoundprintError when there are none."""
     reason = not_ready(data)
     if reason:
         raise SoundprintError(NOT_SET_UP, reason)
     completed = run(command(environment_python(data), data, userdata, "neighbours", seed, "--count", str(count),
-                            "--per-artist", str(per_artist), "--variety", str(variety)), NEIGHBOURS_TIMEOUT, runner)
+                            "--artist-window", str(window), "--variety", str(variety)), NEIGHBOURS_TIMEOUT, runner)
     try:
         answer = json.loads(completed.stdout)
     except ValueError:

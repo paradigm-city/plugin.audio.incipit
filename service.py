@@ -2949,10 +2949,29 @@ def run_library_update_tick() -> bool:
     return plugin.start_soundprint_analysis(reason, quiet=True)
 
 
+def reload_settings() -> None:
+    """Read the add-on's settings again. Kodi gives every xbmcaddon.Addon its own copy of the settings, read when it
+    is made, so the service's copies (its own, the plugin module's and the logging switches') are made anew when the
+    settings change; otherwise the service keeps the values it started with (F39)."""
+    global ADDON
+    plugin = load_plugin_module()
+    before = plugin.engine_name()
+    ADDON = xbmcaddon.Addon()
+    plugin.ADDON = xbmcaddon.Addon()
+    logs.ADDON = xbmcaddon.Addon(logs.ADDON_ID)
+    after = plugin.engine_name()
+    log_general(f"Settings changed: the service reads them again. Mixes come from {after}"
+                + (f" (before: {before})." if after != before else " (unchanged).")
+                + f" Logging: {logs.describe_switches()}.", always=True)
+
+
 class ServiceMonitor(xbmc.Monitor):
     def onScanFinished(self, library: str) -> None:
         if library == "music":  # new songs in Kodi's library: the suggestion engine should know them too
             MUSICIP_RELOAD["scan_finished"] = True
+
+    def onSettingsChanged(self) -> None:
+        reload_settings()
 
 
 def main() -> None:

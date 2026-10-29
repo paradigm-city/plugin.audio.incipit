@@ -60,7 +60,8 @@ def arguments(argv=None) -> argparse.Namespace:
     near = commands.add_parser("neighbours")
     near.add_argument("seed", help="the seed song's path, as Kodi stores it")
     near.add_argument("--count", type=int, default=100)
-    near.add_argument("--per-artist", type=int, default=0, help="at most this many songs of one artist (0: any)")
+    near.add_argument("--artist-window", type=int, default=0,
+                      help="no artist repeat within this many songs, the seed counted (0: repeats allowed)")
     near.add_argument("--variety", type=int, default=0, help="0: the nearest songs; up to 9: a random choice from "
                                                              "more of them")
     commands.add_parser("failures")
@@ -147,7 +148,7 @@ def neighbours(args) -> int:
     store = Store(args.data)
     try:
         found, source, left_out = nearest(store, args.seed, args.count, args.model if os.path.isdir(args.model) else "",
-                                          details=details, per_artist=args.per_artist, variety=args.variety)
+                                          details=details, window=args.artist_window, variety=args.variety)
         analysed = store.counts()["analysed"]
         print(json.dumps({"seed": args.seed, "seed_vector": source, "seed_details": list(details(args.seed)),
                           "library": database, "analysed": analysed, "left_out": left_out,

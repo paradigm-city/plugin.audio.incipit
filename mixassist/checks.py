@@ -16,7 +16,15 @@ from mixassist.rating import Ask
 VERDICTS = ("fits", "borderline", "outlier")
 
 TRACK_LINES_NOTE = """Each line gives the position, artist, title, album and year, and a short description where available.
-The descriptions come from an earlier rating and may be wrong for little-known music."""
+The descriptions come from an earlier rating. A line marked "(little known)" is music the rating didn't know: its
+description was guessed from the names, the album and the genre, and may be wrong. Judge such a track by what the
+guess can show (genre, era, sound). Don't call it borderline or outlier only because the guess suggests another
+intent (pop appeal, nostalgia, pastiche, a use): that can't be told from the names. Turn it down only if what is
+known clearly clashes."""
+
+# On a Kraftwerk station (2026-10-29) the judge turned down three little-known 80s synth tracks for "pop appeal" or
+# "style exercise", read from descriptions the rating had guessed; the listener heard all three as fitting.
+LITTLE_KNOWN = " (little known)"
 
 SEED_INTENT_PROMPT = """You judge whether the tracks of a music mix serve the listener's intent.
 The listener started the mix from the first track (the seed); MusicIP then added tracks by comparing audio.
@@ -230,7 +238,9 @@ def track_line(number: int, unit: dict, entry: Optional[dict]) -> str:
     item = unit["item"]
     title = item.get("title") or unit["label"]
     description = (entry or {}).get("description", "")
-    return f"{number}. {item.get('artist', '')} – {title} ({item.get('album', '')}, {item.get('year') or ''}) — {description}"
+    guessed = LITTLE_KNOWN if entry and entry.get("familiarity", 1) == 0 else ""
+    return (f"{number}. {item.get('artist', '')} – {title} ({item.get('album', '')}, {item.get('year') or ''}){guessed}"
+            f" — {description}")
 
 
 def parse_verdicts(payload: Optional[dict], count: int) -> Dict[int, dict]:

@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Callable, Dict, List, Optional, Sequence
 
 from mixassist import checks, dimensions, fit, trace
-from mixassist.cache import RatingCache, normalize
+from mixassist.cache import RatingCache, artist_key
 from mixassist.rating import Ask, rate_missing
 from mixassist.stats import median
 
@@ -39,11 +39,6 @@ FetchMix = Callable[[str, int], List[str]]
 
 def path_key(path: str) -> str:
     return (path or "").replace("\\", "/").strip().lower()
-
-
-def artist_key(artist: str) -> str:
-    """Artist names compared loosely: "Medeski Martin & Wood" and "Medeski, Martin and Wood" are the same."""
-    return " ".join(word for word in normalize(artist).split() if word not in ("and", "the"))
 
 
 def profile_keys(perspective: str = checks.DEFAULT_PERSPECTIVE) -> tuple:
@@ -370,7 +365,8 @@ def tidy_up(paths: Sequence[str], cache: RatingCache, ask: Ask, resolve: Resolve
 
 
 def choose_additions(selected: str, candidates: Sequence[str], count: int, cache: RatingCache, ask: Ask,
-                     resolve: Resolve, neighbours: Sequence[str] = (), strictness: float = DEFAULT_STRICTNESS,
+                     resolve: Resolve, before: Sequence[str] = (), after: Sequence[str] = (),
+                     strictness: float = DEFAULT_STRICTNESS,
                      artist_window: int = ARTIST_WINDOW, model: str = "",
                      progress: Optional[Callable[..., None]] = None, reference: Optional[dict] = None,
                      accept_borderline: bool = False, name: bool = False, max_batches: int = 2,
@@ -378,8 +374,13 @@ def choose_additions(selected: str, candidates: Sequence[str], count: int, cache
                      perspective: str = checks.DEFAULT_PERSPECTIVE) -> dict:
     """"More like this" (and Radio refills): the selected song and MusicIP's candidates for it form a small mix with the selected song
     as its seed. New tracks are held to the same rule as replacements: both signals must say a candidate fits what
-    the selected song is about. The first `count` fitting candidates (closest first) are chosen, without repeating
-    an artist of the `neighbours` (the tracks around the insertion point) or of each other.
+    the selected song is about. The first `count` fitting candidates (closest first) are chosen.
+
+    Artists are spaced as in the final mix, where the chosen songs go in one after another between `before` (the
+    tracks up to the insertion point, by default the selected song) and `after` (the tracks that follow it): no
+    artist within `artist_window` songs (0: repeats allowed), the rule of MusicIP's reject size. A fitting song
+    whose artist played too recently waits and is taken as soon as enough other songs lie between; an artist among
+    the first `artist_window` songs after the insertion point is kept out (the new songs might all go before it).
 
     `reference` (a rating, e.g. a Radio station's drifting profile) replaces the selected song's own rating in the
     vector part; the AI still judges against the selected song. accept_borderline also takes candidates the AI
@@ -403,11 +404,35 @@ def choose_additions(selected: str, candidates: Sequence[str], count: int, cache
               "checked": False, "examined": 0, "lists": 1 if candidates else 0}
     step("Looking up the tracks")
     selected_unit = resolve([selected])[0]
-    blocked = set()
-    if artist_window > 0:
-        blocked = {artist_key(unit.get("artist", "")) for unit in resolve(list(neighbours)) if unit.get("artist")}
-        blocked.add(artist_key(selected_unit.get("artist", "")))
-        blocked.discard("")
+    window = max(0, artist_window)
+    # the final mix's artists in order up to the newest chosen song, and the artists right after the new songs
+    placed = [artist_key(unit.get("artist", "")) for unit in resolve(list(before[-window:]) or [selected])] \
+        if window else []
+    following = [artist_key(unit.get("artist", "")) for unit in resolve(list(after[:window]))] if window else []
+    waiting: List[dict] = []  # fitting songs whose artist played too recently, closest first
+
+    def too_soon(artist: str) -> bool:
+        return bool(window and artist and (artist in placed[-window:] or artist in following))
+
+    def choose(row: dict, note: str = "") -> None:
+        trace.say(f"  chosen {row['unit']['label']!r}{note}.")
+        result["chosen"].append(row["unit"]["path"])
+        result["entries"][row["unit"]["path"]] = row["entry"]
+        placed.append(artist_key(row["unit"].get("artist", "")))
+
+    def take_waiting() -> None:
+        """The waiting songs that the songs chosen since put far enough from their artist's last song."""
+        changed = True
+        while changed and waiting and len(result["chosen"]) < count:
+            changed = False
+            for row in list(waiting):
+                if len(result["chosen"]) >= count:
+                    break
+                if not too_soon(artist_key(row["unit"].get("artist", ""))):
+                    waiting.remove(row)
+                    choose(row, f" (its artist is {window} or more songs back now)")
+                    changed = True
+
     batch_size = max(3 * count, 10)
     pending, examined, batches = list(candidates), {path_key(selected)}, 0
     while len(result["chosen"]) < count and batches < max_batches:
@@ -422,7 +447,10 @@ def choose_additions(selected: str, candidates: Sequence[str], count: int, cache
         batches += 1
         trace.say(f"Candidates for {selected_unit['label']!r}: batch {batches} of at most {max_batches}, {len(batch)} "
                   f"track(s); {len(result['chosen'])} of {count} chosen so far; strictness {trace.number(strictness)}"
-                  f"{', borderline accepted' if accept_borderline else ''}; blocked artists: {sorted(blocked)}.")
+                  f"{', borderline accepted' if accept_borderline else ''}; "
+                  + (f"no artist repeat within {window}: the last artists {placed[-window:]}, the next {following}"
+                     + (f", waiting {[row['unit']['label'] for row in waiting]}" if waiting else "") + "."
+                     if window else "artists may repeat."))
         result["examined"] += len(batch)
         units = [selected_unit] + resolve(batch)
         step("Rating new music")
@@ -446,7 +474,15 @@ def choose_additions(selected: str, candidates: Sequence[str], count: int, cache
             trace.say("Candidates: too few rated tracks to measure"
                       + ("; the first ones are taken unchecked." if not result["checked"] else "; the search ends."))
             if not result["checked"]:
-                result["chosen"] = batch[:count]
+                for unit in units[1:]:  # unchecked, but spaced as the checked ones
+                    if len(result["chosen"]) >= count:
+                        break
+                    row = {"unit": unit, "entry": cache.get(unit["key"])}
+                    if too_soon(artist_key(unit.get("artist", ""))):
+                        waiting.append(row)
+                        continue
+                    choose(row, " (unchecked)")
+                    take_waiting()
                 return result
             break
         result["checked"] = True
@@ -459,18 +495,17 @@ def choose_additions(selected: str, candidates: Sequence[str], count: int, cache
                 result["not_fitting"].append({"path": path, "label": row["unit"]["label"], "reason": reason})
                 trace.say(f"  passed over {row['unit']['label']!r}: doesn't fit ({reason}).")
                 continue
-            artist = artist_key(row["unit"].get("artist", ""))
-            if artist in blocked:
-                trace.say(f"  passed over {row['unit']['label']!r}: fits, but its artist plays nearby.")
+            if too_soon(artist_key(row["unit"].get("artist", ""))):
+                trace.say(f"  waiting {row['unit']['label']!r}: fits, but its artist plays within {window} songs.")
+                waiting.append(row)
                 continue
-            trace.say(f"  chosen {row['unit']['label']!r}.")
-            result["chosen"].append(path)
-            result["entries"][path] = row["entry"]
-            if artist_window > 0:
-                blocked.add(artist)
+            choose(row)
+            take_waiting()
     trace.say(f"Candidates for {selected_unit['label']!r}: {len(result['chosen'])} of {count} chosen from "
               f"{result['examined']} examined in {batches} batch(es) and {result['lists']} list(s); "
-              f"{len(result['not_fitting'])} didn't fit.")
+              f"{len(result['not_fitting'])} didn't fit"
+              + (f"; {len(waiting)} fitting song(s) left waiting, their artist too close: "
+                 f"{[row['unit']['label'] for row in waiting]}" if waiting else "") + ".")
     return result
 
 

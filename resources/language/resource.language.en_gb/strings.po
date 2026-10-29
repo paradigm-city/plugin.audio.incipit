@@ -69,7 +69,7 @@ msgid "Variety"
 msgstr ""
 
 msgctxt "#30307"
-msgid "How far MusicIP may reach from the seed. 0 keeps a mix close to the seed's sound; 9 gives the widest choice."
+msgid "How far a mix may reach from the seed. 0 keeps a mix close to the seed's sound; 9 gives the widest choice. For the sound engine: 0 takes the nearest songs, higher values a random choice from more of them (at 3, from twice as many as the mix needs)."
 msgstr ""
 
 msgctxt "#30308"
@@ -85,7 +85,7 @@ msgid "Do not repeat artist within this many tracks"
 msgstr ""
 
 msgctxt "#30311"
-msgid "Keeps an artist from appearing again within this many tracks. 0 allows repeats."
+msgid "Keeps an artist from appearing again within this many tracks of the finished mix. 0 allows repeats. MusicIP and the sound engine keep to it when they make a mix (the seed is the first track), and so does AI Mix Assist when it adds or replaces songs: in a saved mix with the value the mix was made with, on a Radio station counting the songs already queued."
 msgstr ""
 
 msgctxt "#30312"
@@ -430,14 +430,6 @@ msgstr ""
 
 msgctxt "#30806"
 msgid "Sound engine"
-msgstr ""
-
-msgctxt "#30807"
-msgid "Songs per artist in a mix"
-msgstr ""
-
-msgctxt "#30808"
-msgid "At most this many songs of one artist in a sound engine mix (0: any number). An album's songs are often each other's nearest by sound. The same song on another album is taken only once either way. Variety (Settings > Mixing) also applies: above 0, a mix is a random choice from more of the nearest songs."
 msgstr ""
 
 msgctxt "#30809"

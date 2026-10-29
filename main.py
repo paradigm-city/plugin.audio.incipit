@@ -392,12 +392,20 @@ def kodi_userdata() -> str:
     return xbmcvfs.translatePath("special://userdata")
 
 
-def get_soundprint_per_artist() -> int:
-    return max(0, min(10, get_setting_int("soundprint_per_artist", 2)))
-
-
 def get_mix_reject_size() -> int:
     return max(0, min(20, get_setting_int("mix_reject_size", 0)))
+
+
+def mix_reject_size_for(meta: dict | None) -> int:
+    """The rule for the same artist in a saved mix: no repeat within the reject size it was made with, else the
+    setting's. AI Mix Assist keeps to it when it adds or replaces songs, as the suggestion engine did."""
+    params = (meta or {}).get("mix_generation_parameters")
+    if isinstance(params, dict) and params.get("rejectsize") is not None:
+        try:
+            return max(0, min(20, int(params["rejectsize"])))
+        except (TypeError, ValueError):
+            pass
+    return get_mix_reject_size()
 
 
 def get_mix_filter() -> str:
@@ -2571,18 +2579,19 @@ def prepend_seed_track(seed_song: str, tracks: list[str]) -> list[str]:
 
 
 def fetch_sound_mix(seed_song: str, size: int, params: dict, progress=None) -> list[str]:
-    """The sound engine's mix for a seed: the songs nearest to it by sound, at most get_soundprint_per_artist() of
-    one artist, each song once; MusicIP's variety chooses from more of the nearest (its style, filter and
-    reject size don't apply)."""
-    per_artist, variety = get_soundprint_per_artist(), int(params.get("variety") or 0)
+    """The sound engine's mix for a seed: the songs nearest to it by sound, each song once, with the mix's variety
+    and its rule for artists, as MusicIP's (no artist repeat within the reject size); MusicIP's style and filter
+    don't apply."""
+    window, variety = int(params.get("rejectsize") or 0), int(params.get("variety") or 0)
     if progress:
         progress(15, "Looking for songs that sound alike")
-    log_mixing(f"Sound engine mix request: seed {seed_song!r}, size {size}, at most {per_artist or 'any number of'} "
-               f"song(s) per artist, variety {variety}; MusicIP's style {params.get('style_label', '')!r}, filter "
-               f"{params.get('filter', '')!r} and reject size {params.get('rejectsize', 0)} don't apply.")
+    log_mixing(f"Sound engine mix request: seed {seed_song!r}, size {size}, "
+               + (f"no artist repeat within {window} song(s)" if window else "artists may repeat")
+               + f", variety {variety}; MusicIP's style {params.get('style_label', '')!r} and filter "
+               f"{params.get('filter', '')!r} don't apply.")
     started = time.time()
     try:
-        answer = soundprint.neighbours(soundprint_data(), kodi_userdata(), seed_song, size, per_artist, variety)
+        answer = soundprint.neighbours(soundprint_data(), kodi_userdata(), seed_song, size, window, variety)
     except soundprint.SoundprintError as exc:
         log_mixing(f"Sound engine mix for {seed_song!r} failed ({exc.kind}) after {time.time() - started:.1f} s: "
                    f"{exc}", xbmc.LOGWARNING if exc.kind == soundprint.NOT_ANALYSED else xbmc.LOGERROR)
@@ -2594,7 +2603,7 @@ def fetch_sound_mix(seed_song: str, size: int, params: dict, progress=None) -> l
     artist, title = (list(answer.get("seed_details") or []) + ["", ""])[:2]
     log_mixing(f"Sound engine answered in {time.time() - started:.1f} s (search {answer.get('seconds', 0)} s; the "
                f"seed's sound print {answer.get('seed_vector', '')}; {int(answer.get('analysed') or 0):,} song(s) "
-               f"analysed; left out on the way: {left_out.get('artist', 0)} over the artist limit, "
+               f"analysed; left out on the way: {left_out.get('artist', 0)} for an artist played too recently, "
                f"{left_out.get('same_song', 0)} the same song again) with {len(songs)} song(s) for {seed_song!r} "
                f"({artist} - {title}):"
                + "".join(f"\n  {number}. {song['path']} (similarity {song['similarity']:.3f}, {song.get('artist', '')} "
@@ -7540,7 +7549,7 @@ def compute_mix_assist_plan(tracks: list[str], meta: dict, progress=None, find_r
             fetch_mix=fetch_mix,
             intent=str(section.get("listener_intent") or ""),
             strictness=mix_strictness_for(meta)[0],
-            artist_window=get_mix_reject_size() or mix_assist.ARTIST_WINDOW,
+            artist_window=mix_reject_size_for(meta),
             model=mix_assist_claude.DEFAULT_MODEL,
             progress=progress,
             find_replacements=find_replacements,
@@ -7700,7 +7709,7 @@ def check_more_like_this(cache_path: str, tracks: list[str], selected: int, cand
     not the whole mix. progress is the action's BackgroundProgress (this is its second half). None if it couldn't
     run; then the first candidates are inserted unchecked."""
     meta = get_saved_mix_metadata(cache_path, tracks)
-    window = get_mix_reject_size() or mix_assist.ARTIST_WINDOW
+    window = mix_reject_size_for(meta)
     try:
         ask = mix_assist_ask()
         store = mix_assist_cache.RatingCache(mix_assist_cache_path())
@@ -7708,7 +7717,7 @@ def check_more_like_this(cache_path: str, tracks: list[str], selected: int, cand
             return mix_assist.choose_additions(
                 tracks[selected], candidates, count, store, ask,
                 resolve=lambda paths: mix_assist_library.resolve(paths, execute_jsonrpc, mix_assist_track_metadata(meta)),
-                neighbours=tracks[max(0, selected + 1 - window):selected] + tracks[selected + 1:selected + 1 + window],
+                before=tracks[max(0, selected + 1 - window):selected + 1], after=tracks[selected + 1:selected + 1 + window],
                 strictness=mix_strictness_for(meta)[0],
                 artist_window=window,
                 model=mix_assist_claude.DEFAULT_MODEL,
@@ -8216,7 +8225,7 @@ def check_radio_refill(reference_song: str, candidates: list[str], count: int, r
     "reference": the station's profile after this refill (drifted towards the chosen songs)."""
     store = mix_assist_cache.RatingCache(mix_assist_cache_path())
     try:
-        window = get_mix_reject_size() or mix_assist.ARTIST_WINDOW
+        window = get_mix_reject_size()
         strictness, borderline = get_station_strictness(settings)
         perspective = perspective_key(station_setting_index(settings, "perspective"))
         profile = "the station's drifting profile" if reference else "the song's own profile"
@@ -8224,11 +8233,13 @@ def check_radio_refill(reference_song: str, candidates: list[str], count: int, r
                   f"strictness {strictness}{', borderline accepted' if borderline else ''}, {perspective} "
                   f"perspective, at most "
                   f"{radio_check_batches(settings)} batch(es), drift half-life {get_radio_drift_half_life(settings)} "
-                  f"song(s), measured against {profile}, artists blocked within {window}.")
+                  f"song(s), measured against {profile}, "
+                  + (f"no artist repeat within {window} songs of the station's queue." if window
+                     else "artists may repeat."))
         result = mix_assist.choose_additions(
             reference_song, candidates, count, store, mix_assist_ask(),
             resolve=lambda paths: mix_assist_library.resolve(paths, execute_jsonrpc, {}),
-            neighbours=neighbours[-window:],
+            before=neighbours[len(neighbours) - window:] if window else [],
             strictness=strictness,
             artist_window=window,
             model=mix_assist_claude.DEFAULT_MODEL,

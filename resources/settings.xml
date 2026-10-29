@@ -36,12 +36,6 @@
                 </setting>
             </group>
             <group id="2" label="30806">
-                <setting id="soundprint_per_artist" type="integer" label="30807" help="30808">
-                    <level>0</level>
-                    <default>2</default>
-                    <constraints><minimum>0</minimum><step>1</step><maximum>10</maximum></constraints>
-                    <control type="slider" format="integer"><popup>false</popup></control>
-                </setting>
                 <setting id="soundprint_auto_analyse" type="boolean" label="30809" help="30810">
                     <level>0</level>
                     <default>true</default>

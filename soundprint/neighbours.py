@@ -3,10 +3,13 @@
 A seed that isn't in the store yet (a new song) is analysed on the spot when the model is at hand, and stored.
 
 For a mix, three rules on top of the order by sound (all optional):
-- at most per_artist songs of one artist, the seed counted (an album's songs are often each other's nearest);
+- no artist repeat within `window` songs, as MusicIP's reject size: the seed is the mix's first song, and a song
+  whose artist is among the last `window` songs is passed over (an album's songs are often each other's nearest);
+  artists are compared as AI Mix Assist compares them (mixassist.cache.artist_key);
 - the same song twice (the same artist and title on another album, or a copy) only once, and never the seed's;
 - variety: instead of always the same nearest songs, a random choice from the nearest (1 + variety / 3) times as
-  many, kept in their order (variety 0 to 9, as MusicIP's setting).
+  many, kept in their order (variety 0 to 9, as MusicIP's setting): each song in turn is taken with the chance
+  count / that many, before the artist rule, so the spacing holds in the mix as it is.
 """
 
 from __future__ import annotations
@@ -17,6 +20,7 @@ from typing import Callable, List, Optional, Tuple
 
 import numpy as np
 
+from mixassist.cache import artist_key
 from soundprint import DEFAULT_SNIPPETS, analysis_version
 from soundprint.store import Store
 
@@ -51,10 +55,10 @@ def pool_size(count: int, variety: int) -> int:
 
 
 def nearest(store: Store, seed: str, count: int, model_folder: str = "", snippets: int = DEFAULT_SNIPPETS,
-            details: Optional[Lookup] = None, per_artist: int = 0, variety: int = 0,
+            details: Optional[Lookup] = None, window: int = 0, variety: int = 0,
             rng: Optional[random.Random] = None) -> Tuple[List[Tuple[str, float]], str, dict]:
-    """Up to count (path, similarity) pairs, the seed itself left out; where the seed's vector came from; and how
-    many songs each rule left out ("artist", "same_song")."""
+    """Up to count (path, similarity) pairs in the mix's order, the seed itself left out; where the seed's vector
+    came from; and how many songs each rule left out ("artist", "same_song")."""
     left_out = {"artist": 0, "same_song": 0}
     vector, source = seed_vector(store, seed, model_folder, snippets)
     if vector is None:
@@ -64,39 +68,37 @@ def nearest(store: Store, seed: str, count: int, model_folder: str = "", snippet
         return [], source, left_out
     vector = vector / (np.linalg.norm(vector) + 1e-9)
     similarity = np.asarray(matrix @ vector)
-    wanted = pool_size(count, variety)
-    if details is None and not per_artist:
-        take = min(len(paths), wanted + 1)
+    chance = count / pool_size(count, variety)
+    if details is None and not window and chance >= 1:
+        take = min(len(paths), count + 1)
         order = np.argpartition(-similarity, take - 1)[:take]
         order = order[np.argsort(-similarity[order])]
     else:
         order = np.argsort(-similarity)  # the rules may pass over many songs
+    draw = (rng or random).random
     seed_details = details(seed) if details else ("", "")
     seen_songs = {song_key(seed_details)} if seed_details[1] else set()
-    artists = {seed_details[0].strip().casefold(): 1} if seed_details[0] else {}  # the seed is in the mix too
-    pool: List[Tuple[str, float]] = []
+    recent = [artist_key(seed_details[0])]  # the mix's artists so far, the seed first
+    mix: List[Tuple[str, float]] = []
     for index in order:
         path = paths[index]
         if path == seed:
             continue
-        if details:
-            artist, title = details(path)
-            key = song_key((artist, title))
-            if title and key in seen_songs:
-                left_out["same_song"] += 1
-                continue
-            if per_artist and artist:
-                name = artist.strip().casefold()
-                if artists.get(name, 0) >= per_artist:
-                    left_out["artist"] += 1
-                    continue
-                artists[name] = artists.get(name, 0) + 1
-            if title:
-                seen_songs.add(key)
-        pool.append((path, float(similarity[index])))
-        if len(pool) >= wanted:
+        artist, title = details(path) if details else ("", "")
+        key = song_key((artist, title))
+        if title and key in seen_songs:
+            left_out["same_song"] += 1
+            continue
+        if chance < 1 and draw() >= chance:
+            continue  # variety: not this one
+        name = artist_key(artist)
+        if window and name and name in recent[-window:]:
+            left_out["artist"] += 1
+            continue
+        if title:
+            seen_songs.add(key)
+        recent.append(name)
+        mix.append((path, float(similarity[index])))
+        if len(mix) >= count:
             break
-    if len(pool) > count:
-        chosen = sorted((rng or random).sample(range(len(pool)), count))
-        pool = [pool[index] for index in chosen]
-    return pool, source, left_out
+    return mix, source, left_out
