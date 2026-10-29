@@ -1,5 +1,5 @@
 # Kodi Media Center language file
-# Addon Name: MusicIP
+# Addon Name: Incipit
 # Addon id: plugin.audio.musicip
 # Addon Provider: paradigm_city
 msgid ""

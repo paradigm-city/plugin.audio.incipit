@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Kodi music add-on for MusicIP mixes."""
+"""Incipit (formerly MusicIP): a Kodi music add-on for mixes and radio from the sound engine."""
 
 from __future__ import annotations
 
@@ -2873,7 +2873,7 @@ def is_addon_mix_container_active() -> bool:
 
 def ensure_remove_allowed_from_addon_container() -> None:
     if not is_addon_mix_container_active():
-        raise MusicIPError("Remove from mix is only available inside the MusicIP add-on.")
+        raise MusicIPError(f"Remove from mix is only available inside the {ADDON_NAME} add-on.")
 
 
 def get_current_music_tag() -> object | None:
@@ -4714,7 +4714,7 @@ def add_current_mix_item(cache_path: str) -> None:
 
 
 def show_root() -> None:
-    xbmcplugin.setPluginCategory(HANDLE, "MusicIP")
+    xbmcplugin.setPluginCategory(HANDLE, ADDON_NAME)
     xbmcplugin.setContent(HANDLE, "files")
     keep_second_lines()
 
@@ -4825,7 +4825,7 @@ def show_discovery_mode_menu() -> None:
     state = get_discovery_state()
     active = bool(state.get("enabled"))
 
-    title = "MusicIP discovery mode"
+    title = f"{ADDON_NAME} discovery mode"
     if active:
         current = str(state.get("current_label") or state.get("current_song") or "").strip()
         if current:
@@ -4999,7 +4999,7 @@ def show_radio_mode_menu() -> None:
         name = station_name(state)
         title = f"Radio: {name}" if name else (f"Radio: {current}" if current else "Radio: playing")
     else:
-        title = "MusicIP radio"
+        title = f"{ADDON_NAME} radio"
 
     xbmcplugin.setPluginCategory(HANDLE, title)
     xbmcplugin.setContent(HANDLE, "files")
@@ -5505,7 +5505,7 @@ def discovery_mix_from_current() -> None:
         replace_with_discovery_mode_menu()
 
 def show_saved_mixes() -> None:
-    xbmcplugin.setPluginCategory(HANDLE, "MusicIP saved mixes")
+    xbmcplugin.setPluginCategory(HANDLE, f"{ADDON_NAME} saved mixes")
     xbmcplugin.setContent(HANDLE, "files")
 
     cache_paths = list_saved_mix_cache_paths()
@@ -5525,7 +5525,7 @@ def show_saved_mixes() -> None:
 
 
 def show_saved_mixes_by_date(date_key: str) -> None:
-    xbmcplugin.setPluginCategory(HANDLE, f"MusicIP saved mixes: {date_key}")
+    xbmcplugin.setPluginCategory(HANDLE, f"{ADDON_NAME} saved mixes: {date_key}")
     xbmcplugin.setContent(HANDLE, "albums")  # mixes are shown as compilation albums
     keep_second_lines()
 
@@ -5564,14 +5564,14 @@ def generate_current_mix() -> None:
         message = str(exc)
         notify(message, xbmcgui.NOTIFICATION_WARNING if "cancelled" in message.lower() else xbmcgui.NOTIFICATION_ERROR)
         log_mixing(message, xbmc.LOGERROR)
-        add_error_item(f"MusicIP mix failed: {message}")
+        add_error_item(f"Mix failed: {message}")
         end_directory(HANDLE, succeeded=True, cacheToDisc=False)
         return
     except Exception as exc:
         message = str(exc)
         notify(message, xbmcgui.NOTIFICATION_ERROR)
         log_mixing(f"Generate mix from playing audio failed: {message}", xbmc.LOGERROR)
-        add_error_item(f"MusicIP mix failed: {message}")
+        add_error_item(f"Mix failed: {message}")
         end_directory(HANDLE, succeeded=True, cacheToDisc=False)
         return
 
@@ -5591,7 +5591,7 @@ def generate_current_mix() -> None:
         message = str(exc)
         notify(message, xbmcgui.NOTIFICATION_ERROR)
         log_mixing(f"Generate mix playback failed: {message}", xbmc.LOGERROR)
-        add_error_item(f"MusicIP mix playback failed: {message}")
+        add_error_item(f"Mix playback failed: {message}")
         end_directory(HANDLE, succeeded=True, cacheToDisc=False)
         return
 
@@ -5613,7 +5613,7 @@ def browse_mix(
 ) -> None:
     """The mix of a seed song (from the library's context menu): the current mix if it is this song's, else a new
     current mix."""
-    xbmcplugin.setPluginCategory(HANDLE, f"MusicIP mix: {path_to_label(seed)}")
+    xbmcplugin.setPluginCategory(HANDLE, f"Mix: {path_to_label(seed)}")
     xbmcplugin.setContent(HANDLE, "songs")
     xbmcplugin.addSortMethod(HANDLE, xbmcplugin.SORT_METHOD_UNSORTED)
 
@@ -5635,7 +5635,7 @@ def browse_mix(
         message = str(exc)
         notify(message, xbmcgui.NOTIFICATION_WARNING if "cancelled" in message.lower() else xbmcgui.NOTIFICATION_ERROR)
         log_mixing(message, xbmc.LOGERROR)
-        add_error_item(f"MusicIP mix failed: {message}")
+        add_error_item(f"Mix failed: {message}")
         end_directory(HANDLE, succeeded=True, updateListing=update_listing, cacheToDisc=False)
         return
 
@@ -5727,7 +5727,7 @@ def browse_saved_mix(
             return
 
     kind = "Saved" if is_mix_saved(meta) else "Current"
-    xbmcplugin.setPluginCategory(HANDLE, f"{kind} MusicIP mix: {path_to_label(seed)}")
+    xbmcplugin.setPluginCategory(HANDLE, f"{kind} mix: {path_to_label(seed)}")
     xbmcplugin.setContent(HANDLE, "songs")
     xbmcplugin.addSortMethod(HANDLE, xbmcplugin.SORT_METHOD_UNSORTED)
     list_mix_tracks(cache_path, tracks, seed, size, update_listing, "browse_saved_mix")
@@ -5985,10 +5985,10 @@ def show_mix_info(cache_path: str) -> None:
     try:
         info = mix_info_parts(cache_path)
     except Exception as exc:
-        xbmcgui.Dialog().ok("MusicIP mix information", f"Could not read mix information.\n\n{exc}")
+        xbmcgui.Dialog().ok("Mix information", f"Could not read mix information.\n\n{exc}")
         return
     show_info_window(info["title"], info["facts"], mix_info_tabs(info),
-                     lambda: show_text_page("MusicIP mix information", mix_info_page_text(info)))
+                     lambda: show_text_page("Mix information", mix_info_page_text(info)))
 
 
 def show_text_page(heading: str, text: str) -> None:
@@ -6766,7 +6766,7 @@ def apply_saved_mix_info_metadata(list_item: xbmcgui.ListItem, cache_path: str) 
 # background (run_mix_collage_tick in service.py); until then, and without enough covers, the seed's own cover and
 # fanart are shown.
 
-MIX_ALBUM_ARTIST = "MusicIP"
+MIX_ALBUM_ARTIST = ADDON_NAME
 COLLAGE_GAP = 4
 COLLAGES = {  # kind -> size in pixels, grids (columns, rows) from the largest (with fewer covers the next), contrast
     "cover": ((800, 800), ((4, 4), (3, 3), (2, 2)), 0.7),

@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Kodi context menu entry for starting MusicIP radio from a library song."""
+"""Kodi context menu entry for starting Incipit radio from a library song."""
 
 from __future__ import annotations
 

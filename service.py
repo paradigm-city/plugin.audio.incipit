@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Background consistency checker for saved MusicIP mixes."""
+"""Incipit's background service: Radio, Discovery mode, the checks, saved mixes' consistency and the sound engine's analysis."""
 
 from __future__ import annotations
 
@@ -3000,7 +3000,7 @@ def main() -> None:
     ensure_musicip_keymap_installed()
 
     log_general(
-        f"MusicIP service started. "
+        f"Incipit service started. "
         f"version={ADDON.getAddonInfo('version')}, "
         f"profile={get_profile_dir()}, "
         f"discovery_state={discovery_state_path()}, "
@@ -3075,7 +3075,7 @@ def main() -> None:
     except Exception:
         pass
 
-    log_general("MusicIP service stopped.")
+    log_general("Incipit service stopped.")
 
 
 if __name__ == "__main__":

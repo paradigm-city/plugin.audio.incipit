@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <addon id="plugin.audio.musicip"
-       name="MusicIP"
+       name="Incipit"
        version="1.0.102"
        provider-name="paradigm_city">
   <requires>
@@ -16,19 +16,19 @@
   <extension point="kodi.context.item">
     <menu id="kodi.core.main">
       <item library="context_mix.py">
-        <label>Create MusicIP mix</label>
+        <label>Create Incipit mix</label>
         <visible>String.IsEqual(ListItem.DBTYPE,song)</visible>
       </item>
       <item library="context_radio.py">
-        <label>Start MusicIP radio</label>
+        <label>Start Incipit radio</label>
         <visible>String.IsEqual(ListItem.DBTYPE,song)</visible>
       </item>
     </menu>
   </extension>
 
   <extension point="xbmc.addon.metadata">
-    <summary lang="en_GB">Create MusicIP mixes from the current song or from a song selected in the music library.</summary>
-    <description lang="en_GB">Uses a local MusicIP server to generate mixes from the full path of the currently playing song or from a song selected through the music library context menu. Shows the result as a music folder, caches the last result per seed and size, exposes previously generated mixes later in the plugin, supports controlled refresh from the context menu, includes the seed song as the first track without duplication, preserves the generated mix order, and lets you remove tracks from the stored mix.</description>
+    <summary lang="en_GB">Mixes and endless radio from any song of your library, chosen by sound and kept true to what the song is about.</summary>
+    <description lang="en_GB">Incipit makes a mix from the song you start it with: the sound engine finds the songs that sound alike, from near to far as the variety lets it reach, and two checks keep the mix true to its first song, Character (the music's profile) and Intent (an AI's judgement of what the song is about, from a listening perspective). Mixes can be saved, edited ("More like this", "Less like this", remove) and repaired when files move; Radio plays an endless station from a song found by scanning through snippets. Formerly MusicIP, whose server made the mixes until 2026.</description>
     <platform>all</platform>
     <license>MIT</license>
     <language>en</language>

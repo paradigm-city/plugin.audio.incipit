@@ -1,4 +1,4 @@
-# MusicIP Kodi Add-on
+# Incipit, a Kodi Add-on (formerly MusicIP)
 
 Kodi music add-on that can create a mix from the currently playing audio track or from a song selected in the Kodi music library. The mixes come from the sound engine: sound prints made on this computer from a few 10-second snippets of every song (`soundprint/`). Until 2026-10-29 they came from a local MusicIP server; that code is kept dormant in `musicip_dormant.py`.
 
@@ -6,7 +6,7 @@ Kodi music add-on that can create a mix from the currently playing audio track o
 
 - Listed under **Music add-ons**
 - Can use the **currently playing audio** as the seed song
-- Can open **Create MusicIP mix** from the **context menu of library songs**
+- Can open **Create Incipit mix** from the **context menu of library songs**
 - Playlist size is configurable in add-on settings
 - Shows a folder view with one entry per returned track so the user can play a single song
 - Includes **Refresh mix** in the context menu to request a new mix for the same seed
@@ -30,7 +30,7 @@ A mix is made in three steps: **Source** (the sound engine's songs that sound al
 3. In Kodi, go to **Add-ons** -> **Install from ZIP file**.
 4. Install the zip.
 5. Set up the sound engine in the add-on's settings (**Advanced** -> **Set up the sound engine**); it then analyses the library in the background.
-6. Open **Music** -> **Music add-ons** -> **MusicIP**.
+6. Open **Music** -> **Music add-ons** -> **Incipit**.
 
 ## Notes
 

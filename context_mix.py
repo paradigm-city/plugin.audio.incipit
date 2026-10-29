@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Kodi context menu entry for creating a MusicIP mix from a library song."""
+"""Kodi context menu entry for creating an Incipit mix from a library song."""
 
 from __future__ import annotations
 
