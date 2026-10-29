@@ -215,11 +215,11 @@ class SavedMixMenuTest(MixAssistTestCase):
             self.assertNotIn(old, labels)
 
     def test_the_menu_offers_undo_only_after_a_change(self):
-        self.assertEqual(self.menu(), ["What this mix is about: <not worked out yet>", "Openness: Balanced",
-                                       "Perspective: Mixed", "Name: <given at the first check>", "Run AI Mix Assist"])
+        self.assertEqual(self.menu(), ["What this mix is about: <not worked out yet>", "Character: Balanced",
+                                       "Intent: Mixed", "Name: <given at the first check>", "Run AI Mix Assist"])
         self.tidy_up(plan(changes=[REPLACE_DISCO]))
-        self.assertEqual(self.menu(), ["What this mix is about: dark, abstract, instrumental", "Openness: Balanced",
-                                       "Perspective: Mixed", "Name: <given at the first check>", "Run AI Mix Assist", "Undo the AI Mix Assist changes"])
+        self.assertEqual(self.menu(), ["What this mix is about: dark, abstract, instrumental", "Character: Balanced",
+                                       "Intent: Mixed", "Name: <given at the first check>", "Run AI Mix Assist", "Undo the AI Mix Assist changes"])
 
     def test_tidy_up_now_from_the_menu(self):
         kodi.respond("select", 4)
@@ -228,30 +228,32 @@ class SavedMixMenuTest(MixAssistTestCase):
         self.assertEqual(self.read_mix(self.cache_path)[2], REPLACEMENT)
 
     def test_the_openness_of_a_mix_can_be_changed(self):
-        kodi.respond("select", 1, 4)  # Openness, then: Off, Focused, Close, Balanced, Open, ...
+        kodi.respond("select", 1, 4)  # Character, then: Off, Focused, Close, Balanced, Open, ...
         self.run_plugin(action="mix_assist_menu", cache_path=self.cache_path)
         _method, (heading, options), _kwargs = kodi.dialogs("select")[-1]
-        self.assertEqual(heading, "Openness of this mix")
-        self.assertEqual(options[0], "Off: no automatic checks")
+        self.assertEqual(heading, "Character of this mix")
+        self.assertEqual(options[0], "Off: the profile isn't compared")
         self.assertEqual(options[3], "Balanced (default)")
-        self.assertEqual(self.section()["openness"], 3)
+        self.assertEqual(self.section()["character"], 3)
         self.assertEqual(self.history()[-1]["openness"], "Open")
         self.assertNotified("Saved. AI Mix Assist uses it for this mix from now on.")
-        self.assertIn("AI Mix Assist: openness Open (chosen for this mix)", main.build_mix_info_page(self.cache_path))
+        self.assertIn("AI Mix Assist: Character Open (chosen for this mix), Intent Mixed",
+                      main.build_mix_info_page(self.cache_path))
 
     def test_the_perspective_of_a_mix_can_be_changed(self):
         self.assertEqual(self.tidy_up(plan()).call_args[1]["perspective"], "mixed")  # the setting's default
-        kodi.respond("select", 2, 1)  # Perspective, then: Mixed, Technical, ...
+        kodi.respond("select", 2, 2)  # Intent, then: Off, Mixed, Technical, ...
         self.run_plugin(action="mix_assist_menu", cache_path=self.cache_path)
         _method, (heading, options), _kwargs = kodi.dialogs("select")[-1]
-        self.assertEqual(heading, "Perspective of this mix")
-        self.assertEqual(options[:2], ["Mixed: intention and qualities (default)", "Technical: how it is made"])
+        self.assertEqual(heading, "Intent of this mix")
+        self.assertEqual(options[:3], ["Off: no AI judgement", "Mixed: intention and qualities (default)",
+                                       "Technical: how it is made"])
         self.assertEqual(self.section()["perspective"], 1)
         self.assertEqual(self.history()[-1]["perspective"], "Technical")
-        self.assertIn("You set AI Mix Assist to the technical perspective", main.build_mix_history_text(
+        self.assertIn("You set AI Mix Assist to Intent Technical", main.build_mix_history_text(
             self.read_json(main.mix_meta_path_from_cache_path(self.cache_path))))
         self.assertNotified("Saved. Tidy up the mix to see it from the new perspective.")
-        self.assertIn("AI Mix Assist: openness Balanced, technical perspective (chosen for this mix)",
+        self.assertIn("AI Mix Assist: Character Balanced, Intent Technical (chosen for this mix)",
                       main.build_mix_info_page(self.cache_path))
         self.assertEqual(self.tidy_up(dict(plan(), perspective="technical")).call_args[1]["perspective"], "technical")
         self.assertEqual(self.section()["intent_perspective"], "technical")
@@ -260,7 +262,7 @@ class SavedMixMenuTest(MixAssistTestCase):
     def test_the_perspective_setting_applies_to_mixes_without_their_own(self):
         kodi.settings["mix_assist_mix_perspective"] = "2"
         self.assertEqual(self.tidy_up(plan()).call_args[1]["perspective"], "emotional")
-        self.assertEqual(self.menu()[2], "Perspective: Emotional")
+        self.assertEqual(self.menu()[2], "Intent: Emotional")
 
     def test_cancelling_the_menu_does_nothing(self):
         self.run_plugin(action="mix_assist_menu", cache_path=self.cache_path)
@@ -272,7 +274,7 @@ class SavedMixMenuTest(MixAssistTestCase):
         self.tidy_up(plan(changes=[REPLACE_DISCO]))
         page = main.build_mix_info_page(self.cache_path)
         self.assertIn("[B]What it is about[/B]\ndark, abstract, instrumental\n(as the AI put it)\n"
-                      "AI Mix Assist: openness Balanced, last checked", page)
+                      "AI Mix Assist: Character Balanced, Intent Mixed, last checked", page)
         self.assertIn("[B]Last tidy-up[/B]\nwilfried - fire walk » Medeski Martin & Wood - Think (Danceable disco, bright)",
                       page)
         self.assertIn("can undo it", page)
@@ -373,18 +375,37 @@ class PerMixLevelTest(MixAssistTestCase):
     def test_a_tidy_up_uses_the_mixs_openness(self):
         self.set_openness(4)
         tidy_up = self.tidy_up(plan())
-        self.assertEqual((tidy_up.call_args[1]["strictness"], tidy_up.call_args[1]["accept_borderline"]), (1.5, True))
+        self.assertEqual((tidy_up.call_args[1]["strictness"], tidy_up.call_args[1]["accept_borderline"]), (1.5, False))
+        kodi.settings["mix_intent_borderline"] = "true"  # Intent's own switch now, not part of the level
+        self.assertTrue(self.tidy_up(plan()).call_args[1]["accept_borderline"])
 
     def test_without_a_choice_the_setting_counts(self):
         kodi.settings["mix_assist_mix_strictness"] = "0"
         tidy_up = self.tidy_up(plan())
         self.assertEqual(tidy_up.call_args[1]["strictness"], 1.0)
 
-    def test_a_mix_switched_off_is_tidied_up_on_request_with_the_default(self):
-        self.set_openness(main.MIX_OPENNESS_OFF)
-        tidy_up = self.tidy_up(plan())
-        self.assertEqual(tidy_up.call_args[1]["strictness"], 1.2)
+    def test_an_older_mix_switched_off_has_every_check_off(self):
+        self.set_openness(main.MIX_OPENNESS_OFF)  # an older mix's Off switched every check off
+        meta = main.get_saved_mix_metadata(self.cache_path, self.read_mix(self.cache_path))
+        self.assertTrue(main.mix_checks_off(meta))
+        with self.assertRaisesRegex(main.MusicIPError, "both off for this mix"):
+            main.run_mix_assist_on_saved_mix(self.cache_path)
         self.assertIn("AI Mix Assist: off for this mix", main.build_mix_info_page(self.cache_path))
+
+    def test_character_off_leaves_intent_on(self):
+        sidecar = self.read_json(main.mix_meta_path_from_cache_path(self.cache_path))
+        sidecar["mix_assist"] = {"character": main.CHECK_OFF}
+        self.write_json(main.mix_meta_path_from_cache_path(self.cache_path), sidecar)
+        tidy_up = self.tidy_up(plan())
+        self.assertEqual((tidy_up.call_args[1]["strictness"], tidy_up.call_args[1]["perspective"]), (None, "mixed"))
+        self.assertEqual(tidy_up.call_args[1]["scale_entries"], ())  # no fixed scale without Character
+
+    def test_intent_off_leaves_character_on(self):
+        sidecar = self.read_json(main.mix_meta_path_from_cache_path(self.cache_path))
+        sidecar["mix_assist"] = {"perspective": main.CHECK_OFF}
+        self.write_json(main.mix_meta_path_from_cache_path(self.cache_path), sidecar)
+        tidy_up = self.tidy_up(plan())
+        self.assertEqual((tidy_up.call_args[1]["strictness"], tidy_up.call_args[1]["perspective"]), (1.2, None))
 
 
 class GenerateDialogTest(SourceTestCase):
@@ -405,15 +426,15 @@ class GenerateDialogTest(SourceTestCase):
     def test_the_dialog_shows_the_ai_mix_assist_lines(self):
         params = main.confirm_mix_generation({}) or {}
         choices = kodi.dialogs("select")[0][1][1]
-        self.assertEqual(choices[4:], ["AI Mix Assist: Balanced", "Perspective: Mixed",
+        self.assertEqual(choices[4:], ["Character: Balanced", "Intent: Mixed",
                                        "What this mix is about: <worked out by the AI>"])
         self.assertEqual(params, {})  # cancelled
 
     def test_a_perspective_chosen_when_generating_is_kept_with_the_mix(self):
-        kodi.respond("select", 5, 5, 0)  # Perspective -> Lyrical, Generate
+        kodi.respond("select", 5, 6, 0)  # Intent -> Lyrical (after Off), Generate
         self.run_plugin(action="browse_mix", seed=TRACKS[0], size="20")
         self.assertEqual(self.sidecar()["mix_assist"]["perspective"], 5)
-        self.assertIn("When you created the mix, you set AI Mix Assist to the lyrical perspective",
+        self.assertIn("When you created the mix, you set AI Mix Assist to Intent Lyrical",
                       main.build_mix_history_text(self.sidecar()))
         self.assertNotIn("assist_perspective", self.sidecar()["mix_generation_parameters"])
 
@@ -422,19 +443,26 @@ class GenerateDialogTest(SourceTestCase):
         kodi.respond("keyboard", "  dark cosmic electronics  ")
         self.run_plugin(action="browse_mix", seed=TRACKS[0], size="20")
         section = self.sidecar()["mix_assist"]
-        self.assertEqual((section["openness"], section["listener_intent"]), (4, "dark cosmic electronics"))
+        self.assertEqual((section["character"], section["listener_intent"]), (4, "dark cosmic electronics"))
         event = [e for e in self.sidecar()["history"] if e["kind"] == "assist_settings"][0]
         self.assertEqual((event["at_creation"], event["openness"]), (True, "Adventurous"))
-        self.assertIn('When you created the mix, you set AI Mix Assist to openness Adventurous; about "dark cosmic electronics"',
+        self.assertIn('When you created the mix, you set AI Mix Assist to Character Adventurous; about "dark cosmic electronics"',
                       main.build_mix_history_text(self.sidecar()))
         self.assertEqual([entry["cache_path"] for entry in self.queued()], [self.cache_path])
         self.assertNotIn("assist_openness", self.sidecar()["mix_generation_parameters"])  # MusicIP's stay clean
 
-    def test_a_mix_created_with_ai_mix_assist_off_is_not_tidied_up(self):
-        kodi.respond("select", 4, 0, 0)  # AI Mix Assist -> Off, Generate
+    def test_a_mix_created_with_both_checks_off_is_not_tidied_up(self):
+        kodi.respond("select", 4, 0, 5, 0, 0)  # Character -> Off, Intent -> Off, Generate
         self.run_plugin(action="browse_mix", seed=TRACKS[0], size="20")
-        self.assertEqual(self.sidecar()["mix_assist"]["openness"], main.MIX_OPENNESS_OFF)
+        section = self.sidecar()["mix_assist"]
+        self.assertEqual((section["character"], section["perspective"]), (main.CHECK_OFF, main.CHECK_OFF))
         self.assertEqual(self.queued(), [])
+
+    def test_a_mix_created_with_character_off_is_still_checked(self):
+        kodi.respond("select", 4, 0, 0)  # Character -> Off, Generate
+        self.run_plugin(action="browse_mix", seed=TRACKS[0], size="20")
+        self.assertEqual(self.sidecar()["mix_assist"]["character"], main.CHECK_OFF)
+        self.assertEqual([entry["cache_path"] for entry in self.queued()], [self.cache_path])
 
     def test_default_choices_store_nothing_extra(self):
         kodi.respond("select", 0)
@@ -820,14 +848,14 @@ class StepReporterTest(KodiTestCase):
 class StrictnessSettingTest(KodiTestCase):
     def test_mixes_and_radio_share_one_scale_but_not_the_setting(self):
         self.assertEqual((main.get_mix_assist_strictness(), main.get_station_strictness()), ((1.2, False), (1.2, False)))
-        for value, expected in (("0", (1.0, False)), ("1", (1.1, False)), ("3", (1.35, False)), ("4", (1.5, True)),
-                                ("9", (1.5, True)), ("x", (1.2, False))):
+        for value, expected in (("0", (1.0, False)), ("1", (1.1, False)), ("3", (1.35, False)), ("4", (1.5, False)),
+                                ("9", (1.5, False)), ("x", (1.2, False)), ("-1", (None, False))):
             kodi.settings["mix_assist_mix_strictness"] = value
             self.assertEqual(main.get_mix_assist_strictness(), expected)
             self.assertEqual(main.get_station_strictness(), (1.2, False))  # independent
 
-    def test_adventurous_mixes_accept_borderline_replacements(self):
-        kodi.settings["mix_assist_mix_strictness"] = "4"
+    def test_borderline_replacements_are_intents_own_switch(self):
+        kodi.settings.update(mix_assist_mix_strictness="4", mix_intent_borderline="true")
         cache_path = self.save_mix(TRACKS)
         meta = main.get_saved_mix_metadata(cache_path, TRACKS)
         with mock.patch.object(main, "mix_assist_ask", return_value=lambda *args: {}), \

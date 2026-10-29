@@ -346,7 +346,8 @@ class RadioMixAssistTest(RadioBase):
         self.assertEqual(self.files(), queue)
 
     def test_station_strictness_and_drift_reach_the_check(self):
-        kodi.settings.update({"mix_assist_station_strictness": "4", "mix_assist_radio_drift": "2"})
+        kodi.settings.update({"mix_assist_station_strictness": "4", "mix_assist_radio_drift": "2",
+                              "radio_intent_borderline": "true"})
         chosen = {"chosen": ["b"], "entries": {"b": {"energy": 9, "sounding_year": 1983}}, "seed_entry": None,
                   "not_fitting": []}
         with mock.patch.object(main.mix_assist, "choose_additions", return_value=chosen) as choose, \
@@ -470,7 +471,9 @@ class RadioMixAssistTest(RadioBase):
         self.assertEqual(self.refill_check.call_args[1]["settings"], {"openness": 4, "drift": 0})
 
     def test_the_settings_reach_the_checks(self):
-        self.assertEqual(main.get_station_strictness({"openness": 4}), (1.5, True))
+        self.assertEqual(main.get_station_strictness({"openness": 4}), (1.5, False))
+        self.assertEqual(main.get_station_strictness({"openness": 4, "borderline": True}), (1.5, True))
+        self.assertEqual(main.get_station_strictness({"openness": main.CHECK_OFF}), (None, False))
         self.assertEqual(main.get_radio_drift_half_life({"drift": 0}), 0)
         self.assertEqual(main.get_station_strictness({}), main.get_station_strictness())  # none of its own: global
 

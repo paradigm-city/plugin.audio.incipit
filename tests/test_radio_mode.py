@@ -264,14 +264,14 @@ class StationStartDescriptionTest(RadioTestCase):
         text = main.describe_station_start(self.params(), None, True)
         self.assertIn("new station | mix: size 6, ", text)
         self.assertIn(f"AI Mix Assist: on, model {main.mix_assist_claude.DEFAULT_MODEL}, effort ", text)
-        self.assertIn("openness Balanced (setting; limit 1.2, borderline rejected)", text)
+        self.assertIn("Character Balanced (setting; limit 1.2) | Intent: borderline rejected", text)
         self.assertIn("drift Drift slowly (setting; half-life 60 songs)", text)
 
     def test_a_favourites_own_settings(self):
         favourite = {"id": "abc", "name": "Night Drive", "openness": 4, "drift": 0}
         text = main.describe_station_start(self.params(), favourite, True)
         self.assertIn("favourite 'Night Drive' (abc) | mix:", text)
-        self.assertIn("openness Adventurous (favourite's own; limit 1.5, borderline accepted)", text)
+        self.assertIn("Character Adventurous (favourite's own; limit 1.5) | Intent: borderline rejected", text)
         self.assertIn("drift Stay close to the picked song (favourite's own; no drift)", text)
 
 

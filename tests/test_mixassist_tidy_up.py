@@ -421,10 +421,10 @@ class AssistTest(unittest.TestCase):
         assist.tidy_up(self.paths, self.store, self.ask, self.resolve, self.fetch_mix, artist_window=0)
         text = "\n".join(said)
         self.assertIn("What the mix is about (ai, mixed perspective): abstract, instrumental", text)
-        self.assertIn("Both checks against the seed 'seed': typical misfit ", text)
+        self.assertIn("Checks against the seed 'seed': Character: typical misfit ", text)
         self.assertRegex(text, r"  6\. outlier    'bad1': relative \d+\.\d\d \(misfit \d+\.\d\d\).*; AI: outlier \(clashes\)")
         self.assertRegex(text, r"  2\. fits       'fit1': relative ")
-        self.assertIn("Tidy-up: 2 of 10 track(s) don't fit by both checks: [6, 11]", text)
+        self.assertIn("Tidy-up: 2 of 10 track(s) don't fit by every check that is on: [6, 11]", text)
         self.assertIn("  candidate 'candbad': relative ", text)
         self.assertRegex(text, r"Replacement for 6\. 'bad1': 'cand\d' \(submix, relative \d+\.\d\d, AI: fits\)\.")
 

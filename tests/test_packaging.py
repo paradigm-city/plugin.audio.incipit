@@ -62,7 +62,7 @@ class SettingsXmlTest(unittest.TestCase):
             with self.subTest(setting=setting_id):
                 options = self.settings[setting_id].findall(".//option")
                 self.assertEqual([read_strings()[int(option.get("label"))] for option in options],
-                                 list(main.PERSPECTIVE_LABELS))
+                                 ["Off"] + list(main.PERSPECTIVE_LABELS))
         self.assertEqual(len(main.PERSPECTIVE_LABELS), len(main.mix_assist_checks.PERSPECTIVES))
         self.assertEqual(len(main.PERSPECTIVE_HINTS), len(main.PERSPECTIVE_LABELS))
 

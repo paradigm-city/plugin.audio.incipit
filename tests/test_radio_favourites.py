@@ -338,7 +338,7 @@ class FavouriteStationsTest(RadioBase):
     def test_changing_a_favourites_settings(self):
         self.save_playing_station()
         favourite_id = self.favourites()[0]["id"]
-        kodi.respond("select", 0)  # Focused
+        kodi.respond("select", 1)  # Focused, after Off
         self.run_plugin(action="radio_favourite_setting", id=favourite_id, setting="openness")
         self.assertEqual(self.favourites()[0]["openness"], 0)
         self.assertEqual(self.radio()["settings"]["openness"], 0)  # the playing favourite follows
@@ -352,11 +352,11 @@ class FavouriteStationsTest(RadioBase):
         self.save_playing_station()
         favourite_id = self.favourites()[0]["id"]
         self.assertEqual(self.favourites()[0]["perspective"], 3)
-        kodi.respond("select", 4)  # Functional
+        kodi.respond("select", 5)  # Functional, after Off
         self.run_plugin(action="radio_favourite_setting", id=favourite_id, setting="perspective")
         _method, (heading, options), _kwargs = kodi.dialogs("select")[-1]
         self.assertEqual(heading, f"Perspective of 1. {self.favourites()[0]['name']}")
-        self.assertEqual(options[3], "Cultural: where it comes from (default)")
+        self.assertEqual(options[:1] + options[4:5], ["Off: no AI judgement", "Cultural: where it comes from (default)"])
         self.assertEqual((self.favourites()[0]["perspective"], self.radio()["settings"]["perspective"]), (4, 4))
         self.assertEqual(main.favourite_perspective_label(self.favourites()[0]), "Functional")
 
