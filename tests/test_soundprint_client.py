@@ -410,8 +410,8 @@ class SettingsChangeTest(KodiTestCase):
         self.assertEqual(main.get_mix_variety(), 7)
         for module in (service, main, logging):
             self.assertNotIsInstance(module.ADDON, StaleSettings)
-        self.assertIn("Settings changed: the service reads them again. Mix size 20, variety 7, no artist repeat "
-                      "within 0.", kodi.log_text())
+        self.assertIn("Settings changed: the service reads them again. Mixing: size 20, variety 7, no artist "
+                      "repeat within 0; Radio: variety 0, no artist repeat within 0.", kodi.log_text())
 
 
 if __name__ == "__main__":

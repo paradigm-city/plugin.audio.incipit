@@ -232,14 +232,14 @@ class RadioMixAssistTest(RadioBase):
         self.assertEqual(requested, [("chosen", 0)])  # drifting: the songs that fit first, the variety as set
 
     def test_staying_close_keeps_musicips_mixes_from_repeating(self):
-        kodi.settings["mix_variety"] = "0"
+        kodi.settings["radio_variety"] = "0"
         self.assertEqual(main.radio_mix_parameters(75, {"drift": 0})["variety"], main.RADIO_STAY_CLOSE_MIN_VARIETY)
         self.assertEqual(main.radio_mix_parameters(75, {"drift": 1})["variety"], 0)
-        kodi.settings["mix_variety"] = "5"
+        kodi.settings["radio_variety"] = "5"
         self.assertEqual(main.radio_mix_parameters(75, {"drift": 0})["variety"], 5)
 
     def test_a_station_that_stays_close_asks_musicip_with_variety(self):
-        kodi.settings.update({"mix_variety": "0", "mix_assist_radio_drift": "0"})
+        kodi.settings.update({"radio_variety": "0", "mix_assist_radio_drift": "0"})
         self.started_station()
         self.assertEqual({query["variety"] for query in self.source.mix_requests()}, {"2"})  # start and refill
         self.assertIn("variety 2", self.radio()["events"][0]["parameters"])

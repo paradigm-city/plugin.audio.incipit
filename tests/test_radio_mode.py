@@ -190,7 +190,7 @@ class TuningTest(RadioTestCase):
 
 class StartRadioTest(RadioTestCase):
     def test_start_plays_the_station_without_a_dialog(self):
-        kodi.settings.update({"playlist_size": "10", "mix_variety": "3"})
+        kodi.settings.update({"playlist_size": "10", "radio_variety": "3", "mix_variety": "7"})
         seed = self.start()
 
         self.assertEqual([call for call in kodi.dialog_calls if not call[0].startswith("progress")], [])  # no questions
@@ -249,7 +249,7 @@ class StartRadioTest(RadioTestCase):
         self.assertEqual(self.radio().get("phase", "off"), "off")
 
     def test_the_log_has_the_stations_parameters(self):
-        kodi.settings.update({"playlist_size": "10", "mix_variety": "3", "log_radio": "true"})
+        kodi.settings.update({"playlist_size": "10", "radio_variety": "3", "log_radio": "true"})
         self.start()
         (line,) = [message for message, _level in kodi.logs if "Radio mode: station parameters:" in message]
         self.assertIn("new station | mix: size 10, variety 3, artists may repeat", line)
