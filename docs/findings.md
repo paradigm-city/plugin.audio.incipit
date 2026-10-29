@@ -95,6 +95,12 @@ Found on 2026-10-28 while planning how to keep the sound prints in step with Kod
 
 Not fixed. The planned fix is the library sync: remove a song's sound print when Kodi removes the song, prune at startup, and leave out stored songs that Kodi doesn't list when searching.
 
+### F40 · AI Mix Assist's profile check is measured against the candidate list itself
+
+Found on 2026-10-29 while widening the sound engine's variety, so that loose mixes cross genres and AI Mix Assist keeps them consistent. `assist.analyze` scales every dimension by the spread of the list it checks (`fit.mix_spreads`) and calls a track off when its misfit is more than 1.2 × the list's median misfit. So the looser the list, the more of it passes than its distance from the seed warrants. Only the second rule (a single dimension off by 5 points or 25 years) is absolute. On mixes of 25 from the whole library (`tools/style_pilot/data/variety_2026-10-29/variety_scale.txt`; the seeds Kraftwerk, Holdsworth, Machacek), 59 / 75 / 70% pass at variety 0 and 34 / 44 / 29% at variety 9. On a fixed scale taken from the seed's 35 nearest songs, 59 / 56 / 30% fit at variety 0 and 19 / 30 / 24% at variety 9. Within a rank band the gap is larger: of the songs ranked 3,000 to 10,000 for Allan Holdsworth, 24% fit on the fixed scale and 46% on their own (`variety_survey.txt`).
+
+This was calibrated on MusicIP's mixes, which are close to their seed anyway. With loose candidate lists, the profile check gets more lenient just when it should hold the mix together, and more of the consistency rests on the AI's verdict. A possible fix is to measure against a fixed scale per seed (for example its nearest songs by sound, or the spread of the library's rated units around the seed) instead of the list's own.
+
 ## Resolved
 
 ### F39 · The service ignored settings changed while Kodi runs
