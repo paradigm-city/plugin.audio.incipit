@@ -39,7 +39,7 @@ from mixassist import usage as mix_assist_usage
 from soundprint import client as soundprint
 
 import logs
-from logs import log_ai, log_checks, log_discovery, log_general, log_mixing, log_radio
+from logs import ADDON_ID, log_ai, log_checks, log_discovery, log_general, log_mixing, log_radio
 
 
 ADDON = xbmcaddon.Addon()
@@ -91,62 +91,62 @@ class MusicIPError(Exception):
     """Raised for user-facing MusicIP failures."""
 
 
-MUSICIP_KEYMAP_FILENAME = "musicip_mix_editing.xml"
+MUSICIP_KEYMAP_FILENAME = "incipit_mix_editing.xml"
 MUSICIP_KEYMAP_CONTENT = r"""<?xml version="1.0" encoding="UTF-8"?>
 <keymap>
   <MyMusicNav>
     <keyboard>
-      <delete>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_remove_from_mix)</delete>
-      <del>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_remove_from_mix)</del>
-      <m>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_more_like_this)</m>
-      <l>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_less_like_this)</l>
-      <i>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_info)</i>
+      <delete>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_remove_from_mix)</delete>
+      <del>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_remove_from_mix)</del>
+      <m>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_more_like_this)</m>
+      <l>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_less_like_this)</l>
+      <i>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_info)</i>
     </keyboard>
     <remote>
-      <info>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_info)</info>
+      <info>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_info)</info>
     </remote>
   </MyMusicNav>
 
   <window10502>
     <keyboard>
-      <delete>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_remove_from_mix)</delete>
-      <del>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_remove_from_mix)</del>
-      <m>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_more_like_this)</m>
-      <l>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_less_like_this)</l>
-      <i>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_info)</i>
+      <delete>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_remove_from_mix)</delete>
+      <del>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_remove_from_mix)</del>
+      <m>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_more_like_this)</m>
+      <l>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_less_like_this)</l>
+      <i>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_info)</i>
     </keyboard>
     <remote>
-      <info>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_info)</info>
+      <info>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_info)</info>
     </remote>
   </window10502>
 
   <MusicPlaylist>
     <keyboard>
-      <delete>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_remove_from_mix)</delete>
-      <del>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_remove_from_mix)</del>
-      <m>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_more_like_this)</m>
-      <l>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_less_like_this)</l>
-      <i>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_info)</i>
+      <delete>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_remove_from_mix)</delete>
+      <del>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_remove_from_mix)</del>
+      <m>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_more_like_this)</m>
+      <l>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_less_like_this)</l>
+      <i>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_info)</i>
     </keyboard>
     <remote>
-      <info>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_info)</info>
+      <info>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_info)</info>
     </remote>
   </MusicPlaylist>
 
   <MusicFiles>
     <keyboard>
-      <delete>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_remove_from_mix)</delete>
-      <del>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_remove_from_mix)</del>
-      <m>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_more_like_this)</m>
-      <l>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_less_like_this)</l>
-      <i>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_info)</i>
+      <delete>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_remove_from_mix)</delete>
+      <del>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_remove_from_mix)</del>
+      <m>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_more_like_this)</m>
+      <l>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_less_like_this)</l>
+      <i>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_info)</i>
     </keyboard>
     <remote>
-      <info>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_info)</info>
+      <info>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_info)</info>
     </remote>
   </MusicFiles>
 </keymap>
-"""
+""".replace("__ADDON_ID__", ADDON_ID)
 
 
 def get_kodi_user_keymap_dir() -> str:

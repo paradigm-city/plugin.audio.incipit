@@ -10,7 +10,7 @@
   neighbours    the songs nearest to a seed by sound, as JSON (with artist and title from Kodi's library)
   failures      the files that could not be read
 
-The data folder defaults to Kodi's addon_data/plugin.audio.musicip/soundprint; the model lives in its "model"
+The data folder defaults to Kodi's addon_data/plugin.audio.incipit/soundprint; the model lives in its "model"
 subfolder unless --model says otherwise.
 """
 
@@ -22,7 +22,7 @@ import os
 import subprocess
 import sys
 
-from soundprint.state import environment_python, read_status, request_stop, running
+from soundprint.state import ADDON_ID, environment_python, read_status, request_stop, running
 
 ADDON_FOLDER = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REQUIREMENTS = ("numpy>=1.24", "onnxruntime>=1.17", "av>=12")
@@ -38,7 +38,7 @@ def arguments(argv=None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="python -m soundprint", description=__doc__.split("\n")[0],
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--userdata", default=kodi_userdata(), help="Kodi's userdata folder")
-    parser.add_argument("--data", help="data folder (default: <userdata>/addon_data/plugin.audio.musicip/soundprint)")
+    parser.add_argument("--data", help=f"data folder (default: <userdata>/addon_data/{ADDON_ID}/soundprint)")
     parser.add_argument("--model", help="model folder (default: <data>/model)")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("setup")
@@ -66,7 +66,7 @@ def arguments(argv=None) -> argparse.Namespace:
                                                              "reaching further out, spread from near to far")
     commands.add_parser("failures")
     args = parser.parse_args(argv)
-    args.data = args.data or os.path.join(args.userdata, "addon_data", "plugin.audio.musicip", "soundprint")
+    args.data = args.data or os.path.join(args.userdata, "addon_data", ADDON_ID, "soundprint")
     args.model = args.model or os.path.join(args.data, "model")
     return args
 

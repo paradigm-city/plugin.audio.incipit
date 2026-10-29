@@ -3,7 +3,7 @@
 
 Settings > Logging has a switch per area: General, Mixing, AI Mix Assist, Radio, Discovery mode and Saved-mix
 checks. With an area's switch on, its detailed messages go to kodi.log; errors and warnings always do. Every line
-names its area, e.g. "[plugin.audio.musicip] [radio] Radio mode: ...", so one area can be read on its own.
+names its area, e.g. "[plugin.audio.incipit] [radio] Radio mode: ...", so one area can be read on its own.
 """
 
 from __future__ import annotations
@@ -15,7 +15,9 @@ import xbmc
 import xbmcaddon
 import xbmcvfs
 
-ADDON_ID = "plugin.audio.musicip"
+# The add-on's ID, the one place every module takes it from; until 2026-10-29 plugin.audio.musicip (service.py
+# takes the data of that ID over once, take_over_old_data).
+ADDON_ID = "plugin.audio.incipit"
 ADDON = xbmcaddon.Addon(ADDON_ID)
 
 # area -> its switch in Settings > Logging

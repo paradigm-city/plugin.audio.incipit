@@ -16,6 +16,7 @@ from soundprint import MODEL_FILES
 STATUS_FILE, STOP_FILE, LOG_FILE = "status.json", "stop", "analysis.log"
 # A running analysis writes its status every few seconds; one that hasn't for this long has ended without saying
 # so (the computer was switched off) even if its process number is in use again.
+ADDON_ID = "plugin.audio.incipit"  # as logs.ADDON_ID (the sound engine runs outside Kodi)
 STALE_SECONDS = 3600
 
 

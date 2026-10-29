@@ -4,7 +4,7 @@
 
 | Now | Before | Meaning |
 |---|---|---|
-| **Incipit** | MusicIP (the add-on) | The add-on; its ID stays `plugin.audio.musicip` |
+| **Incipit** | MusicIP (the add-on) | The add-on; its ID is `plugin.audio.incipit` (formerly `plugin.audio.musicip`) |
 | **Source** | MusicIP (the server) | Where a mix's songs come from: the sound engine |
 | **Sound engine** | | Sound prints of every song (DCLAP, 6 snippets), the nearest by cosine; `soundprint/` |
 | **Checks** | AI Mix Assist | Character and Intent together; "Checks..." in a mix's context menu |

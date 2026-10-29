@@ -29,7 +29,7 @@ LICENCE_NOTE = """DCLAP audio model, release v1 of AudioMuse-AI Distilled CLAP
 Source: https://github.com/NeptuneHub/AudioMuse-AI-DCLAP
 Licence: GNU Affero General Public License v3.0 (AGPL-3.0), see the source repository.
 Distilled from LAION CLAP (music_audioset_epoch_15_esc_90.14.pt, CC0-1.0) on Creative Commons and public-domain
-music. Downloaded by plugin.audio.musicip at the listener's request; not part of the add-on.
+music. Downloaded by Incipit (plugin.audio.incipit) at the listener's request; not part of the add-on.
 """
 
 

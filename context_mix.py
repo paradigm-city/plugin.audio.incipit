@@ -10,8 +10,9 @@ import xbmc
 import xbmcaddon
 import xbmcgui
 
+from logs import ADDON_ID
 
-ADDON_ID = "plugin.audio.musicip"
+
 ADDON = xbmcaddon.Addon(ADDON_ID)
 
 

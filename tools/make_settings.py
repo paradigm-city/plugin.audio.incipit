@@ -85,12 +85,12 @@ AI = ("assist", 30400, "AI Mix Assist", [
              help="Full path to the Claude Code program (claude.exe). Leave empty to find it automatically, for "
                   "example in the VS Code extension. AI Mix Assist uses your claude.ai subscription through it."),
         dict(id="mix_assist_statistics", type="action", label="Show statistics",
-             data="RunPlugin(plugin://plugin.audio.musicip/?action=mix_assist_statistics)",
+             data="RunPlugin(plugin://plugin.audio.incipit/?action=mix_assist_statistics)",
              help="What AI Mix Assist costs and does: requests to the AI, tokens, the rating cache's hit rate, what "
                   "it changed in mixes and stations, and how often you undid it. Today, the last 7 and 30 days, all "
                   "time."),
         dict(id="mix_assist_statistics_reset", type="action", label="Reset statistics",
-             data="RunPlugin(plugin://plugin.audio.musicip/?action=mix_assist_statistics_reset)",
+             data="RunPlugin(plugin://plugin.audio.incipit/?action=mix_assist_statistics_reset)",
              help="Deletes the statistics counted so far (after asking). Statistics are kept for a year."),
     ]),
 ])
@@ -159,7 +159,7 @@ def string_id(number: int, text: str) -> int:
 
 
 xml = ['<?xml version="1.0" encoding="utf-8" standalone="yes"?>', '<settings version="1">',
-       '    <section id="plugin.audio.musicip">']
+       '    <section id="plugin.audio.incipit">']
 for category_id, base, label, groups in CATEGORIES:
     number = base
     xml.append(f'        <category id="{category_id}" label="{string_id(number, label)}">')
@@ -220,7 +220,7 @@ def po_quote(text: str) -> str:
     return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
-po = ['# Kodi Media Center language file', '# Addon Name: MusicIP', '# Addon id: plugin.audio.musicip',
+po = ['# Kodi Media Center language file', '# Addon Name: Incipit', '# Addon id: plugin.audio.incipit',
       '# Addon Provider: paradigm_city', 'msgid ""', 'msgstr ""',
       '"Content-Type: text/plain; charset=UTF-8\\n"', '"Content-Transfer-Encoding: 8bit\\n"', '"Language: en_GB\\n"', '']
 seen = set()

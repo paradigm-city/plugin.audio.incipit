@@ -91,7 +91,8 @@ words ("Name mixes", "Name stations").
 | MusicIP (dormant) | `musicip_dormant.py`: its mix request, parameters and library reload, unused since 2026-10-29 |
 
 Internal names still say *mix assist* (`mix_assist_*`, the package `mixassist`, setting ids), and the add-on's ID
-stays `plugin.audio.musicip`, so settings and data carry over.
+became `plugin.audio.incipit` (until 2026-10-29 `plugin.audio.musicip`); at its first start
+the service takes the old ID's data over (`service.take_over_old_data`), so settings and data carry over.
 
 ## Ideas kept for later
 

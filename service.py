@@ -11,6 +11,7 @@ import datetime
 import os
 import random
 import re
+import shutil
 import sqlite3
 import threading
 import time
@@ -24,7 +25,7 @@ import xbmcgui
 import xbmcvfs
 
 import logs
-from logs import log_ai, log_checks, log_discovery, log_general, log_mixing, log_radio
+from logs import ADDON_ID, log_ai, log_checks, log_discovery, log_general, log_mixing, log_radio
 
 
 ADDON = xbmcaddon.Addon()
@@ -58,62 +59,62 @@ def discovery_internal_player_change_active() -> bool:
 
 
 
-MUSICIP_KEYMAP_FILENAME = "musicip_mix_editing.xml"
+MUSICIP_KEYMAP_FILENAME = "incipit_mix_editing.xml"
 MUSICIP_KEYMAP_CONTENT = r"""<?xml version="1.0" encoding="UTF-8"?>
 <keymap>
   <MyMusicNav>
     <keyboard>
-      <delete>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_remove_from_mix)</delete>
-      <del>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_remove_from_mix)</del>
-      <m>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_more_like_this)</m>
-      <l>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_less_like_this)</l>
-      <i>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_info)</i>
+      <delete>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_remove_from_mix)</delete>
+      <del>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_remove_from_mix)</del>
+      <m>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_more_like_this)</m>
+      <l>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_less_like_this)</l>
+      <i>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_info)</i>
     </keyboard>
     <remote>
-      <info>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_info)</info>
+      <info>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_info)</info>
     </remote>
   </MyMusicNav>
 
   <window10502>
     <keyboard>
-      <delete>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_remove_from_mix)</delete>
-      <del>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_remove_from_mix)</del>
-      <m>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_more_like_this)</m>
-      <l>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_less_like_this)</l>
-      <i>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_info)</i>
+      <delete>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_remove_from_mix)</delete>
+      <del>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_remove_from_mix)</del>
+      <m>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_more_like_this)</m>
+      <l>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_less_like_this)</l>
+      <i>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_info)</i>
     </keyboard>
     <remote>
-      <info>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_info)</info>
+      <info>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_info)</info>
     </remote>
   </window10502>
 
   <MusicPlaylist>
     <keyboard>
-      <delete>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_remove_from_mix)</delete>
-      <del>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_remove_from_mix)</del>
-      <m>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_more_like_this)</m>
-      <l>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_less_like_this)</l>
-      <i>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_info)</i>
+      <delete>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_remove_from_mix)</delete>
+      <del>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_remove_from_mix)</del>
+      <m>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_more_like_this)</m>
+      <l>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_less_like_this)</l>
+      <i>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_info)</i>
     </keyboard>
     <remote>
-      <info>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_info)</info>
+      <info>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_info)</info>
     </remote>
   </MusicPlaylist>
 
   <MusicFiles>
     <keyboard>
-      <delete>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_remove_from_mix)</delete>
-      <del>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_remove_from_mix)</del>
-      <m>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_more_like_this)</m>
-      <l>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_less_like_this)</l>
-      <i>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_info)</i>
+      <delete>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_remove_from_mix)</delete>
+      <del>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_remove_from_mix)</del>
+      <m>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_more_like_this)</m>
+      <l>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_less_like_this)</l>
+      <i>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_info)</i>
     </keyboard>
     <remote>
-      <info>RunPlugin(plugin://plugin.audio.musicip/?action=keyboard_info)</info>
+      <info>RunPlugin(plugin://__ADDON_ID__/?action=keyboard_info)</info>
     </remote>
   </MusicFiles>
 </keymap>
-"""
+""".replace("__ADDON_ID__", ADDON_ID)
 
 
 def get_kodi_user_keymap_dir() -> str:
@@ -840,7 +841,7 @@ def refresh_discovery_menu_if_visible() -> None:
         container_folder = ""
 
     if not (is_addon_root(container_folder) or
-            "plugin.audio.musicip" in container_folder and "action=discovery_mode" in container_folder):
+            ADDON_ID in container_folder and "action=discovery_mode" in container_folder):
         return
 
     state["ui_refresh_requested"] = False
@@ -1820,7 +1821,7 @@ def refresh_radio_menu_if_visible() -> None:
     except Exception:
         container_folder = ""
     if not (is_addon_root(container_folder) or
-            "plugin.audio.musicip" in container_folder and "action=radio_mode" in container_folder):
+            ADDON_ID in container_folder and "action=radio_mode" in container_folder):
         return
     state["ui_refresh_requested"] = False
     save_radio_state(state)
@@ -2590,8 +2591,8 @@ def get_visible_musicip_mix_context() -> dict:
     folder_lc = container_folder.casefold()
 
     is_musicip_view = (
-        "plugin.audio.musicip" in folder_lc
-        or "plugin://plugin.audio.musicip" in folder_lc
+        ADDON_ID in folder_lc
+        or f"plugin://{ADDON_ID}" in folder_lc
     )
 
     is_mix_view = (
@@ -2901,6 +2902,101 @@ RADIO_SETTINGS_FROM = {"radio_variety": "mix_variety", "radio_reject_size": "mix
 RADIO_SETTINGS_MIGRATED_MARKER = "radio_settings_migrated"
 
 
+# --- The data of the add-on's former ID (plugin.audio.musicip until 2026-10-29, when it was renamed Incipit):
+# taken over once, at the first start under the new ID. Copied, not moved: the old folder stays as a backup until
+# the listener deletes it. Kodi keeps the add-on's settings in memory, so they are set one by one, not copied.
+OLD_ADDON_ID = "plugin.audio.musicip"
+TAKEN_OVER_MARKER = "taken_over_from_musicip"
+OLD_KEYMAP_FILENAME = "musicip_mix_editing.xml"
+# a path into the old data folder inside a JSON file: addon_data, a separator (JSON doubles the backslash), the ID
+OLD_DATA_PATH = re.compile(r"(addon_data(?:\\\\|\\|/))" + re.escape(OLD_ADDON_ID) + r"(?=\\|/)")
+
+
+def declared_settings() -> set:
+    """The ids of the settings this version declares (resources/settings.xml); empty when it can't be read."""
+    try:
+        path = os.path.join(xbmcvfs.translatePath(ADDON.getAddonInfo("path")), "resources", "settings.xml")
+        return {node.get("id") for node in ElementTree.parse(path).getroot().iter("setting")}
+    except (OSError, ElementTree.ParseError):
+        return set()
+
+
+def take_over_old_data() -> dict:
+    """Once: the former ID's data folder (settings, mixes, favourites, ratings, the sound engine's prints and its
+    environment) into this add-on's; the paths into the old folder in its JSON files rewritten; the old keyboard
+    shortcuts removed. Returns what was done ({} when there was nothing to take over or it was done before)."""
+    profile = get_profile_dir()
+    old = xbmcvfs.translatePath(f"special://profile/addon_data/{OLD_ADDON_ID}/")
+    if os.path.exists(os.path.join(profile, TAKEN_OVER_MARKER)) or not os.path.isdir(old) \
+            or os.path.normcase(os.path.abspath(old)) == os.path.normcase(os.path.abspath(profile)):
+        return {}
+    started = time.time()
+    log_general(f"Taking over the data of {OLD_ADDON_ID} ({old}) into {profile} (copied; the old folder stays).",
+                always=True)
+    copied, failed = 0, []
+    for root, _dirs, files in os.walk(old):
+        relative = os.path.relpath(root, old)
+        target = profile if relative == "." else os.path.join(profile, relative)
+        os.makedirs(target, exist_ok=True)
+        for name in files:
+            if relative == "." and name == "settings.xml":
+                continue
+            try:
+                shutil.copy2(os.path.join(root, name), os.path.join(target, name))
+                copied += 1
+            except OSError as exc:
+                failed.append(f"{os.path.join(relative, name)}: {exc}")
+    rewritten = []
+    for root, _dirs, files in os.walk(profile):
+        for name in files:
+            if not name.lower().endswith(".json"):
+                continue
+            path = os.path.join(root, name)
+            try:
+                with open(path, encoding="utf-8") as handle:
+                    text = handle.read()
+            except (OSError, UnicodeDecodeError):
+                continue
+            changed = OLD_DATA_PATH.sub(lambda match: match.group(1) + ADDON_ID, text)
+            if changed != text:
+                with open(path, "w", encoding="utf-8") as handle:
+                    handle.write(changed)
+                rewritten.append(os.path.relpath(path, profile))
+    declared, settings = declared_settings(), {}
+    try:
+        for node in ElementTree.parse(os.path.join(old, "settings.xml")).getroot().iter("setting"):
+            key = node.get("id")
+            if node.get("default") != "true" and (not declared or key in declared):
+                ADDON.setSetting(key, node.text or "")
+                settings[key] = node.text or ""
+    except (OSError, ElementTree.ParseError) as exc:
+        log_general(f"The old settings could not be read ({exc}); the settings start from their defaults.",
+                    xbmc.LOGWARNING, always=True)
+    keymap = os.path.join(get_kodi_user_keymap_dir(), OLD_KEYMAP_FILENAME)
+    keymap_removed = False
+    if os.path.isfile(keymap):
+        try:
+            os.remove(keymap)
+            keymap_removed = True
+        except OSError as exc:
+            log_general(f"The old keyboard shortcuts {keymap} could not be removed: {exc}", xbmc.LOGWARNING, always=True)
+    mark_migrated(TAKEN_OVER_MARKER)
+    log_general(f"Took over the data of {OLD_ADDON_ID} in {time.time() - started:.0f} s: {copied} file(s) copied"
+                + (f", {len(failed)} could not be copied: {failed}" if failed else "")
+                + f"; paths rewritten in {len(rewritten)} JSON file(s): {rewritten}; {len(settings)} setting(s) set: "
+                + ", ".join(f"{key} = {value!r}" for key, value in settings.items())
+                + f"; the old keyboard shortcuts {'removed' if keymap_removed else 'were not there'}. The old folder "
+                f"{old} stays as a backup.", always=True)
+    try:
+        xbmcgui.Dialog().notification(ADDON.getAddonInfo("name") or "Incipit",
+                                      "Your MusicIP data is taken over. Run Settings > Advanced > Set up the sound "
+                                      "engine once.", xbmcgui.NOTIFICATION_INFO, 10000)
+    except Exception:
+        pass
+    return {"copied": copied, "failed": failed, "rewritten": rewritten, "settings": settings,
+            "keymap_removed": keymap_removed}
+
+
 def stored_settings() -> dict:
     """The add-on's settings as Kodi stored them: {setting: (value, whether it is Kodi's default)}."""
     try:
@@ -2994,6 +3090,7 @@ def main() -> None:
     last_metadata_refresh_ts = 0
     song_cache: list[dict] = []
 
+    take_over_old_data()  # first: the migrations below read the settings it sets
     migrated = logs.migrate_old_switches()
     migrate_radio_settings()
     migrate_intent_borderline()

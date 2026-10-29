@@ -1,7 +1,7 @@
 # Incipit Documentation
 
 This folder contains the concept documentation and flow diagrams for Incipit, the Kodi add-on formerly called
-MusicIP (its ID is still `plugin.audio.musicip`).
+MusicIP (its ID is `plugin.audio.incipit`, until 2026-10-29 `plugin.audio.musicip`).
 
 Current documentation baseline: **1.0.88**  
 Feature baseline: **1.0.87**
