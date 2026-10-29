@@ -253,7 +253,7 @@ class StartRadioTest(RadioTestCase):
         self.start()
         (line,) = [message for message, _level in kodi.logs if "Radio mode: station parameters:" in message]
         self.assertIn("new station | mix: size 10, variety 3, artists may repeat", line)
-        self.assertIn("AI Mix Assist: off", line)
+        self.assertIn("checks: off", line)
 
 
 class StationStartDescriptionTest(RadioTestCase):
@@ -263,7 +263,7 @@ class StationStartDescriptionTest(RadioTestCase):
     def test_with_ai_mix_assist_its_settings(self):
         text = main.describe_station_start(self.params(), None, True)
         self.assertIn("new station | mix: size 6, ", text)
-        self.assertIn(f"AI Mix Assist: on, model {main.mix_assist_claude.DEFAULT_MODEL}, effort ", text)
+        self.assertIn(f"checks: on, model {main.mix_assist_claude.DEFAULT_MODEL}, effort ", text)
         self.assertIn("Character Balanced (setting; limit 1.2) | Intent: borderline rejected", text)
         self.assertIn("drift Drift slowly (setting; half-life 60 songs)", text)
 
@@ -488,10 +488,10 @@ class StationTest(RadioTestCase):
         self.assertEqual([event["kind"] for event in radio["events"]], ["started", "refill"])
         self.assertEqual(radio["played"], 3)
         pages = dict(main.radio_info_pages(radio))
-        self.assertIn("AI Mix Assist: off for this station", pages["Overview"])
+        self.assertIn("Checks: off for this station", pages["Overview"])
         self.assertIn("Songs played: 3", pages["Overview"])
-        self.assertIn("Drift is measured when AI Mix Assist checks", pages["Drift"])
-        self.assertIn("unchecked (AI Mix Assist off)", pages["History (2)"])
+        self.assertIn("Drift is measured when the station's songs are checked", pages["Drift"])
+        self.assertIn("unchecked (checks off)", pages["History (2)"])
 
     def test_station_information_needs_a_playing_station(self):
         self.run_plugin(action="radio_info")

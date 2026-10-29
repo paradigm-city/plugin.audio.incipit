@@ -66,7 +66,7 @@ class TidyUpTest(MixAssistTestCase):
         self.assertEqual(section["previous_tracks"], TRACKS)
         self.assertEqual(section["replaced"][0]["new_label"], "Medeski Martin & Wood – Think")  # stored as given
         self.assertEqual(section["removed"], ["Track 5"])
-        self.assertNotified("AI Mix Assist: 1 track didn't fit and was replaced, 1 without a fitting replacement was removed.")
+        self.assertNotified("Checks: 1 track didn't fit and was replaced, 1 without a fitting replacement was removed.")
         self.assertBuiltin("Container.Refresh")
         event = self.history()[-1]
         self.assertEqual((event["kind"], event["automatic"], event["intent"]),
@@ -79,15 +79,15 @@ class TidyUpTest(MixAssistTestCase):
         self.tidy_up(plan(changes=[REPLACE_DISCO]))
         origin = main.track_origin(main.get_saved_mix_metadata(self.cache_path), REPLACEMENT)
         self.assertEqual(origin["origin"], "ai")
-        self.assertEqual(origin["note"], "Replaced by AI Mix Assist: wilfried \u2013 fire walk (Danceable disco, bright)")
+        self.assertEqual(origin["note"], "Replaced by the checks: wilfried \u2013 fire walk (Danceable disco, bright)")
         for track in self.read_mix(self.cache_path):
             kodi.add_media(track)
         kodi.directory_items.clear()
         self.run_plugin(action="browse_saved_mix", cache_path=self.cache_path)
         item = [item for _url, item, _folder in kodi.directory_items][2]
-        self.assertTrue(item.getLabel2().startswith("AI Mix Assist"))
+        self.assertTrue(item.getLabel2().startswith("Checks"))
         self.assertEqual(item.getMusicInfoTag().getComment(),
-                         "Replaced by AI Mix Assist: wilfried - fire walk (Danceable disco, bright)")  # plain
+                         "Replaced by the checks: wilfried - fire walk (Danceable disco, bright)")  # plain
 
     def test_older_tidy_ups_count_too(self):
         meta_path = main.mix_meta_path_from_cache_path(self.cache_path)
@@ -102,7 +102,7 @@ class TidyUpTest(MixAssistTestCase):
         self.assertEqual(self.read_mix(self.cache_path), TRACKS)
         self.assertNotIn("previous_tracks", self.section())
         self.assertEqual(self.section()["intent"], "dark, abstract, instrumental")
-        self.assertNotified("AI Mix Assist: every track fits.")
+        self.assertNotified("Checks: every track fits.")
 
     def test_settings_and_the_listeners_intent_are_passed_on(self):
         kodi.settings.update({"mix_assist_mix_strictness": "0", "mix_reject_size": "3"})
@@ -140,7 +140,7 @@ class TidyUpTest(MixAssistTestCase):
         with mock.patch.object(main, "mix_assist_ask", ORIGINAL_ASK), \
                 mock.patch.object(main.mix_assist_claude, "find_cli", return_value=""):
             self.run_plugin(action="mix_assist_tidy_up", cache_path=self.cache_path)
-        self.assertNotified("AI Mix Assist needs the Claude Code CLI")
+        self.assertNotified("The checks need the Claude Code CLI")
 
 
 class UndoTest(MixAssistTestCase):
@@ -151,12 +151,12 @@ class UndoTest(MixAssistTestCase):
         self.assertNotIn("previous_tracks", self.section())
         self.assertNotIn("replaced", self.section())
         self.assertEqual(self.section()["intent"], "dark, abstract, instrumental")
-        self.assertNotified("AI Mix Assist: the changes were undone.")
+        self.assertNotified("Checks: the changes were undone.")
         self.assertEqual(self.history()[-1]["kind"], "ai_undone")
 
     def test_nothing_to_undo(self):
         self.run_plugin(action="mix_assist_undo", cache_path=self.cache_path)
-        self.assertNotified("There are no AI Mix Assist changes to undo.")
+        self.assertNotified("There are no changes of the checks to undo.")
 
 
 class EditIntentTest(MixAssistTestCase):
@@ -210,16 +210,16 @@ class SavedMixMenuTest(MixAssistTestCase):
 
     def test_one_context_menu_entry(self):
         labels = self.context_labels()
-        self.assertIn("AI Mix Assist...", labels)
+        self.assertIn("Checks...", labels)
         for old in ("Tidy up with AI Mix Assist", "Edit what this mix is about", "Undo AI Mix Assist changes"):
             self.assertNotIn(old, labels)
 
     def test_the_menu_offers_undo_only_after_a_change(self):
         self.assertEqual(self.menu(), ["What this mix is about: <not worked out yet>", "Character: Balanced",
-                                       "Intent: Mixed", "Name: <given at the first check>", "Run AI Mix Assist"])
+                                       "Intent: Mixed", "Name: <given at the first check>", "Check the mix now"])
         self.tidy_up(plan(changes=[REPLACE_DISCO]))
         self.assertEqual(self.menu(), ["What this mix is about: dark, abstract, instrumental", "Character: Balanced",
-                                       "Intent: Mixed", "Name: <given at the first check>", "Run AI Mix Assist", "Undo the AI Mix Assist changes"])
+                                       "Intent: Mixed", "Name: <given at the first check>", "Check the mix now", "Undo the changes of the checks"])
 
     def test_tidy_up_now_from_the_menu(self):
         kodi.respond("select", 4)
@@ -236,8 +236,8 @@ class SavedMixMenuTest(MixAssistTestCase):
         self.assertEqual(options[3], "Balanced (default)")
         self.assertEqual(self.section()["character"], 3)
         self.assertEqual(self.history()[-1]["openness"], "Open")
-        self.assertNotified("Saved. AI Mix Assist uses it for this mix from now on.")
-        self.assertIn("AI Mix Assist: Character Open (chosen for this mix), Intent Mixed",
+        self.assertNotified("Saved. The checks use it for this mix from now on.")
+        self.assertIn("Checks: Character Open (chosen for this mix), Intent Mixed",
                       main.build_mix_info_page(self.cache_path))
 
     def test_the_perspective_of_a_mix_can_be_changed(self):
@@ -250,10 +250,10 @@ class SavedMixMenuTest(MixAssistTestCase):
                                        "Technical: how it is made"])
         self.assertEqual(self.section()["perspective"], 1)
         self.assertEqual(self.history()[-1]["perspective"], "Technical")
-        self.assertIn("You set AI Mix Assist to Intent Technical", main.build_mix_history_text(
+        self.assertIn("You set the checks to Intent Technical", main.build_mix_history_text(
             self.read_json(main.mix_meta_path_from_cache_path(self.cache_path))))
         self.assertNotified("Saved. Tidy up the mix to see it from the new perspective.")
-        self.assertIn("AI Mix Assist: Character Balanced, Intent Technical (chosen for this mix)",
+        self.assertIn("Checks: Character Balanced, Intent Technical (chosen for this mix)",
                       main.build_mix_info_page(self.cache_path))
         self.assertEqual(self.tidy_up(dict(plan(), perspective="technical")).call_args[1]["perspective"], "technical")
         self.assertEqual(self.section()["intent_perspective"], "technical")
@@ -274,12 +274,12 @@ class SavedMixMenuTest(MixAssistTestCase):
         self.tidy_up(plan(changes=[REPLACE_DISCO]))
         page = main.build_mix_info_page(self.cache_path)
         self.assertIn("[B]What it is about[/B]\ndark, abstract, instrumental\n(as the AI put it)\n"
-                      "AI Mix Assist: Character Balanced, Intent Mixed, last checked", page)
+                      "Checks: Character Balanced, Intent Mixed, last checked", page)
         self.assertIn("[B]Last tidy-up[/B]\nwilfried - fire walk » Medeski Martin & Wood - Think (Danceable disco, bright)",
                       page)
         self.assertIn("can undo it", page)
         history = page.split("[B]History[/B]")[1]
-        self.assertIn("AI Mix Assist tidied up the mix: 1 replaced, 0 removed\n"
+        self.assertIn("The mix was tidied up: 1 replaced, 0 removed\n"
                       "    wilfried - fire walk » Medeski Martin & Wood - Think (Danceable disco, bright)", history)
 
     def test_a_check_stores_how_the_mix_sounds(self):
@@ -390,7 +390,7 @@ class PerMixLevelTest(MixAssistTestCase):
         self.assertTrue(main.mix_checks_off(meta))
         with self.assertRaisesRegex(main.MusicIPError, "both off for this mix"):
             main.run_mix_assist_on_saved_mix(self.cache_path)
-        self.assertIn("AI Mix Assist: off for this mix", main.build_mix_info_page(self.cache_path))
+        self.assertIn("Checks: off for this mix", main.build_mix_info_page(self.cache_path))
 
     def test_character_off_leaves_intent_on(self):
         sidecar = self.read_json(main.mix_meta_path_from_cache_path(self.cache_path))
@@ -434,7 +434,7 @@ class GenerateDialogTest(SourceTestCase):
         kodi.respond("select", 5, 6, 0)  # Intent -> Lyrical (after Off), Generate
         self.run_plugin(action="browse_mix", seed=TRACKS[0], size="20")
         self.assertEqual(self.sidecar()["mix_assist"]["perspective"], 5)
-        self.assertIn("When you created the mix, you set AI Mix Assist to Intent Lyrical",
+        self.assertIn("When you created the mix, you set the checks to Intent Lyrical",
                       main.build_mix_history_text(self.sidecar()))
         self.assertNotIn("assist_perspective", self.sidecar()["mix_generation_parameters"])
 
@@ -446,7 +446,7 @@ class GenerateDialogTest(SourceTestCase):
         self.assertEqual((section["character"], section["listener_intent"]), (4, "dark cosmic electronics"))
         event = [e for e in self.sidecar()["history"] if e["kind"] == "assist_settings"][0]
         self.assertEqual((event["at_creation"], event["openness"]), (True, "Adventurous"))
-        self.assertIn('When you created the mix, you set AI Mix Assist to Character Adventurous; about "dark cosmic electronics"',
+        self.assertIn('When you created the mix, you set the checks to Character Adventurous; about "dark cosmic electronics"',
                       main.build_mix_history_text(self.sidecar()))
         self.assertEqual([entry["cache_path"] for entry in self.queued()], [self.cache_path])
         self.assertNotIn("assist_openness", self.sidecar()["mix_generation_parameters"])  # MusicIP's stay clean
@@ -593,7 +593,7 @@ class CurrentMixNameTest(MixAssistTestCase):
         self.assertFalse(any("Cosmic" in label for label in labels))
         item = [item for _url, item, _folder in kodi.directory_items if item.getLabel() == "Current mix"][0]
         self.assertNotIn("Cosmic", item.getLabel2())
-        self.assertIn("AI Mix Assist...", [label for label, _action in item.context_menu])
+        self.assertIn("Checks...", [label for label, _action in item.context_menu])
 
 
 class NewMixQueueTest(KodiTestCase):
@@ -662,8 +662,8 @@ class ProcessNewMixTest(MixAssistTestCase):
         with mock.patch.object(main.mix_assist, "tidy_up", side_effect=tidy_up):
             main.process_mix_assist_request(self.request())
         calls = [call for call in kodi.dialog_calls if call[0].startswith("progress")]
-        self.assertEqual(calls[0], ("progress.create", ("AI Mix Assist: new mix", ""), {}))
-        self.assertIn(("progress.update", (33, "AI Mix Assist: new mix", "Rating new music"), {}), calls)
+        self.assertEqual(calls[0], ("progress.create", ("Checking the new mix", ""), {}))
+        self.assertIn(("progress.update", (33, "Checking the new mix", "Rating new music"), {}), calls)
         self.assertEqual(calls[-1][0], "progress.close")
         self.assertEqual(self.history()[-1]["kind"], "ai_tidy_up")  # "every track fits" is recorded too
 
@@ -758,12 +758,12 @@ class MoreLikeThisTest(SourceTestCase):
         self.assertEqual(main.mix_reject_size_for({}), 0)  # else the setting's: 0, artists may repeat
         self.assertEqual(self.source.mix_requests()[0]["size"], "75")
         self.assertEqual(self.read_mix(self.cache_path), TRACKS[:2] + [self.NEW[2], self.NEW[4]] + TRACKS[2:])
-        self.assertNotified("Inserted 2 track(s). AI Mix Assist skipped 1 that didn't fit (see the mix history).")
+        self.assertNotified("Inserted 2 track(s). The checks skipped 1 that didn't fit (see the mix history).")
         self.assertNotIn("intent", self.section())  # the song's intent is not the mix's
         event = self.read_json(main.mix_meta_path_from_cache_path(self.cache_path))["history"][-1]
         self.assertEqual(event["skipped"], [{"track": "New 0", "reason": "too bright"}])
         text = main.build_mix_history_text({"history": [event]})
-        self.assertIn("AI Mix Assist skipped 1 that didn't fit:\n    x New 0 (too bright)", text)
+        self.assertIn("The checks skipped 1 that didn't fit:\n    x New 0 (too bright)", text)
 
     def test_a_mix_switched_off_gets_musicips_tracks_unchecked(self):
         sidecar = self.read_json(main.mix_meta_path_from_cache_path(self.cache_path))
@@ -777,7 +777,7 @@ class MoreLikeThisTest(SourceTestCase):
         self.more_like_this({"intent": "x", "chosen": [], "checked": True,
                              "not_fitting": [{"path": p, "label": p, "reason": "no"} for p in self.NEW]})
         self.assertEqual(self.read_mix(self.cache_path), TRACKS)
-        self.assertNotified("none of the suggested tracks is close enough to this song")
+        self.assertNotified("None of the suggested tracks passes the checks.")
 
     def test_claude_problems_fall_back_to_musicips_tracks(self):
         error = main.mix_assist_claude.ClaudeError(main.mix_assist_claude.USAGE_LIMIT, "limit")

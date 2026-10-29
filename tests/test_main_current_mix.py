@@ -42,7 +42,7 @@ class CurrentMixTest(KodiTestCase):
         self.assertEqual(item.getLabel2(), "01 Ace of Spades | 2 tracks | not saved")
         self.assertEqual(os.path.basename(item.getArt("icon")), "DefaultMusicPlaylists.png")
         self.assertEqual([label for label, _a in item.context_menu],
-                         ["Save mix", "Information", "Check consistency", "AI Mix Assist..."])
+                         ["Save mix", "Information", "Check consistency", "Checks..."])
         self.assertIn("Saved: not yet", item.getProperty("Plot"))
 
     def test_saving_lists_the_mix_and_keeps_it_current(self):

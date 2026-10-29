@@ -139,7 +139,7 @@ class SavedMixListingTest(KodiTestCase):
         self.assertEqual(broken.getLabel2(), "01 Overkill | 18:29 | Inconsistent: 1 missing | Update library before repair")
         labels = [label for label, _action in broken.context_menu]
         self.assertEqual(labels, ["Information", "Check consistency", "Update library before repair",
-                                  "AI Mix Assist...", "Delete this mix"])
+                                  "Checks...", "Delete this mix"])
 
     def test_repair_offered_once_library_no_longer_lists_missing_file(self):
         self.run_plugin(action="saved_mixes_by_date", date="2026-10-05")
@@ -266,7 +266,7 @@ class MixInfoTest(KodiTestCase):
         self.assertEqual((properties["tab"], properties["image"]), ("2", ""))
         self.assertIn("Not rated yet", properties["text"])
         window.onFocus(203)
-        self.assertEqual(properties["text"], "AI Mix Assist hasn't checked this mix yet.")
+        self.assertEqual(properties["text"], "This mix hasn't been checked yet.")
         window.onFocus(204)
         self.assertEqual(properties["text"], main.mix_info_parts(self.cache_path)["history"])
         window.onFocus(205)  # no such tab: stays

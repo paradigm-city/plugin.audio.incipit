@@ -153,7 +153,7 @@ class RadioLogTest(SourceTestCase):
         self.tick()
         (summary,) = self.radio_lines("queued, ")
         self.assertIn("[radio] Radio mode: position 0 of ", summary)
-        self.assertIn("AI Mix Assist off; no check running; refill allowed now.", summary)
+        self.assertIn("checks off; no check running; refill allowed now.", summary)
 
     def test_refill_seeds_and_songs(self):
         state = main.get_radio_state()

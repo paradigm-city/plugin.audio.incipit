@@ -95,7 +95,7 @@ class RadioMixAssistTest(RadioBase):
         self.assertEqual(([entry["reason"] for entry in event["removed"]], event["kept"], len(event["added"])),
                          (["no", "no"], 2, 3))
         history = dict(main.radio_info_pages(radio))[f"History ({len(radio['events'])})"]
-        self.assertIn("AI Mix Assist checked the first songs: 2 taken out, 3 added", history)
+        self.assertIn("The first songs were checked: 2 taken out, 3 added", history)
         self.finish_check()
         self.tick()
         self.assertEqual(self.start_check.call_count, 1)
@@ -373,7 +373,7 @@ class RadioMixAssistTest(RadioBase):
         self.assertEqual(refill["seed"], radio["queue"][4]["label"])
         pages = dict(main.radio_info_pages(radio))
         self.assertEqual(list(pages)[:3], ["Overview", "What it is about", "Drift"])
-        self.assertIn("AI Mix Assist: on | Station openness: Balanced | Station drift: Drift slowly", pages["Overview"])
+        self.assertIn("Checks: on | Character: Balanced | Drift: Drift slowly", pages["Overview"])
         self.assertIn("Refills: 1 (1 checked, 0 unchecked)", pages["Overview"])
         self.assertIn("The picked song:\ndark metal", pages["What it is about"])
         self.assertIn("Energy: 5.0 steady » 6.0 steady (+1.0) | course: 5.0, 6.0", pages["Drift"])
@@ -381,7 +381,7 @@ class RadioMixAssistTest(RadioBase):
         self.assertIn("Moved most: Energy (+1.0)", pages["Drift"])
         history = pages[f"History ({len(kinds)})"]
         self.assertTrue(history.split("\n")[0].endswith("2 song(s), checked"))
-        self.assertIn("AI Mix Assist checked the first songs: all fit", history)
+        self.assertIn("The first songs were checked: all fit", history)
 
     def test_station_information_from_the_radio_screen(self):
         self.started_station()
@@ -393,7 +393,7 @@ class RadioMixAssistTest(RadioBase):
         self.assertIn("| playing for 0 min", properties["facts"])
         self.assertEqual([properties.get(f"tab{number}") for number in range(1, 6)],
                          ["Overview", "What it is about", "Drift", "History (2)", None])
-        self.assertIn("AI Mix Assist: on", properties["text"])
+        self.assertIn("Checks: on", properties["text"])
         window.onFocus(203)
         self.assertTrue(os.path.isfile(properties["image"]))  # the start check measured the picked song
         self.assertIn("Measured 1 time(s)", properties["text"])

@@ -324,7 +324,7 @@ class FavouriteStationsTest(RadioBase):
         self.assertEqual(item.getLabel(), f"1. {self.favourites()[0]['name']}")
         self.assertFalse(is_folder)
         self.assertEqual([label for label, _action in item.context_menu],
-                         ["Information", "Openness: Balanced", "Drift: Drift slowly", "Perspective: Mixed", "Rename",
+                         ["Information", "Character: Balanced", "Drift: Drift slowly", "Intent: Mixed", "Rename",
                           "Remove from favourites"])
         self.assertTrue(item.getLabel2().endswith("| Balanced | Drift slowly"))
 
@@ -355,7 +355,7 @@ class FavouriteStationsTest(RadioBase):
         kodi.respond("select", 5)  # Functional, after Off
         self.run_plugin(action="radio_favourite_setting", id=favourite_id, setting="perspective")
         _method, (heading, options), _kwargs = kodi.dialogs("select")[-1]
-        self.assertEqual(heading, f"Perspective of 1. {self.favourites()[0]['name']}")
+        self.assertEqual(heading, f"Intent of 1. {self.favourites()[0]['name']}")
         self.assertEqual(options[:1] + options[4:5], ["Off: no AI judgement", "Cultural: where it comes from (default)"])
         self.assertEqual((self.favourites()[0]["perspective"], self.radio()["settings"]["perspective"]), (4, 4))
         self.assertEqual(main.favourite_perspective_label(self.favourites()[0]), "Functional")
