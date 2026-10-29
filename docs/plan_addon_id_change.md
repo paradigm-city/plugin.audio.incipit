@@ -1,7 +1,8 @@
 # Plan: changing the add-on's ID to plugin.audio.incipit
 
-Status: **in progress**: part A done on the branch `addon-id-incipit` (2026-10-29); parts B and C
-are the listener's switch. Prepared 2026-10-29. The add-on is called Incipit since 2026-10-29, but its ID, and
+Status: **done** 2026-10-29. The switch went well: the service took over the old ID's data in 12 s (3,512
+files copied, paths rewritten in 22 JSON files, 16 settings set, the old keyboard shortcuts removed). Left: delete
+`addon_data\plugin.audio.musicip` after a few days. The add-on is called Incipit since 2026-10-29, but its ID, and
 so its folder, is still `plugin.audio.musicip`. The listener wants the ID to follow the name one day. Nothing here
 has been done; do it as one step, with Kodi closed for the data move.
 

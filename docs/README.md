@@ -17,7 +17,7 @@ Feature baseline: **1.0.87**
 - `concept_ai_mix_assist.md`: background: how the checks (then AI Mix Assist) were developed and calibrated
 - `glossary_ai_mix_assist.md`: terms, with today's names and the retired ones
 - `concept_suggestion_engine.md`: background: how MusicIP came to be replaced by the sound engine
-- `plan_addon_id_change.md`: **open**: changing the add-on's ID to `plugin.audio.incipit` (prepared, not started)
+- `plan_addon_id_change.md`: how the add-on's ID became `plugin.audio.incipit` (done 2026-10-29)
 - `testing_quality_notes.md`
 - `findings.md`: known problems in the code and their status
 
