@@ -101,13 +101,13 @@ Not fixed. The planned fix is the library sync: remove a song's sound print when
 
 Found on 2026-10-30: `test_main_root_status.RootStatusTest.test_album_and_year_follow_the_song` wrote `"D:\air.mp3"`, `"D:\moby.mp3"` and `"D:\other.mp3"` with single backslashes, so Python read `\a` as the bell character and warned about `\m` and `\o` (SyntaxWarning, shown once the test file is compiled anew). The test still passed, since the same strings were used on both sides, but its paths were not the Windows paths it meant.
 
-Fixed on 2026-10-30 on `feature/mix-mode`: the paths are written `"D:\\air.mp3"` etc.
+Fixed on 2026-10-30 on `feature/mix-mode` (ef4b684): the paths are written `"D:\\air.mp3"` etc.
 
 ### F42 · An edited mix no longer counted as playing
 
 Found on 2026-10-30 by the listener, on `feature/mix-mode` (the first screen shows the playing mix): after "More like this" on a song of the playing current mix, "Current mix" left the first screen for Mix mode, although the mix still played. `playing_mix_cache_path()` took a mix as playing only when Kodi's music playlist was exactly its songs, but "More like this", "Less like this" and "Remove from mix" change the mix and not the playlist, and a tidy-up leaves the playing song and the next one in it. A mix whose listing Kodi queued (a song of the listing played) never matched either: the playlist then holds the listing's `plugin://...?action=play_track&path=...` entries, not the files. The same test chose the background of the add-on's screens while a mix plays.
 
-Fixed on 2026-10-30 on `feature/mix-mode`: a mix plays when at least 80 % of the playlist's songs are in it and at least 50 % of its songs are in the playlist (one library song that is also in a mix is not that mix); the listing's entries count as their songs; the current mix wins a tie with a saved mix of the same songs; while the radio or Discovery runs, the playlist is theirs. **Tests:** `test_main_current_mix.WhatPlaysTest` (`test_an_edited_mix_still_plays`, `test_the_listing_queued_by_kodi_is_the_mix`, `test_a_library_song_that_is_in_a_mix_is_not_the_mix`, `test_a_station_with_the_mix_s_songs_is_the_station`)
+Fixed on 2026-10-30 on `feature/mix-mode` (28dc2c4): a mix plays when at least 80 % of the playlist's songs are in it and at least 50 % of its songs are in the playlist (one library song that is also in a mix is not that mix); the listing's entries count as their songs; the current mix wins a tie with a saved mix of the same songs; while the radio or Discovery runs, the playlist is theirs. **Tests:** `test_main_current_mix.WhatPlaysTest` (`test_an_edited_mix_still_plays`, `test_the_listing_queued_by_kodi_is_the_mix`, `test_a_library_song_that_is_in_a_mix_is_not_the_mix`, `test_a_station_with_the_mix_s_songs_is_the_station`)
 
 ### F41 · The tests failed on GitHub
 
