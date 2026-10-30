@@ -840,8 +840,8 @@ def refresh_discovery_menu_if_visible() -> None:
     except Exception:
         container_folder = ""
 
-    if not (is_addon_root(container_folder) or
-            ADDON_ID in container_folder and "action=discovery_mode" in container_folder):
+    if not (is_addon_root(container_folder) or ADDON_ID in container_folder and
+            ("action=mix_mode" in container_folder or "action=discovery_mode" in container_folder)):
         return
 
     state["ui_refresh_requested"] = False
@@ -849,9 +849,9 @@ def refresh_discovery_menu_if_visible() -> None:
 
     try:
         xbmc.executebuiltin("Container.Refresh")  # a refresh keeps the focused item (Container.Update resets it)
-        log_discovery("Discovery mode: refreshed visible Discovery mode menu.")
+        log_discovery("Discovery mode: refreshed the visible add-on screen (root or Mix mode).")
     except Exception as exc:
-        log_discovery(f"Discovery mode: could not refresh Discovery mode menu: {exc}")
+        log_discovery(f"Discovery mode: could not refresh the add-on screen (root or Mix mode): {exc}")
 
 
 def stop_discovery_playback(state: dict | None = None) -> dict:
@@ -1829,6 +1829,46 @@ def refresh_radio_menu_if_visible() -> None:
         xbmc.executebuiltin("Container.Refresh")  # a refresh keeps the focused item (Container.Update resets it)
     except Exception as exc:
         log_radio(f"Radio mode: could not refresh the Radio screen: {exc}")
+
+
+PLAYBACK_SEEN = {"key": None}  # what the player did when the service last looked (see playback_key)
+
+
+def playback_key() -> tuple:
+    """What the first screen's entries follow, cheaply: whether audio plays and how long the music playlist is (a
+    mix starts or stops). While the radio or Discovery runs, their own redraws follow them (ui_refresh_requested)."""
+    if radio_is_active() or load_discovery_state().get("enabled"):
+        return ("radio or discovery",)
+    try:
+        playing = bool(xbmc.Player().isPlayingAudio())
+    except Exception:
+        playing = False
+    return ("player", playing, xbmc.getInfoLabel("Playlist.Length(music)") if playing else "")
+
+
+def refresh_screens_when_playback_changes() -> None:
+    """The first screen shows the playing mix (else Mix mode shows the current mix): redraw whichever of the two is
+    visible when a mix starts or stops playing."""
+    key = playback_key()
+    seen = PLAYBACK_SEEN["key"]
+    if seen is None or key == seen:
+        PLAYBACK_SEEN["key"] = key
+        return
+    try:
+        container_folder = xbmc.getInfoLabel("Container.FolderPath")
+    except Exception:
+        container_folder = ""
+    visible = is_addon_root(container_folder) or ADDON_ID in container_folder and "action=mix_mode" in container_folder
+    if visible and kodi_is_loading_a_list():
+        return  # a second later
+    PLAYBACK_SEEN["key"] = key
+    if not visible:
+        return
+    try:
+        xbmc.executebuiltin("Container.Refresh")  # a refresh keeps the focused item (Container.Update resets it)
+        log_general(f"Playback changed ({seen} -> {key}): redrew the visible screen {container_folder!r}.")
+    except Exception as exc:
+        log_general(f"Playback changed, but the visible screen could not be redrawn: {exc}", xbmc.LOGWARNING)
 
 
 def reset_radio_mode_on_startup() -> None:
@@ -3128,6 +3168,11 @@ def main() -> None:
             refresh_radio_menu_if_visible()
         except Exception as exc:
             log_radio(f"Radio mode tick failed: {exc}", xbmc.LOGERROR)
+
+        try:
+            refresh_screens_when_playback_changes()
+        except Exception as exc:
+            log_general(f"Following the playback on the first screen failed: {exc}", xbmc.LOGERROR)
 
         try:
             run_mix_assist_tick()

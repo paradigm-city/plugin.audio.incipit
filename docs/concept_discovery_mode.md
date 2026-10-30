@@ -2,7 +2,9 @@
 
 ## Goal
 
-Discovery mode lets the user sample random songs from the Kodi music library. It plays short excerpts and allows the user to create a MusicIP mix from the current discovery song at any point.
+Discovery mode lets the user sample random songs from the Kodi music library. It plays short excerpts and allows the user to create a mix from the current discovery song at any point.
+
+It is found under **Mix mode** (since 2026-10-30; before, it was an entry of the first screen): Mix mode shows its actions directly, followed by **Saved mixes**, as Radio mode shows its scan actions followed by **Favourite stations**.
 
 ## Playback model
 

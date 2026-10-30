@@ -254,13 +254,15 @@ class SnippetRedrawTest(KodiTestCase):
 
 
 class MenuRefreshAndResetTest(KodiTestCase):
-    def test_visible_discovery_menu_is_refreshed_once(self):
-        service.save_discovery_state({"ui_refresh_requested": True})
-        folder = "plugin://plugin.audio.incipit/?action=discovery_mode&nonce=1"
-        kodi.info_labels["Container.FolderPath"] = folder
-        service.refresh_discovery_menu_if_visible()
-        service.refresh_discovery_menu_if_visible()
-        self.assertEqual(kodi.builtins, ["Container.Refresh"])  # keeps the focused item
+    def test_visible_mix_mode_screen_is_refreshed_once(self):
+        for action in ("mix_mode", "discovery_mode"):  # discovery_mode: its old address (Kodi favourites)
+            with self.subTest(action=action):
+                kodi.builtins.clear()
+                service.save_discovery_state({"ui_refresh_requested": True})
+                kodi.info_labels["Container.FolderPath"] = f"plugin://plugin.audio.incipit/?action={action}&nonce=1"
+                service.refresh_discovery_menu_if_visible()
+                service.refresh_discovery_menu_if_visible()
+                self.assertEqual(kodi.builtins, ["Container.Refresh"])  # keeps the focused item
 
     def test_the_visible_root_follows_discovery(self):
         service.save_discovery_state({"ui_refresh_requested": True})

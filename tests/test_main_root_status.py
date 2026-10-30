@@ -1,4 +1,4 @@
-"""The first screen's second texts: what the current mix, the radio and Discovery are doing."""
+"""The first screen's second texts: what the current mix, the radio and Discovery (Mix mode) are doing."""
 
 import time
 import unittest
@@ -18,23 +18,23 @@ class RootStatusTest(KodiTestCase):
         main.save_discovery_state({"enabled": True, "current_label": "Moby – Porcelain"})
         kodi.directory_items.clear()
         self.run_plugin()
-        item = {item.getLabel(): item for _url, item, _folder in kodi.directory_items}["Discovery mode"]
+        item = {item.getLabel(): item for _url, item, _folder in kodi.directory_items}["Mix mode"]
         self.assertEqual(item.getMusicInfoTag().getAlbum(), "Moby - Porcelain")  # Kodi's second label from it (plain here)
         self.assertIn(("addSortMethod", main.xbmcplugin.SORT_METHOD_UNSORTED, {"labelMask": "%L", "label2Mask": "%B"}),
                       kodi.directory_calls)
 
     def test_album_and_year_follow_the_song(self):
-        albums = {"D:\air.mp3": {"album": "Moon Safari", "year": 1998}, "D:\moby.mp3": {"album": "Play", "year": 0}}
+        albums = {"D:\\air.mp3": {"album": "Moon Safari", "year": 1998}, "D:\\moby.mp3": {"album": "Play", "year": 0}}
         with mock.patch.object(main, "get_track_metadata", side_effect=lambda path, **_: albums.get(path, {})):
             main.save_radio_state({"phase": "playing", "current_label": "Air – La femme d'argent",
-                                   "current_song": "D:\air.mp3"})
-            self.assertEqual(self.labels2()["Radio mode"], "Air - La femme d'argent | Moon Safari (1998)")  # plain here
+                                   "current_song": "D:\\air.mp3"})
+            self.assertEqual(self.labels2()["Current station"], "Air - La femme d'argent | Moon Safari (1998)")  # plain here
             main.save_radio_state({})
             main.save_discovery_state({"enabled": True, "current_label": "Moby – Porcelain",
-                                       "current_song": "D:\moby.mp3"})
-            self.assertEqual(self.labels2()["Discovery mode"], "Moby - Porcelain | Play")  # no year known
+                                       "current_song": "D:\\moby.mp3"})
+            self.assertEqual(self.labels2()["Mix mode"], "Moby - Porcelain | Play")  # no year known
             main.save_discovery_state({"enabled": True, "owner": "radio", "current_label": "Unknown",
-                                       "current_song": "D:\other.mp3"})
+                                       "current_song": "D:\\other.mp3"})
             main.save_radio_state({"phase": "seeking"})
             self.assertEqual(self.labels2()["Radio mode"], "Scanning: Unknown")  # nothing known: the song alone
 
@@ -49,7 +49,7 @@ class RootStatusTest(KodiTestCase):
 
     def test_nothing_runs(self):
         status = self.labels2()
-        self.assertEqual((status["Radio mode"], status["Discovery mode"]), ("", ""))
+        self.assertEqual((status["Radio mode"], status["Mix mode"]), ("", ""))
 
     def test_the_current_mix_its_name_and_length(self):
         tracks = ["D:\\a.mp3", "D:\\b.mp3"]
@@ -58,25 +58,28 @@ class RootStatusTest(KodiTestCase):
         meta["track_metadata_by_path"] = {main.canonical_audio_path(t): {"title": "x", "duration": 1900} for t in tracks}
         self.write_json(main.mix_meta_path_from_cache_path(cache_path), meta)
         name = main.saved_mix_name(main.get_saved_mix_metadata(cache_path))
+        main.play_tracks_as_music_playlist(tracks)  # on the first screen while it plays
         self.assertEqual(self.labels2()["Current mix"], f"{name} | 1 h 03 min | not saved")
         self.assertEqual(main.format_mix_length(59 * 60), "59 min")
 
     def test_a_playing_station_shows_its_song(self):
         main.save_radio_state({"phase": "playing", "current_label": "Air – La femme d'argent",
                                "playing_started_ts": int(time.time())})
-        self.assertEqual(self.labels2()["Radio mode"], "Air - La femme d'argent")  # what plays, not since when
+        status = self.labels2()
+        self.assertEqual(status["Current station"], "Air - La femme d'argent")  # what plays, not since when
+        self.assertEqual(status["Radio mode"], "")  # not twice
         main.save_radio_state(dict(main.get_radio_state(), name="Night Drive", favourite_id="f1"))
-        self.assertEqual(self.labels2()["Radio mode"], "Night Drive: Air - La femme d'argent")  # with its name
+        self.assertEqual(self.labels2()["Current station"], "Night Drive: Air - La femme d'argent")  # with its name
 
     def test_scanning_shows_the_snippet_on_the_radio_not_on_discovery(self):
         main.save_radio_state({"phase": "seeking"})
         main.save_discovery_state({"enabled": True, "owner": "radio", "current_label": "Moby – Porcelain"})
         status = self.labels2()
-        self.assertEqual((status["Radio mode"], status["Discovery mode"]), ("Scanning: Moby - Porcelain", ""))
+        self.assertEqual((status["Radio mode"], status["Mix mode"]), ("Scanning: Moby - Porcelain", ""))
 
     def test_discovery_shows_its_snippet(self):
         main.save_discovery_state({"enabled": True, "current_label": "Moby – Porcelain"})
-        self.assertEqual(self.labels2()["Discovery mode"], "Moby - Porcelain")
+        self.assertEqual(self.labels2()["Mix mode"], "Moby - Porcelain")
 
 
 if __name__ == "__main__":

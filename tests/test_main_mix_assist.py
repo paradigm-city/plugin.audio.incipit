@@ -586,8 +586,8 @@ class CurrentMixNameTest(MixAssistTestCase):
         self.run_plugin(action="mix_assist_menu", cache_path=self.cache_path)
         self.assertEqual(main.format_saved_mix_label(self.meta()), "Cosmic Analog Journeys (5 tracks)")
 
-    def test_the_first_screen_says_current_mix(self):
-        self.run_plugin()
+    def test_mix_mode_says_current_mix(self):
+        self.run_plugin(action="mix_mode")  # it doesn't play: it is in Mix mode
         labels = [item.getLabel() for _url, item, _folder in kodi.directory_items]
         self.assertIn("Current mix", labels)
         self.assertFalse(any("Cosmic" in label for label in labels))

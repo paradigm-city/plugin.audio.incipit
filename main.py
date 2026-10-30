@@ -751,13 +751,14 @@ def save_discovery_state(state: dict) -> None:
     save_json_file(discovery_state_path(), state or {})
 
 
-def replace_with_discovery_mode_menu() -> None:
+def replace_with_mix_mode_menu() -> None:
+    """Show the Mix mode screen (Discovery's actions and the saved mixes) after a Discovery action."""
     try:
         xbmc.executebuiltin(
-            f"Container.Update({addon_url(action='discovery_mode', nonce=new_nonce())},replace)"
+            f"Container.Update({addon_url(action='mix_mode', nonce=new_nonce())},replace)"
         )
     except Exception as exc:
-        log_discovery(f"Discovery mode: could not replace container with Discovery screen: {exc}", xbmc.LOGWARNING)
+        log_discovery(f"Discovery mode: could not replace container with the Mix mode screen: {exc}", xbmc.LOGWARNING)
 
 
 def mix_cache_key(seed: str, size: int) -> str:
@@ -4603,8 +4604,9 @@ def discovery_icon() -> str:
 
 
 def radio_icon() -> str:
-    """Playing while a station plays, searching while the radio scans, else the radio."""
-    return media_icon({"playing": "playing", "seeking": "searching"}.get(radio_phase(), "radio"))
+    """Searching while the radio scans, else the radio (a playing station has the "Current station" entry, with the
+    playing icon)."""
+    return media_icon("searching" if radio_phase() == "seeking" else "radio")
 
 
 # --- Second lines ---------------------------------------------------------------------------------------------
@@ -4648,15 +4650,17 @@ def current_mix_status(meta: dict, tracks: list[str]) -> str:
 
 
 def radio_status() -> str:
-    """The Radio entry's second text: what the station plays, or the snippet while it scans."""
-    phase = radio_phase()
-    state = get_radio_state()
-    if phase == "seeking":
-        discovery = get_discovery_state()
-        snippet = str(discovery.get("current_label") or "").strip()
-        return f"Scanning: {snippet}{album_suffix(discovery.get('current_song'))}" if snippet else "Scanning"
-    if phase != "playing":
+    """The Radio entry's second text: the snippet while it scans (a playing station has the "Current station"
+    entry, which shows what it plays)."""
+    if radio_phase() != "seeking":
         return ""
+    discovery = get_discovery_state()
+    snippet = str(discovery.get("current_label") or "").strip()
+    return f"Scanning: {snippet}{album_suffix(discovery.get('current_song'))}" if snippet else "Scanning"
+
+
+def current_station_status(state: dict) -> str:
+    """"Night Drive: Air - La femme d'argent · Moon Safari (1998)": what the playing station plays."""
     return radio_station_label(state) + album_suffix(state.get("current_song"))
 
 
@@ -4683,7 +4687,7 @@ def radio_station_label(state: dict) -> str:
 
 
 def discovery_status() -> str:
-    """The Discovery entry's second text: the snippet playing (not the radio's scan, which the Radio entry shows)."""
+    """The Mix mode entry's second text: the snippet playing (not the radio's scan, which the Radio entry shows)."""
     state = get_discovery_state()
     if not state.get("enabled") or state.get("owner") == "radio":
         return ""
@@ -4691,16 +4695,20 @@ def discovery_status() -> str:
     return label + album_suffix(state.get("current_song")) if label else "Playing snippets"
 
 
-def add_current_mix_item(cache_path: str) -> None:
-    """The first screen's "Current mix": the newest mix, named by its seed until it is saved."""
+PLAYING_ICON = "playing-red"  # the first screen's entry for what plays: Current mix, Playing mix, Current station
+
+
+def add_current_mix_item(cache_path: str, label: str = "Current mix", playing: bool = False) -> None:
+    """ "Current mix": the newest mix, named by its seed until it is saved (on the first screen while it plays,
+    else in Mix mode). label "Playing mix": a saved mix that plays and is not the current mix. playing: on the
+    first screen, with the red playing icon."""
     tracks = load_mix_by_cache_path(cache_path)
     meta = get_saved_mix_metadata(cache_path, tracks)
     saved = is_mix_saved(meta)
-    label = "Current mix"
     item = xbmcgui.ListItem(label=label, offscreen=True)
     apply_music_metadata(item, label)
     apply_saved_mix_info_metadata(item, cache_path)
-    set_item_icon(item, CURRENT_MIX_ICON)
+    set_item_icon(item, media_icon(PLAYING_ICON) if playing else CURRENT_MIX_ICON)
     item.setProperty("IsPlayable", "false")
     set_second_line(item, plain(current_mix_status(meta, tracks)))
     context_items = [] if saved else [("Save mix", build_save_mix_action(cache_path))]
@@ -4711,6 +4719,53 @@ def add_current_mix_item(cache_path: str) -> None:
     ]
     item.addContextMenuItems(context_items)
     add_directory_item(HANDLE, build_saved_browse_url(cache_path), item, isFolder=True)
+
+
+def add_current_station_item(state: dict) -> None:
+    """The first screen's "Current station" while a station plays: what it plays; it opens the station's
+    information (as the Info key on the Radio entries does)."""
+    label = "Current station"
+    item = xbmcgui.ListItem(label=label, offscreen=True)
+    apply_music_metadata(item, label)
+    set_item_icon(item, media_icon(PLAYING_ICON))
+    background = station_fanart(state)
+    if background:
+        item.setArt({"fanart": background})
+    item.setProperty("IsPlayable", "false")
+    set_second_line(item, plain(current_station_status(state)))
+    set_station_info_action(item)
+    context_items = [("Station information", run_plugin_url(action="radio_info", nonce=new_nonce()))]
+    if not state.get("favourite_id"):
+        context_items.append(("Save as favourite station", run_plugin_url(action="radio_save_favourite", nonce=new_nonce())))
+    context_items += [("Scan again", run_plugin_url(action="radio_retune", nonce=new_nonce())),
+                      ("Stop radio", run_plugin_url(action="radio_stop", nonce=new_nonce()))]
+    item.addContextMenuItems(context_items)
+    add_directory_item(HANDLE, addon_url(action="radio_info"), item, isFolder=False)
+
+
+def add_mix_entry(cache_path: str, label: str, where: str, playing: bool = False) -> None:
+    try:
+        add_current_mix_item(cache_path, label, playing)
+    except Exception as exc:
+        log_general(f"{label} {cache_path!r} could not be listed in {where}: {exc}", xbmc.LOGWARNING)
+
+
+def add_playing_entries() -> None:
+    """What plays decides the first screen: a mix ("Current mix", or "Playing mix" for a saved one that is not the
+    current mix), a station ("Current station"), or neither: then the current mix is in Mix mode only."""
+    current_mix = get_current_mix_cache_path()
+    playing_mix, share, coverage = match_playing_mix()
+    if radio_phase() == "playing":
+        add_current_station_item(get_radio_state())
+        status = f"playing the station {station_name(get_radio_state()) or get_radio_state().get('seed')!r}"
+    elif playing_mix:
+        add_mix_entry(playing_mix, "Current mix" if playing_mix == current_mix else "Playing mix", "the first screen",
+                      playing=True)
+        status = (f"playing the {'current' if playing_mix == current_mix else 'saved'} mix {playing_mix!r} "
+                  f"({share:.0%} of the playlist is in the mix, {coverage:.0%} of the mix in the playlist)")
+    else:
+        status = "no mix or station playing" + (f"; the current mix {current_mix!r} is in Mix mode" if current_mix else "")
+    log_general(f"First screen: {status}.")
 
 
 def show_root() -> None:
@@ -4729,23 +4784,19 @@ def show_root() -> None:
         isFolder=True,
     )
 
-    current_mix = get_current_mix_cache_path()
-    if current_mix:
-        try:
-            add_current_mix_item(current_mix)
-        except Exception as exc:
-            log_general(f"Current mix {current_mix!r} could not be listed: {exc}", xbmc.LOGWARNING)
+    add_playing_entries()
 
-    discovery_item = xbmcgui.ListItem(label="Discovery mode", offscreen=True)
-    apply_music_metadata(discovery_item, "Discovery mode")
-    set_item_icon(discovery_item, discovery_icon())
+    # Mix mode and Radio mode are alike: each scans snippets and holds its keepers (saved mixes, favourite stations).
+    mix_mode_item = xbmcgui.ListItem(label="Mix mode", offscreen=True)
+    apply_music_metadata(mix_mode_item, "Mix mode")
+    set_item_icon(mix_mode_item, discovery_icon())
     if discovery_fanart():
-        discovery_item.setArt({"fanart": discovery_fanart()})
-    set_second_line(discovery_item, plain(discovery_status()))
+        mix_mode_item.setArt({"fanart": discovery_fanart()})
+    set_second_line(mix_mode_item, plain(discovery_status()))
     add_directory_item(
         HANDLE,
-        addon_url(action="discovery_mode"),
-        discovery_item,
+        addon_url(action="mix_mode"),
+        mix_mode_item,
         isFolder=True,
     )
 
@@ -4761,16 +4812,6 @@ def show_root() -> None:
         HANDLE,
         addon_url(action="radio_mode"),
         radio_item,
-        isFolder=True,
-    )
-
-    saved_item = xbmcgui.ListItem(label="Saved mixes", offscreen=True)
-    apply_music_metadata(saved_item, "Saved mixes")
-    set_item_icon(saved_item, SKIN_FOLDER_ICON)  # a folder of mixes: the skin's own folder icon
-    add_directory_item(
-        HANDLE,
-        build_saved_mixes_url(),
-        saved_item,
         isFolder=True,
     )
 
@@ -4821,11 +4862,24 @@ def add_discovery_action_item(label: str, action: str, is_folder: bool = True, i
     )
 
 
-def show_discovery_mode_menu() -> None:
+def add_saved_mixes_folder(fanart: str = "") -> None:
+    """Mix mode's "Saved mixes (24)", like Radio mode's "Favourite stations (5)" (listed with none too: it says so)."""
+    count = len(list_saved_mix_cache_paths())
+    label = f"Saved mixes ({count})" if count else "Saved mixes"
+    item = xbmcgui.ListItem(label=label, offscreen=True)
+    apply_music_metadata(item, label)
+    set_item_icon(item, SKIN_FOLDER_ICON)  # a folder of mixes: the skin's own folder icon
+    if fanart:  # while Discovery plays: its background, like the screen's other entries
+        item.setArt({"fanart": fanart})
+    add_directory_item(HANDLE, addon_url(action="saved_mixes"), item, isFolder=True)
+
+
+def show_mix_mode_menu() -> None:
+    """Discovery's actions and the saved mixes, as Radio mode has its scan actions and the favourite stations."""
     state = get_discovery_state()
     active = bool(state.get("enabled"))
 
-    title = f"{ADDON_NAME} discovery mode"
+    title = f"{ADDON_NAME} mix mode"
     if active:
         current = str(state.get("current_label") or state.get("current_song") or "").strip()
         if current:
@@ -4835,10 +4889,14 @@ def show_discovery_mode_menu() -> None:
 
     xbmcplugin.setPluginCategory(HANDLE, title)
     xbmcplugin.setContent(HANDLE, "files")
+    keep_second_lines()  # the current mix's
     fanart = discovery_fanart() if active else ""
     if fanart:
         xbmcplugin.setPluginFanart(HANDLE, image=fanart)
 
+    current_mix = get_current_mix_cache_path()
+    if current_mix and current_mix != playing_mix_cache_path():  # a playing one is on the first screen
+        add_mix_entry(current_mix, "Current mix", "Mix mode")
     if active:
         add_discovery_action_item("Create mix from current discovery song", "discovery_mix_current", is_folder=True,
                                   icon="generate", fanart=fanart)
@@ -4847,6 +4905,7 @@ def show_discovery_mode_menu() -> None:
         add_discovery_action_item("Stop discovery mode", "discovery_stop", is_folder=True, icon="stop", fanart=fanart)
     else:  # it scans through snippets, like the radio: the same icon
         add_discovery_action_item("Start discovery mode", "discovery_start", is_folder=True, icon="searching")
+    add_saved_mixes_folder(fanart)
 
     end_directory(HANDLE, cacheToDisc=False)
 
@@ -4854,7 +4913,7 @@ def show_discovery_mode_menu() -> None:
 def start_discovery_mode() -> None:
     begin_discovery_playback()
     notify("Discovery mode started.")
-    replace_with_discovery_mode_menu()
+    replace_with_mix_mode_menu()
 
 
 def begin_discovery_playback(owner: str = "") -> dict:
@@ -4890,7 +4949,7 @@ def begin_discovery_playback(owner: str = "") -> dict:
 def stop_discovery_mode() -> None:
     end_discovery_playback()
     notify("Discovery mode stopped.")
-    replace_with_discovery_mode_menu()
+    replace_with_mix_mode_menu()
 
 
 def end_discovery_playback(reason: str = "manual_stop") -> None:
@@ -5396,10 +5455,10 @@ def update_discovery_state_for_playlist_position(state: dict, position: int) -> 
 def discovery_next_track() -> None:
     if skip_discovery_song() is None:
         notify("No buffered next discovery song available yet.", xbmcgui.NOTIFICATION_WARNING)
-        replace_with_discovery_mode_menu()
+        replace_with_mix_mode_menu()
         return
     notify("Discovery mode: skipping to next song.")
-    replace_with_discovery_mode_menu()
+    replace_with_mix_mode_menu()
 
 
 def skip_discovery_song() -> bool | None:
@@ -5434,7 +5493,7 @@ def discovery_mix_from_current() -> None:
 
     if not seed:
         notify("No discovery song is currently available.", xbmcgui.NOTIFICATION_WARNING)
-        replace_with_discovery_mode_menu()
+        replace_with_mix_mode_menu()
         return
 
     # Capture the seed immediately, then put the Discovery service into a
@@ -5448,13 +5507,13 @@ def discovery_mix_from_current() -> None:
         notify(str(exc), xbmcgui.NOTIFICATION_WARNING if "cancelled" in str(exc).lower() else xbmcgui.NOTIFICATION_ERROR)
         log_discovery(str(exc), xbmc.LOGERROR)
         clear_discovery_mix_dialog_hold(skip_if_elapsed=True)
-        replace_with_discovery_mode_menu()
+        replace_with_mix_mode_menu()
         return
     except Exception as exc:
         notify(str(exc), xbmcgui.NOTIFICATION_ERROR)
         log_discovery(f"Discovery mix generation failed: {exc}", xbmc.LOGERROR)
         clear_discovery_mix_dialog_hold(skip_if_elapsed=True)
-        replace_with_discovery_mode_menu()
+        replace_with_mix_mode_menu()
         return
 
     stop_state = get_discovery_state()
@@ -5494,7 +5553,7 @@ def discovery_mix_from_current() -> None:
     except Exception as exc:
         notify(str(exc), xbmcgui.NOTIFICATION_ERROR)
         log_discovery(f"Discovery mix playback failed: {exc}", xbmc.LOGERROR)
-        replace_with_discovery_mode_menu()
+        replace_with_mix_mode_menu()
         return
 
     notify("Discovery mode stopped. Playing generated mix.")
@@ -5502,7 +5561,7 @@ def discovery_mix_from_current() -> None:
         xbmc.executebuiltin(f"Container.Update({build_saved_browse_url(cache_path)},replace)")
     except Exception as exc:
         log_discovery(f"Discovery mode: could not replace container with generated mix: {exc}", xbmc.LOGWARNING)
-        replace_with_discovery_mode_menu()
+        replace_with_mix_mode_menu()
 
 def show_saved_mixes() -> None:
     xbmcplugin.setPluginCategory(HANDLE, f"{ADDON_NAME} saved mixes")
@@ -7104,24 +7163,59 @@ def discovery_fanart() -> str:
 # While a mix, a station or Discovery plays, entries without a background of their own get one: the collage of
 # the playing mix or station (Discovery: the snippet's artist image). Skins show the focused entry's.
 
-def playing_mix_cache_path() -> str:
-    """The mix that plays: the current mix or a saved mix whose tracks are Kodi's music playlist; "" otherwise."""
+# A mix still plays after it was edited: "More like this", "Less like this", "Remove from mix" change the mix but
+# not Kodi's playlist, and a tidy-up leaves the playing song and the next one. So the playlist need not be the mix:
+# most of the playlist must be in the mix, and much of the mix in the playlist (one library song that is also in a
+# mix is not that mix playing).
+PLAYING_MIX_SHARE = 0.8  # of the playlist's songs in the mix
+PLAYING_MIX_COVERAGE = 0.5  # of the mix's songs in the playlist
+
+
+def playlist_track_identity(file: str) -> str:
+    """A playlist entry's song: its file, or the song of the add-on's own entry (a mix listing's
+    plugin://...?action=play_track&path=..., which Kodi queues when a song of the listing is played)."""
+    file = str(file or "")
+    if file.startswith(f"plugin://{ADDON_ID}/") and "?" in file:
+        query = dict(parse_qsl(file.split("?", 1)[1]))
+        if query.get("action") == "play_track":
+            file = query.get("path", "")
+    return canonical_audio_path(file)
+
+
+def match_playing_mix() -> tuple[str, float, float]:
+    """(the mix that plays, the share of the playlist in it, the share of it in the playlist); ("", 0, 0) when no
+    mix plays. While the radio or Discovery runs, theirs is the playlist. The current mix wins a tie (a saved mix
+    with the same songs)."""
+    if radio_phase() != "off" or get_discovery_state().get("enabled"):
+        return "", 0.0, 0.0
     try:
         if not xbmc.Player().isPlayingAudio():
-            return ""
+            return "", 0.0, 0.0
         items = execute_jsonrpc("Playlist.GetItems", {"playlistid": xbmc.PLAYLIST_MUSIC, "properties": ["file"]})
     except Exception:
-        return ""
-    files = [canonical_audio_path(str(item.get("file") or "")) for item in (items or {}).get("items") or []]
+        return "", 0.0, 0.0
+    files = [playlist_track_identity(str(item.get("file") or "")) for item in (items or {}).get("items") or []]
+    files = [file for file in files if file]
     if not files:
-        return ""
-    for cache_path in [get_current_mix_cache_path()] + list_saved_mix_cache_paths():
+        return "", 0.0, 0.0
+    best = ("", 0.0, 0.0)
+    for cache_path in dict.fromkeys([get_current_mix_cache_path()] + list_saved_mix_cache_paths()):
         try:
-            if cache_path and [canonical_audio_path(track) for track in load_mix_by_cache_path(cache_path)] == files:
-                return cache_path
+            tracks = {canonical_audio_path(track) for track in load_mix_by_cache_path(cache_path)} if cache_path else set()
         except Exception:
             continue
-    return ""
+        if not tracks:
+            continue
+        share = sum(1 for file in files if file in tracks) / len(files)
+        coverage = len(tracks.intersection(files)) / len(tracks)
+        if share >= PLAYING_MIX_SHARE and coverage >= PLAYING_MIX_COVERAGE and share + coverage > best[1] + best[2]:
+            best = (cache_path, share, coverage)
+    return best
+
+
+def playing_mix_cache_path() -> str:
+    """The mix that plays (the current mix or a saved mix, see match_playing_mix); "" otherwise."""
+    return match_playing_mix()[0]
 
 
 def playing_background() -> str:
@@ -8931,8 +9025,8 @@ def router(params: dict[str, str] | None = None) -> None:
         run_selected_mix_keyboard_action("MusicIP.MixAction.LessLikeThis", "Less like this")
         return
 
-    if action == "discovery_mode":
-        show_discovery_mode_menu()
+    if action in ("mix_mode", "discovery_mode"):  # discovery_mode: the screen's name until 2026-10-30 (Kodi favourites)
+        show_mix_mode_menu()
         return
 
     if action == "discovery_start":
