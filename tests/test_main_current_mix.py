@@ -1,4 +1,5 @@
-"""The current mix: a new mix is shown as "Current mix" and listed under Saved mixes only once it is saved."""
+"""The current mix: a new mix is shown as "Current mix" (on the first screen while it plays, else in Mix mode)
+and listed under Saved mixes only once it is saved."""
 
 import os
 import unittest
@@ -18,12 +19,21 @@ def item_by_label(label):
     raise AssertionError(f"{label!r} not listed; have {[i.getLabel() for _u, i, _f in kodi.directory_items]}")
 
 
-class CurrentMixTest(KodiTestCase):
+class Screens:
+    """The first screen's and Mix mode's labels."""
+
     def root(self):
         kodi.directory_items.clear()
         self.run_plugin()
         return [item.getLabel() for _url, item, _folder in kodi.directory_items]
 
+    def mix_mode(self):
+        kodi.directory_items.clear()
+        self.run_plugin(action="mix_mode")
+        return [item.getLabel() for _url, item, _folder in kodi.directory_items]
+
+
+class CurrentMixTest(Screens, KodiTestCase):
     def test_without_a_mix_there_is_no_current_mix(self):
         self.assertEqual(main.get_current_mix_cache_path(), "")
         self.assertNotIn("Current mix", self.root())
@@ -33,8 +43,8 @@ class CurrentMixTest(KodiTestCase):
         self.assertEqual(main.get_current_mix_cache_path(), cache_path)
         self.assertFalse(main.is_mix_saved(main.get_saved_mix_metadata(cache_path)))
         self.assertEqual(main.list_saved_mix_cache_paths(), [])
-        self.assertEqual(self.root(), ["Generate mix from playing audio", "Current mix", "Discovery mode", "Radio mode",
-                                       "Saved mixes", "Settings"])
+        self.assertEqual(self.root(), ["Generate mix from playing audio", "Mix mode", "Radio mode", "Settings"])
+        self.assertEqual(self.mix_mode(), ["Current mix", "Start discovery mode", "Saved mixes"])  # it doesn't play
         url, item, is_folder = item_by_label("Current mix")
         self.assertTrue(is_folder)
         self.assertEqual(plugin_query(url), {"action": "browse_saved_mix", "cache_path": cache_path,
@@ -47,7 +57,7 @@ class CurrentMixTest(KodiTestCase):
 
     def test_saving_lists_the_mix_and_keeps_it_current(self):
         cache_path = main.create_current_mix(SEED, 20, [SEED, T1])
-        self.root()
+        self.mix_mode()
         _url, item, _folder = item_by_label("Current mix")
         kodi.respond("keyboard", "01 Ace of Spades")  # the suggested name, confirmed
         self.run_plugin(**plugin_query(item.context_action("Save mix")))
@@ -56,7 +66,7 @@ class CurrentMixTest(KodiTestCase):
         self.assertEqual(kodi.builtins[-1], "Container.Refresh")
         self.assertEqual(main.list_saved_mix_cache_paths(), [cache_path])
         self.assertEqual(main.get_current_mix_cache_path(), cache_path)
-        self.root()
+        self.mix_mode()
         _url, item, _folder = item_by_label("Current mix")
         self.assertEqual(item.getLabel2(), "01 Ace of Spades | 2 tracks | saved")
         self.assertNotIn("Save mix", [label for label, _a in item.context_menu])
@@ -126,7 +136,7 @@ class CurrentMixTest(KodiTestCase):
         cache_path = self.save_mix([SEED, T1])
         self.run_plugin(action="cleanup_saved_mix", cache_path=cache_path)
         self.assertEqual(main.get_current_mix_cache_path(), "")
-        self.assertNotIn("Current mix", self.root())
+        self.assertNotIn("Current mix", self.root() + self.mix_mode())
 
     def test_mixes_from_older_versions_are_saved_mixes(self):
         cache_path = main.mix_cache_path(SEED, 20)  # no "unsaved" in the sidecar
@@ -134,7 +144,109 @@ class CurrentMixTest(KodiTestCase):
             handle.write(f"{SEED}\n{T1}\n")
         self.write_json(main.mix_meta_path_from_cache_path(cache_path), {"seed": SEED, "size": 20})
         self.assertEqual(main.list_saved_mix_cache_paths(), [cache_path])
+        self.assertNotIn("Current mix", self.root() + self.mix_mode())
+
+
+class WhatPlaysTest(Screens, KodiTestCase):
+    """The first screen shows what plays: a mix (the current one, or a saved one), a station, or neither."""
+
+    def play(self, cache_path):
+        main.play_tracks_as_music_playlist(main.load_mix_by_cache_path(cache_path))
+
+    def test_the_playing_current_mix_is_on_the_first_screen_not_in_mix_mode(self):
+        cache_path = main.create_current_mix(SEED, 20, [SEED, T1])
+        self.play(cache_path)
+        self.assertEqual(self.root(), ["Generate mix from playing audio", "Current mix", "Mix mode", "Radio mode",
+                                       "Settings"])
+        self.assertEqual(plugin_query(item_by_label("Current mix")[0])["cache_path"], cache_path)
+        self.assertNotIn("Current mix", self.mix_mode())
+        kodi.player.playing = False  # stopped: back to Mix mode
         self.assertNotIn("Current mix", self.root())
+        self.assertIn("Current mix", self.mix_mode())
+
+    def test_what_plays_has_the_red_icon_on_the_first_screen_only(self):
+        def icon(label):
+            return os.path.basename(item_by_label(label)[1].getArt("icon"))
+
+        cache_path = main.create_current_mix(SEED, 20, [SEED, T1])
+        self.play(cache_path)
+        self.root()
+        self.assertEqual(icon("Current mix"), "icon-playing-red.png")
+        kodi.player.playing = False
+        self.mix_mode()
+        self.assertEqual(icon("Current mix"), "DefaultMusicPlaylists.png")  # in Mix mode: a mix, as in Saved mixes
+        main.save_radio_state({"phase": "playing", "current_label": "Air - Kelly"})
+        self.root()
+        self.assertEqual(icon("Current station"), "icon-playing-red.png")
+
+    def test_a_playing_saved_mix_is_the_playing_mix(self):
+        saved = self.save_mix([SEED, T1])
+        current = main.create_current_mix(T2, 20, [T2, T1])
+        self.play(saved)
+        self.assertIn("Playing mix", self.root())
+        self.assertEqual(plugin_query(item_by_label("Playing mix")[0])["cache_path"], saved)
+        self.assertNotIn("Current mix", self.root())
+        self.assertIn("Current mix", self.mix_mode())  # the current mix doesn't play
+        self.assertEqual(plugin_query(item_by_label("Current mix")[0])["cache_path"], current)
+
+    def test_other_music_is_neither(self):
+        main.create_current_mix(SEED, 20, [SEED, T1])
+        main.play_tracks_as_music_playlist([T2])
+        self.assertEqual(self.root(), ["Generate mix from playing audio", "Mix mode", "Radio mode", "Settings"])
+        self.assertIn("Current mix", self.mix_mode())
+
+    def test_a_playing_station_is_on_the_first_screen(self):
+        main.create_current_mix(SEED, 20, [SEED, T1])
+        main.save_radio_state({"phase": "playing", "name": "Night Drive", "current_label": "Air - Kelly"})
+        self.assertEqual(self.root(), ["Generate mix from playing audio", "Current station", "Mix mode", "Radio mode",
+                                       "Settings"])
+        url, item, is_folder = item_by_label("Current station")
+        self.assertEqual((plugin_query(url)["action"], is_folder), ("radio_info", False))
+        self.assertEqual(item.getLabel2(), "Night Drive: Air - Kelly")
+        self.assertEqual(os.path.basename(item.getArt("icon")), "icon-playing-red.png")
+        self.assertEqual([label for label, _a in item.context_menu],
+                         ["Station information", "Save as favourite station", "Scan again", "Stop radio"])
+        self.assertIn("Current mix", self.mix_mode())
+        main.save_radio_state({"phase": "off"})  # stopped
+        self.assertNotIn("Current station", self.root())
+
+    def test_an_edited_mix_still_plays(self):
+        tracks = [f"D:\\music\\{n:02d}.mp3" for n in range(10)]
+        cache_path = main.create_current_mix(tracks[0], 10, tracks)
+        self.play(cache_path)
+        more = [f"D:\\music\\more{n}.mp3" for n in range(2)]
+        main.save_mix_by_cache_path(cache_path, tracks[:4] + more + tracks[4:])  # "More like this": not queued
+        self.assertIn("Current mix", self.root())
+        main.save_mix_by_cache_path(cache_path, tracks[:4] + more + tracks[5:])  # and one removed: still in Kodi's queue
+        self.assertIn("Current mix", self.root())
+        self.assertNotIn("Current mix", self.mix_mode())
+
+    def test_the_listing_queued_by_kodi_is_the_mix(self):
+        cache_path = main.create_current_mix(SEED, 20, [SEED, T1, T2])
+        kodi.playlist[:] = [(main.addon_url(action="play_track", path=track), None) for track in (SEED, T1, T2)]
+        kodi.player.playing = True  # a song of the mix's listing played: Kodi queues the listing's entries
+        self.assertIn("Current mix", self.root())
+        self.assertEqual(main.match_playing_mix()[1:], (1.0, 1.0))
+
+    def test_a_library_song_that_is_in_a_mix_is_not_the_mix(self):
+        tracks = [f"D:\\music\\{n:02d}.mp3" for n in range(10)]
+        main.create_current_mix(tracks[0], 10, tracks)
+        main.play_tracks_as_music_playlist(tracks[3:4])
+        self.assertNotIn("Current mix", self.root())
+
+    def test_a_station_with_the_mix_s_songs_is_the_station(self):
+        cache_path = main.create_current_mix(SEED, 20, [SEED, T1, T2])
+        self.play(cache_path)  # e.g. a station from the same song, at variety 0
+        main.save_radio_state({"phase": "playing", "current_label": "Air - Kelly"})
+        self.assertEqual(self.root(), ["Generate mix from playing audio", "Current station", "Mix mode", "Radio mode",
+                                       "Settings"])
+        self.assertIn("Current mix", self.mix_mode())
+
+    def test_a_favourite_station_is_not_offered_as_favourite_again(self):
+        main.save_radio_state({"phase": "playing", "favourite_id": "f1", "current_label": "Air - Kelly"})
+        self.root()
+        _url, item, _folder = item_by_label("Current station")
+        self.assertNotIn("Save as favourite station", [label for label, _a in item.context_menu])
 
 
 class SaveFromTheMixTest(KodiTestCase):

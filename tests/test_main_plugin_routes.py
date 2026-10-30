@@ -30,14 +30,14 @@ class RootIconTest(KodiTestCase):
 
     def test_each_entry_has_its_icon(self):
         self.assertEqual(self.icons(), {
-            "Generate mix from playing audio": "icon-generate.png", "Discovery mode": "icon-discovery.png",
-            "Radio mode": "icon-radio.png", "Saved mixes": "DefaultFolder.png", "Settings": "icon-settings.png"})
+            "Generate mix from playing audio": "icon-generate.png", "Mix mode": "icon-discovery.png",
+            "Radio mode": "icon-radio.png", "Settings": "icon-settings.png"})
         for _url, item, _folder in kodi.directory_items:
             self.assertEqual(item.getArt("thumb"), item.getArt("icon"))
 
     def test_the_icons_are_shipped(self):
         media = os.path.join(ADDON_DIR, "resources", "media")
-        for name in ("generate", "discovery", "searching", "radio", "playing", "settings", "skip", "stop"):
+        for name in ("generate", "discovery", "searching", "radio", "playing", "playing-red", "settings", "skip", "stop"):
             self.assertTrue(os.path.isfile(os.path.join(media, f"icon-{name}.png")), name)
         self.assertTrue(os.path.isfile(os.path.join(media, "LICENSE.txt")))  # Font Awesome: CC BY 4.0
         self.assertEqual(main.media_icon("radio"), os.path.join(main.ADDON.getAddonInfo("path"), "resources", "media",
@@ -45,23 +45,24 @@ class RootIconTest(KodiTestCase):
 
     def test_discovery_searching(self):
         main.save_discovery_state({"enabled": True})
-        self.assertEqual(self.icons()["Discovery mode"], "icon-searching.png")
+        self.assertEqual(self.icons()["Mix mode"], "icon-searching.png")
 
     def test_radio_scanning_and_playing(self):
         main.save_discovery_state({"enabled": True, "owner": "radio"})  # the radio's scan, not Discovery mode
         main.save_radio_state({"phase": "seeking"})
         icons = self.icons()
-        self.assertEqual((icons["Discovery mode"], icons["Radio mode"]), ("icon-discovery.png", "icon-searching.png"))
+        self.assertEqual((icons["Mix mode"], icons["Radio mode"]), ("icon-discovery.png", "icon-searching.png"))
         main.save_discovery_state({})
         main.save_radio_state({"phase": "playing"})
-        self.assertEqual(self.icons()["Radio mode"], "icon-playing.png")
+        icons = self.icons()  # the playing station is the Current station's
+        self.assertEqual((icons["Current station"], icons["Radio mode"]), ("icon-playing-red.png", "icon-radio.png"))
 
 
 class RootAndSettingsTest(KodiTestCase):
     def test_root_menu(self):
         self.run_plugin()
-        self.assertEqual(self.listed_labels(), ["Generate mix from playing audio", "Discovery mode", "Radio mode", "Saved mixes", "Settings"])
-        self.assertEqual(plugin_query(item_by_label("Saved mixes")[0])["action"], "saved_mixes")
+        self.assertEqual(self.listed_labels(), ["Generate mix from playing audio", "Mix mode", "Radio mode", "Settings"])
+        self.assertEqual(plugin_query(item_by_label("Mix mode")[0])["action"], "mix_mode")
         self.assertEqual(kodi.ended, [{"succeeded": True, "updateListing": False, "cacheToDisc": False}])
 
     def test_every_run_installs_the_keymap(self):
@@ -592,9 +593,9 @@ class FolderEntriesTest(SourceTestCase):
 
     def folder_actions(self):
         self.run_plugin()
-        self.run_plugin(action="discovery_mode")
+        self.run_plugin(action="mix_mode")
         main.save_discovery_state({"enabled": True})
-        self.run_plugin(action="discovery_mode")
+        self.run_plugin(action="mix_mode")
         actions = []
         for url, _item, is_folder in kodi.directory_items:
             action = plugin_query(url).get("action")
@@ -617,7 +618,7 @@ class FolderEntriesTest(SourceTestCase):
 
     def test_menus_offer_these_folders(self):
         self.assertEqual(sorted(self.folder_actions()), sorted([
-            "generate_current_mix", "discovery_mode", "radio_mode", "saved_mixes",
+            "generate_current_mix", "mix_mode", "radio_mode", "saved_mixes",
             "discovery_start", "discovery_mix_current", "discovery_next", "discovery_stop",
         ]))
 

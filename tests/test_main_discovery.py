@@ -35,20 +35,38 @@ class DiscoveryMenuTest(KodiTestCase):
         return [os.path.basename(item.getArt("icon")) for _url, item, _folder in kodi.directory_items]
 
     def test_inactive_menu(self):
-        self.run_plugin(action="discovery_mode")
-        self.assertEqual(self.listed_labels(), ["Start discovery mode"])
-        self.assertEqual(self.icons(), ["icon-searching.png"])  # it scans, like the radio
-        self.assertIn(("setPluginCategory", "Incipit discovery mode"), kodi.directory_calls)
+        self.run_plugin(action="mix_mode")
+        self.assertEqual(self.listed_labels(), ["Start discovery mode", "Saved mixes"])
+        self.assertEqual(self.icons(), ["icon-searching.png", "DefaultFolder.png"])  # it scans, like the radio
+        self.assertIn(("setPluginCategory", "Incipit mix mode"), kodi.directory_calls)
 
     def test_active_menu(self):
         main.save_discovery_state({"enabled": True, "current_label": "Artist 1 - Song 1"})
-        self.run_plugin(action="discovery_mode")
+        self.run_plugin(action="mix_mode")
         self.assertEqual(self.listed_labels(), [
             "Create mix from current discovery song", "Skip to next discovery song",
-            "Stop discovery mode",
+            "Stop discovery mode", "Saved mixes",
         ])
-        self.assertEqual(self.icons(), ["icon-generate.png", "icon-skip.png", "icon-stop.png"])
+        self.assertEqual(self.icons(), ["icon-generate.png", "icon-skip.png", "icon-stop.png", "DefaultFolder.png"])
         self.assertIn(("setPluginCategory", "Discovery mode: Artist 1 - Song 1"), kodi.directory_calls)
+
+
+class MixModeTest(KodiTestCase):
+    """Mix mode is built like Radio mode: Discovery's actions, then its keepers (the saved mixes)."""
+
+    def test_the_saved_mixes_folder_counts_them(self):
+        self.run_plugin(action="mix_mode")
+        url = {item.getLabel(): url for url, item, _folder in kodi.directory_items}["Saved mixes"]
+        self.assertEqual(plugin_query(url)["action"], "saved_mixes")
+        self.save_mix(["D:\\a.mp3", "D:\\b.mp3"], seed="D:\\a.mp3")
+        self.save_mix(["D:\\c.mp3", "D:\\d.mp3"], seed="D:\\c.mp3")
+        kodi.directory_items.clear()
+        self.run_plugin(action="mix_mode")
+        self.assertEqual(self.listed_labels(), ["Current mix", "Start discovery mode", "Saved mixes (2)"])
+
+    def test_the_old_discovery_screen_address_shows_mix_mode(self):
+        self.run_plugin(action="discovery_mode")  # e.g. a Kodi favourite made before 2026-10-30
+        self.assertIn(("setPluginCategory", "Incipit mix mode"), kodi.directory_calls)
 
 
 class DiscoveryArtworkTest(KodiTestCase):
@@ -56,13 +74,13 @@ class DiscoveryArtworkTest(KodiTestCase):
         main.save_discovery_state({"enabled": True, "current_song": "D:\\air.mp3", "current_label": "Air - Kelly"})
         kodi.info_labels["Player.Filenameandpath"] = "D:\\air.mp3"
         kodi.info_labels["Player.Art(fanart)"] = "https://assets.fanart.tv/fanart/air.jpg"
-        self.run_plugin(action="discovery_mode")
+        self.run_plugin(action="mix_mode")
         self.assertIn(("setPluginFanart", {"image": "https://assets.fanart.tv/fanart/air.jpg"}), kodi.directory_calls)
         self.assertEqual({item.getArt("fanart") for _url, item, _folder in kodi.directory_items},
                          {"https://assets.fanart.tv/fanart/air.jpg"})
         kodi.directory_items.clear()
-        self.run_plugin()  # the first screen's Discovery entry too
-        entry = {item.getLabel(): item for _url, item, _folder in kodi.directory_items}["Discovery mode"]
+        self.run_plugin()  # the first screen's Mix mode entry too
+        entry = {item.getLabel(): item for _url, item, _folder in kodi.directory_items}["Mix mode"]
         self.assertEqual(entry.getArt("fanart"), "https://assets.fanart.tv/fanart/air.jpg")
 
     def test_no_artwork_when_off_or_scanning_for_the_radio(self):
@@ -76,11 +94,11 @@ class DiscoveryArtworkTest(KodiTestCase):
 class DiscoveryMenuFocusTest(KodiTestCase):
     def test_a_redrawn_screen_has_the_same_urls_so_kodi_keeps_the_focus(self):
         main.save_discovery_state({"enabled": True, "current_label": "Artist 1 - Song 1"})
-        self.run_plugin(action="discovery_mode")
+        self.run_plugin(action="mix_mode")
         first = [url for url, _item, _folder in kodi.directory_items]
         kodi.directory_items.clear()
         main.save_discovery_state({"enabled": True, "current_label": "Artist 2 - Song 2"})
-        self.run_plugin(action="discovery_mode")
+        self.run_plugin(action="mix_mode")
         self.assertEqual([url for url, _item, _folder in kodi.directory_items], first)
 
 
@@ -105,7 +123,7 @@ class StartStopTest(KodiTestCase):
         self.assertEqual(kodi.player.time, float(first["offset"]))
 
         self.assertNotified("Discovery mode started.")
-        self.assertEqual(plugin_query(kodi.builtins[-1])["action"], "discovery_mode")
+        self.assertEqual(plugin_query(kodi.builtins[-1])["action"], "mix_mode")
 
     def test_start_with_empty_library(self):
         self.run_plugin(action="discovery_start")
