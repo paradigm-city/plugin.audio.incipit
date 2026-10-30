@@ -440,7 +440,7 @@ def choose_additions(selected: str, candidates: Sequence[str], count: int, cache
                      accept_borderline: bool = False, name: bool = False, max_batches: int = 2,
                      more: Optional[Callable[[List[str]], Sequence[str]]] = None,
                      perspective: Optional[str] = checks.DEFAULT_PERSPECTIVE,
-                     scale_entries: Sequence[Optional[dict]] = ()) -> dict:
+                     scale_entries: Sequence[Optional[dict]] = (), intent: str = "") -> dict:
     """"More like this" (and Radio refills): the selected song and the source's candidates for it form a small mix
     with the selected song as its seed. New tracks are held to the same rule as replacements: every check that is on
     must say a candidate fits what the selected song is about (strictness None: Character off; perspective None:
@@ -465,13 +465,15 @@ def choose_additions(selected: str, candidates: Sequence[str], count: int, cache
     Candidates are examined in batches until `count` are chosen or `max_batches` were examined (a stricter choice
     needs more to choose from). When the candidates run out first, more(chosen so far) may bring further ones
     (another candidate list); [] ends the search. Also returns examined (how many) and lists (candidate lists used).
-    Every batch is judged from the same listening perspective (checks.PERSPECTIVES)."""
+    Every batch is judged from the same listening perspective (checks.PERSPECTIVES). A given `intent` (what the
+    selected song is about, stated before: a favourite station's) is judged against from the first batch on, and not
+    stated again (no name then either)."""
     def step(text: str, fraction: Optional[float] = None) -> None:
         if progress:
             progress(text) if fraction is None else progress(text, fraction)
 
     candidates = list(candidates)
-    result = {"intent": "", "name": "", "chosen": [], "entries": {}, "seed_entry": None, "not_fitting": [],
+    result = {"intent": intent, "name": "", "chosen": [], "entries": {}, "seed_entry": None, "not_fitting": [],
               "checked": False, "examined": 0, "lists": 1 if candidates else 0}
     step("Looking up the tracks")
     selected_unit = resolve([selected])[0]
@@ -542,7 +544,8 @@ def choose_additions(selected: str, candidates: Sequence[str], count: int, cache
             result["intent"], verdicts = checks.state_intent(units, entries, ask, perspective)
         result["seed_entry"] = result["seed_entry"] or entries[0]
         if batches == 1 and perspective is not None:
-            trace.say(f"What {selected_unit['label']!r} is about ({perspective} perspective): {result['intent']}"
+            trace.say(f"What {selected_unit['label']!r} is about ({perspective} perspective"
+                      f"{', as stated before' if intent else ''}): {result['intent']}"
                       + (f"; name: {result['name']}" if result["name"] else ""))
         vector_entries = [reference] + entries[1:] if reference else entries
         analysis = analyze(units, vector_entries, verdicts, cache.library(), strictness, perspective, scale_entries)

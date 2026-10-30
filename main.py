@@ -5277,6 +5277,10 @@ def open_radio_station(seed: str, favourite: dict | None, progress) -> bool:
         "favourite_id": (favourite or {}).get("id", ""),
         "name": (favourite or {}).get("name", ""),
         "settings": favourite_settings(favourite),
+        # A favourite plays as it was saved: what its picked song is about, as described then, from the start (the
+        # start check judges against it instead of asking the AI again).
+        "intent": favourite_intent(favourite),
+        "saved_intent": favourite_intent(favourite),
         "queue": queue,
         "seen": [normalize_track_identity(track) for track in tracks],
         "current_position": 0,
@@ -8254,11 +8258,13 @@ def radio_more_candidates(seeds: list[str], seen, settings: dict | None = None, 
     return more
 
 
-def check_radio_start(tracks: list[str], count: int, check=None, settings: dict | None = None) -> dict:
+def check_radio_start(tracks: list[str], count: int, check=None, settings: dict | None = None,
+                      intent: str = "") -> dict:
     """A new station's first check: "More like this" for the picked song (tracks[0]). The candidates are its first
     songs (tracks[1:], a plain mix), then the largest mix for it, then (if too few fit) the
     mixes for the songs that fit; up to count songs that fit are chosen, in that order. As check_radio_refill,
-    plus the station's name (from the same AI call)."""
+    plus the station's name (from the same AI call). intent: a favourite's saved description of the picked song,
+    judged against instead of asking the AI again (it has its name too)."""
     seed = tracks[0]
     try:
         mix = fetch_mix(seed, mix_assist.MUSICIP_MAX_MIX, radio_mix_parameters(mix_assist.MUSICIP_MAX_MIX, settings))
@@ -8271,13 +8277,13 @@ def check_radio_start(tracks: list[str], count: int, check=None, settings: dict 
         if identity not in known:
             known.add(identity)
             candidates.append(track)
-    return check_radio_refill(seed, candidates, count, None, [seed], check=check, settings=settings, name=True,
-                              seen=[normalize_track_identity(track) for track in tracks])
+    return check_radio_refill(seed, candidates, count, None, [seed], check=check, settings=settings, name=not intent,
+                              seen=[normalize_track_identity(track) for track in tracks], intent=intent)
 
 
 def check_radio_refill(reference_song: str, candidates: list[str], count: int, reference: dict | None,
                        neighbours: list[str], check=None, settings: dict | None = None, name: bool = False,
-                       more_seeds: list[str] = (), seen=()) -> dict:
+                       more_seeds: list[str] = (), seen=(), intent: str = "") -> dict:
     """Choose a refill's songs from the candidates (in the mix's order): both signals must say they fit. Examines
     more the stricter the station (radio_check_batches); when the candidates run out first, further lists
     (radio_more_candidates: from the songs chosen, then more_seeds; without the station's songs, seen). Adds
@@ -8312,6 +8318,7 @@ def check_radio_refill(reference_song: str, candidates: list[str], count: int, r
             more=radio_more_candidates(list(more_seeds), seen, settings,
                                        picked=reference_song if get_radio_drift_half_life(settings) == 0 else ""),
             perspective=perspective,
+            intent=intent,
         )
     finally:
         store.close()
@@ -8616,7 +8623,7 @@ def show_radio_favourite_info(favourite_id: str) -> None:
         + (", borderline accepted" if station_accepts_borderline(favourite_settings(station)) else ""),
         f"Saved: {format_sidecar_ts(station.get('saved_ts'))}",
         "",
-        "A favourite always starts fresh from its picked song; its name and settings stay.",
+        "A favourite always starts fresh from its picked song; its name, settings and what it is about stay.",
     ])
     about = str(station.get("intent") or "").strip() or \
         "Not described yet. The AI describes a station when it checks its first songs."
@@ -8675,6 +8682,11 @@ def favourite_setting_labels(favourite: dict) -> tuple[str, str]:
     return openness, drift
 
 
+def favourite_intent(favourite: dict | None) -> str:
+    """What a favourite's picked song is about, as the AI described it when the station was saved ("" without)."""
+    return str((favourite or {}).get("intent") or "").strip()
+
+
 def favourite_perspective_label(favourite: dict) -> str:
     return perspective_label(station_setting_index(favourite_settings(favourite), "perspective"))
 
@@ -8709,6 +8721,10 @@ def change_favourite_setting(favourite_id: str, key: str) -> None:
     if choice is None or choice == current:
         return
     station[key] = choice
+    if key == "perspective" and station.get("intent"):  # its description was from the old perspective
+        log_radio(f"Radio mode: favourite {favourite_title(station)!r} has a new perspective; its saved description "
+                  f"is dropped (the AI describes the picked song again at its next start): {station['intent']!r}")
+        station["intent"] = ""
     save_radio_favourites(stations)
     state = get_radio_state()
     if state.get("favourite_id") == favourite_id:
@@ -8782,7 +8798,7 @@ def radio_info_tabs(state: dict, charts: bool = True) -> list[dict]:
         render_drift_chart(data, drift["image"], chart_font_path())
     return [
         {"title": "Overview", "text": build_radio_overview(state, events)},
-        {"title": "What it is about", "text": build_radio_about(events)},
+        {"title": "What it is about", "text": build_radio_about(events, str(state.get("saved_intent") or ""))},
         drift,
         {"title": f"History ({len(events)})", "text": build_radio_history(events)},
     ]
@@ -8831,17 +8847,21 @@ def build_radio_overview(state: dict, events: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def build_radio_about(events: list[dict]) -> str:
-    """What the station was about: the picked song's description, then each refill's, newest first."""
+def build_radio_about(events: list[dict], saved_intent: str = "") -> str:
+    """What the station was about: the picked song's description, then each refill's, newest first. A favourite's
+    picked song keeps the description it was saved with (saved_intent), shown from the start."""
     blocks = []
+    picked = "The picked song, as saved with the favourite" if saved_intent else "The picked song"
     for event in reversed(events):
         if not event.get("intent"):
             continue
         when = format_sidecar_ts(event.get("ts"))
         if event.get("kind") == "start_check":
-            blocks.append(f"{when}  The picked song:\n{event['intent']}")
+            blocks.append(f"{when}  {picked}:\n{event['intent']}")
         else:
             blocks.append(f"{when}  Refill from {event.get('seed', '?')}:\n{event['intent']}")
+    if not any(event.get("kind") == "start_check" and event.get("intent") for event in events) and saved_intent:
+        blocks.append(f"{picked}:\n{saved_intent}")  # until the start check is done
     if not blocks:
         return "Not worked out yet. The AI describes the picked song when it checks the station's first songs."
     return "\n\n".join(blocks)
