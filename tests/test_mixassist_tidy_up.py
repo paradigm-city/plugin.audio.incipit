@@ -451,6 +451,23 @@ class AssistTest(unittest.TestCase):
         self.assertEqual(assist.choose_additions("seed", ["cand1"], 1, self.store, self.ask, self.resolve,
                                                  artist_window=0)["name"], "")
 
+    def test_a_given_intent_is_judged_against_not_stated_again(self):
+        prompts, messages = [], []
+
+        def ask(system, schema, message):
+            prompts.append(system)
+            messages.append(message)
+            return self.ask(system, schema, message)
+
+        said = self.traced()
+        result = assist.choose_additions("seed", ["candbad", "cand3", "cand1", "cand2"], 2, self.store, ask,
+                                         self.resolve, artist_window=0, intent="night drive, cold synths")
+        self.assertEqual((result["intent"], result["name"], result["chosen"]),
+                         ("night drive, cold synths", "", ["cand3", "cand1"]))
+        self.assertEqual(prompts, [checks.intent_prompt()])  # judged against it: not described anew
+        self.assertIn("night drive, cold synths", messages[0])
+        self.assertIn("What 'seed' is about (mixed perspective, as stated before): night drive, cold synths", said)
+
     def test_more_like_this_looks_in_more_lists_until_enough_fit(self):
         asked = []
 

@@ -31,7 +31,7 @@ class RadioMixAssistTest(RadioBase):
             self.addCleanup(patcher.stop)
 
     @staticmethod
-    def all_first_songs_fit(tracks, count, check=None, settings=None):
+    def all_first_songs_fit(tracks, count, check=None, settings=None, intent=""):
         return {"chosen": tracks[1:][:count], "not_fitting": [], "intent": "dark metal", "reference": REFERENCE,
                 "name": "", "checked": True}
 
@@ -501,6 +501,50 @@ class RadioMixAssistTest(RadioBase):
         self.finish_check()
         self.assertEqual(self.refill_check.call_args[0][0], seed)
         self.assertEqual(self.refill_check.call_args[1]["settings"], {"openness": 4, "drift": 0})
+
+    def test_a_favourite_plays_with_the_description_it_was_saved_with(self):
+        self.start()
+        seed = self.radio()["seed"]
+        main.save_radio_favourites([{"id": "f1", "number": 1, "name": "Night Drive", "seed": seed,
+                                     "intent": "cold synths for a night drive"}])
+        self.run_plugin(action="radio_stop")
+        self.run_plugin(action="radio_play_favourite", id="f1")
+        radio = self.radio()
+        self.assertEqual((radio["intent"], radio["saved_intent"]), ("cold synths for a night drive",) * 2)
+        about = main.radio_info_tabs(radio, charts=False)[1]["text"]  # before the start check
+        self.assertEqual(about, "The picked song, as saved with the favourite:\ncold synths for a night drive")
+        self.start_result([], intent="cold synths for a night drive")  # the check returns the intent it was given
+        self.tick()  # the start check judges against it
+        self.finish_check()
+        self.assertEqual(self.start_check.call_args[1]["intent"], "cold synths for a night drive")
+        radio = self.tick()
+        self.assertEqual(radio["name"], "Night Drive")
+        about = main.radio_info_tabs(radio, charts=False)[1]["text"]
+        self.assertIn("  The picked song, as saved with the favourite:\ncold synths for a night drive", about)
+        self.assertEqual(about.count("cold synths"), 1)
+
+    def test_a_new_station_and_an_old_favourite_are_described_by_the_ai(self):
+        self.start()
+        self.tick()
+        self.finish_check()
+        self.assertEqual(self.start_check.call_args[1]["intent"], "")
+        seed = self.radio()["seed"]
+        main.save_radio_favourites([{"id": "f1", "number": 1, "name": "Night Drive", "seed": seed}])  # saved without
+        self.run_plugin(action="radio_stop")
+        self.run_plugin(action="radio_play_favourite", id="f1")
+        self.assertEqual(self.radio()["saved_intent"], "")
+        self.assertIn("Not worked out yet", main.radio_info_tabs(self.radio(), charts=False)[1]["text"])
+
+    def test_a_new_perspective_drops_the_saved_description(self):
+        main.save_radio_favourites([{"id": "f1", "number": 1, "name": "Night Drive", "seed": "D:\\x.mp3",
+                                     "perspective": 0, "intent": "cold synths"}])
+        with mock.patch.object(main, "select_perspective", return_value=2):
+            self.run_plugin(action="radio_favourite_setting", id="f1", setting="perspective")
+        self.assertEqual(main.load_radio_favourites()[0]["intent"], "")
+        main.save_radio_favourites([dict(main.load_radio_favourites()[0], intent="cold synths")])
+        with mock.patch.object(main, "dialog_slider_int", return_value=5):
+            self.run_plugin(action="radio_favourite_setting", id="f1", setting="variety")
+        self.assertEqual(main.load_radio_favourites()[0]["intent"], "cold synths")  # other settings keep it
 
     def test_the_settings_reach_the_checks(self):
         self.assertEqual(main.get_station_strictness({"openness": 4}), (1.5, False))
