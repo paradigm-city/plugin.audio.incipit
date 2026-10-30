@@ -340,6 +340,26 @@ def get_radio_reject_size() -> int:
     return max(0, min(20, get_setting_int("radio_reject_size", 0)))
 
 
+# Songs per refill of a checked station, and its first songs (2026-10-30 a setting, for experiments with drift; it
+# was 6, before 2026-10-24 8): small steps meander smoothly, larger ones move in jumps.
+RADIO_BATCH_SIZE_DEFAULT = 6
+RADIO_BATCH_SIZE_RANGE = (2, 10)
+
+
+def get_radio_batch_size() -> int:
+    """Setting "Songs per refill"."""
+    low, high = RADIO_BATCH_SIZE_RANGE
+    return max(low, min(high, get_setting_int("radio_batch_size", 6)))  # RADIO_BATCH_SIZE_DEFAULT
+
+
+def station_batch_size(state: dict) -> int:
+    """The playing station's songs per refill: the setting when it started (a change applies to the next station);
+    the setting now for a station from before 2026-10-30."""
+    low, high = RADIO_BATCH_SIZE_RANGE
+    value = state.get("batch")
+    return value if isinstance(value, int) and not isinstance(value, bool) and low <= value <= high else get_radio_batch_size()
+
+
 def radio_naming_enabled() -> bool:
     """Setting "Name stations": the AI's short name instead of the picked song."""
     return get_setting_bool("radio_name_stations", True)
@@ -5155,12 +5175,10 @@ def start_radio_from_song(seed: str) -> None:
     start_radio_station(seed)
 
 
-RADIO_ASSISTED_START_SIZE = 6  # with AI Mix Assist: one refill's worth, so the station soon starts to meander
-
-
 def start_radio_station(seed: str, favourite: dict | None = None) -> bool:
     """Play an endless mix seeded with seed, using the configured mix parameters. False on failure.
-    With AI Mix Assist the station starts small; otherwise with the mix size. A station picked from a song that is a
+    With the checks the station starts with one refill's worth ("Songs per refill"), so it soon starts to meander;
+    otherwise with the mix size. A station picked from a song that is a
     favourite (or started from one) is that favourite: it keeps the favourite's name.
     A progress bar ("Opening <station>...") shows the steps until the music plays."""
     favourite = favourite or find_radio_favourite(seed=seed)
@@ -5180,7 +5198,7 @@ def radio_seed_label(seed: str) -> str:
     return f"{artist} - {title}" if artist and title else title or path_to_label(seed)
 
 
-def describe_station_start(params: dict, favourite: dict | None, assisted: bool) -> str:
+def describe_station_start(params: dict, favourite: dict | None, assisted: bool, batch: int = 0) -> str:
     """A starting station's mix parameters and AI settings, for the log."""
     station = f"favourite {favourite.get('name', '')!r} ({favourite.get('id', '')})" if favourite else "new station"
     mix = f"size {params.get('size')}, {describe_mix_parameters(compact_mix_generation_parameters(params))}"
@@ -5195,12 +5213,14 @@ def describe_station_start(params: dict, favourite: dict | None, assisted: bool)
     return (f"{station} | mix: {mix} | checks: on, model {mix_assist_claude.DEFAULT_MODEL}, effort "
             f"{mix_assist_claude.DEFAULT_EFFORT} | Character {mix_openness_label(openness)} ({source['openness']}; "
             f"limit {limit}) | Intent: borderline {'accepted' if borderline else 'rejected'} | drift {RADIO_DRIFT_LABELS[drift]} "
-            f"({source['drift']}; {f'half-life {half_life} songs' if half_life else 'no drift'}) | perspective "
-            f"{perspective_label(station_setting_index(settings, 'perspective'))} ({source['perspective']})")
+            f"({source['drift']}; {f'half-life {half_life} songs' if half_life else 'no drift'}) | {batch} songs per "
+            f"refill | perspective {perspective_label(station_setting_index(settings, 'perspective'))} "
+            f"({source['perspective']})")
 
 
 def open_radio_station(seed: str, favourite: dict | None, progress) -> bool:
-    size = RADIO_ASSISTED_START_SIZE if mix_assist_for_radio() else get_playlist_size()
+    batch = get_radio_batch_size()
+    size = batch if mix_assist_for_radio() else get_playlist_size()
     params = radio_mix_parameters(size, favourite_settings(favourite))
     try:
         tracks = fetch_mix(seed, size, params, progress=progress)
@@ -5243,9 +5263,11 @@ def open_radio_station(seed: str, favourite: dict | None, progress) -> bool:
         "openness": mix_openness_label(station_setting_index(favourite_settings(favourite), "openness")),
         "drift": RADIO_DRIFT_LABELS[max(0, min(2, station_setting_index(favourite_settings(favourite), "drift")))],
         "perspective": perspective_label(station_setting_index(favourite_settings(favourite), "perspective")),
+        "batch": batch,
     }
     save_radio_state({
         "events": [started_event],
+        "batch": batch,  # songs per refill for this station (station_batch_size)
         "played": 1,
         "phase": "playing",
         "started_ts": started_ts or now,
@@ -5275,7 +5297,8 @@ def open_radio_station(seed: str, favourite: dict | None, progress) -> bool:
         return False
 
     log_radio(f"Radio mode: started from {seed!r} with {len(tracks)} song(s).", xbmc.LOGINFO)
-    log_radio(f"Radio mode: station parameters: {describe_station_start(params, favourite, assisted)}", xbmc.LOGINFO)
+    log_radio(f"Radio mode: station parameters: {describe_station_start(params, favourite, assisted, batch)}",
+              xbmc.LOGINFO)
     notify(plain(f"Playing {favourite_title(favourite)}.") if favourite else "Station picked.")
     return True
 
@@ -8797,6 +8820,7 @@ def build_radio_overview(state: dict, events: list[dict]) -> str:
     if started.get("assisted"):
         lines.append(f"Checks: on | Character: {started.get('openness')} | "
                      f"Drift: {started.get('drift')}"
+                     + (f" | Songs per refill: {started['batch']}" if started.get("batch") else "")
                      + (f" | Intent: {started['perspective']}" if started.get("perspective") else ""))
     else:
         lines.append("Checks: off for this station")

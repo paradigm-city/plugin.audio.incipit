@@ -149,6 +149,12 @@
                     </constraints>
                     <control type="spinner" format="string"/>
                 </setting>
+                <setting id="radio_batch_size" type="integer" label="30631" help="30632">
+                    <level>0</level>
+                    <default>6</default>
+                    <constraints><minimum>2</minimum><step>1</step><maximum>10</maximum></constraints>
+                    <control type="slider" format="integer"><popup>false</popup></control>
+                </setting>
             </group>
             <group id="4" label="30432">
                 <setting id="mix_assist_station_strictness" type="integer" label="30609" help="30610">

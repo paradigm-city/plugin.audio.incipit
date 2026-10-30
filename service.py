@@ -1191,7 +1191,6 @@ RADIO_MAX_SEEN = 5000            # songs remembered per session to avoid repeats
 RADIO_MAX_REJECTED = 5000        # songs the station's checks turned down, remembered while it plays
 RADIO_CHECKED_THRESHOLD = 3      # with AI Mix Assist: top up when fewer songs remain (the check takes 1-2 minutes)
 RADIO_CHECK_SIZE = 75            # candidates per checked refill (MusicIP's maximum was 75)
-RADIO_CHECKED_BATCH = 6          # songs per checked refill (15-40 minutes): small steps for a smooth meander; 6 is an experiment (was 8)
 RADIO_START_KEEP_NEXT_SECONDS = 30  # the start check leaves the next song alone when the playing one ends sooner
 
 # One AI Mix Assist check at a time, in a background thread; the radio tick applies its result.
@@ -1416,7 +1415,7 @@ def start_radio_start_check(state: dict, plugin) -> None:
                  f"for the picked song.")
         settings = state.get("settings") if isinstance(state.get("settings"), dict) else None
         start_radio_check(state, "start", lambda check: plugin.check_radio_start(
-            tracks, RADIO_CHECKED_BATCH, check=check, settings=settings), seed=seed)
+            tracks, plugin.station_batch_size(state), check=check, settings=settings), seed=seed)
 
 
 def playing_song_seconds_left() -> float:
@@ -1737,18 +1736,19 @@ def refill_radio_queue(state: dict, checked: bool = False) -> int:
         # Songs the station turned down before aren't judged again; they may still keep it from running dry.
         rejected = rejected_songs(state, plugin)
         candidates = [track for track in new_tracks if plugin.normalize_track_identity(track) not in rejected]
-        fallback = list(new_tracks[:RADIO_CHECKED_BATCH])
+        batch = plugin.station_batch_size(state)  # songs per checked refill ("Songs per refill")
+        fallback = list(new_tracks[:batch])
         seeds = [str(entry["file"]) for entry in refill_seed_entries(state, True)]
         more_seeds = seeds[seeds.index(str(used_entry["file"])) + 1:] if str(used_entry["file"]) in seeds else []
         seen = list(seen_set | rejected)
         if len(candidates) < len(new_tracks):
             log_radio(f"Radio mode: {len(new_tracks) - len(candidates)} of the sound engine's suggestions were turned down "
                       f"earlier on this station ({len(rejected)} so far); they aren't checked again.")
-        log_radio(f"Radio mode: the checks pick {RADIO_CHECKED_BATCH} song(s) from the sound engine's {len(candidates)} "
+        log_radio(f"Radio mode: the checks pick {batch} song(s) from the sound engine's {len(candidates)} "
                  f"suggestion(s) for {used_seed!r} (closest first, checked in groups).")
         start_radio_check(
             state, "refill",
-            lambda check: plugin.check_radio_refill(reference_song, candidates, RADIO_CHECKED_BATCH, reference, neighbours,
+            lambda check: plugin.check_radio_refill(reference_song, candidates, batch, reference, neighbours,
                                                     check=check, settings=settings, more_seeds=more_seeds, seen=seen),
             fallback=fallback, seed=used_seed)
         return 0
@@ -2930,7 +2930,8 @@ def reload_settings() -> None:
     logs.ADDON = xbmcaddon.Addon(logs.ADDON_ID)
     log_general(f"Settings changed: the service reads them again. Mixing: size {plugin.get_playlist_size()}, variety "
                 f"{plugin.get_mix_variety()}, no artist repeat within {plugin.get_mix_reject_size()}; Radio: variety "
-                f"{plugin.get_radio_variety()}, no artist repeat within {plugin.get_radio_reject_size()}. "
+                f"{plugin.get_radio_variety()}, no artist repeat within {plugin.get_radio_reject_size()}, "
+                f"{plugin.get_radio_batch_size()} songs per refill (from the next station on). "
                 f"Logging: {logs.describe_switches()}.", always=True)
 
 
