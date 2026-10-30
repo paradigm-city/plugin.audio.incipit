@@ -69,7 +69,31 @@ class RadioMixAssistTest(RadioBase):
 
     def test_a_station_starts_small(self):
         self.start()
-        self.assertEqual(self.source.mix_requests()[0]["size"], str(main.RADIO_ASSISTED_START_SIZE))
+        self.assertEqual(self.source.mix_requests()[0]["size"], str(main.RADIO_BATCH_SIZE_DEFAULT))
+
+    def test_songs_per_refill_is_a_setting_kept_by_the_station(self):
+        kodi.settings["radio_batch_size"] = "3"
+        self.start()
+        self.assertEqual(self.source.mix_requests()[0]["size"], "3")  # it starts with one refill's worth
+        self.assertEqual(self.radio()["batch"], 3)
+        self.tick()
+        self.finish_check()
+        self.assertEqual(self.start_check.call_args[0][1], 3)
+        kodi.settings["radio_batch_size"] = "9"  # for the next station
+        self.tick()  # applies the start check
+        kodi.go_to(len(self.files()) - 1)
+        self.tick()  # the refill check starts
+        self.finish_check()
+        self.assertEqual(self.refill_check.call_args[0][2], 3)
+        self.assertIn("Songs per refill: 3", main.build_radio_overview(self.radio(), self.radio()["events"]))
+
+    def test_songs_per_refill_stays_within_2_and_10(self):
+        for value, expected in (("1", 2), ("2", 2), ("10", 10), ("25", 10), ("", 6)):
+            with self.subTest(value=value):
+                kodi.settings["radio_batch_size"] = value
+                self.assertEqual(main.get_radio_batch_size(), expected)
+        self.assertEqual(main.station_batch_size({"batch": 4}), 4)
+        self.assertEqual(main.station_batch_size({}), 6)  # a station from before: the setting
 
     def new_songs(self, count):
         """Library songs the station hasn't queued."""
@@ -86,7 +110,7 @@ class RadioMixAssistTest(RadioBase):
         radio = self.tick()
         tracks, count = self.start_check.call_args[0][:2]
         self.assertEqual(tracks, queue)  # the picked song first, then the first songs
-        self.assertEqual(count, service.RADIO_CHECKED_BATCH)
+        self.assertEqual(count, main.RADIO_BATCH_SIZE_DEFAULT)
         self.assertEqual(self.files(), [queue[0], queue[2], queue[4]] + new)  # the next song left too
         self.assertEqual(kodi.playlist_files(), self.files())
         self.assertEqual([entry.get("checked", False) for entry in radio["queue"]], [False, True, True, True, True, True])
@@ -279,7 +303,7 @@ class RadioMixAssistTest(RadioBase):
         radio = self.tick()
         reference_song, candidates, count, reference, neighbours = self.refill_check.call_args[0]
         self.assertEqual(reference_song, before[-1])  # "Drift slowly": judged against the refill's seed
-        self.assertEqual((count, reference, neighbours), (service.RADIO_CHECKED_BATCH, REFERENCE, before))
+        self.assertEqual((count, reference, neighbours), (main.RADIO_BATCH_SIZE_DEFAULT, REFERENCE, before))
         self.assertEqual(self.files(), before + candidates[::2])
         self.assertEqual(kodi.playlist_files(), self.files())
         self.assertEqual(radio["reference"], {"energy": 6, "sounding_year": 1984})
@@ -328,7 +352,7 @@ class RadioMixAssistTest(RadioBase):
         kodi.go_to(len(before) - 1)  # the last song plays
         self.tick()
         fallback = self.files()[len(before):]
-        self.assertEqual(fallback, self.refill_check.call_args[0][1][:service.RADIO_CHECKED_BATCH])
+        self.assertEqual(fallback, self.refill_check.call_args[0][1][:main.RADIO_BATCH_SIZE_DEFAULT])
         release.set()
         self.finish_check()
         radio = self.tick()

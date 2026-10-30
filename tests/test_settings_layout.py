@@ -29,7 +29,7 @@ class LayoutTest(unittest.TestCase):
                         "mix_assist_mix_strictness", "mix_assist_mix_perspective", "discovery_excerpt_seconds"):
             self.assertIn(setting, found["mix"])
         for setting in ("radio_variety", "radio_reject_size", "radio_name_stations", "mix_assist_station_strictness",
-                        "mix_assist_station_perspective", "mix_assist_radio_drift", "radio_excerpt_seconds",
+                        "mix_assist_station_perspective", "mix_assist_radio_drift", "radio_batch_size", "radio_excerpt_seconds",
                         "radio_offset_percent"):
             self.assertIn(setting, found["radio"])
 

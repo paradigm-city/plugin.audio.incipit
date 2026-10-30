@@ -17,7 +17,7 @@ Kodi music add-on that can create a mix from the currently playing audio track o
 ## Settings
 
 - **Mixing**: mix parameters (playlist size, variety, no artist repeat, names), which mixes are checked (new mixes, "More like this"), Character (tolerance, or off), Intent (perspective, or off; accept borderline), Discovery mode (excerpt length, start offset) and saved mixes (consistency check, its interval, automatic repair)
-- **Radio**: the stations' own variety, artist rule and names, checks (on, drift), Character, Intent and "Scan stations" (excerpt length, start offset)
+- **Radio**: the stations' own variety, artist rule and names, checks (on, drift, songs per refill), Character, Intent and "Scan stations" (excerpt length, start offset)
 
 A mix is made in three steps: **Source** (the sound engine's songs that sound alike, as far out as the variety lets it reach), **Character** (each song's 8-value profile against the seed's, on a fixed scale for that seed) and **Intent** (the AI's judgement of what the seed is about, from a listening perspective). Character and Intent can each be switched off.
 

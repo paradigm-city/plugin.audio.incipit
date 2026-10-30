@@ -328,6 +328,14 @@ msgctxt "#30630"
 msgid "How many seconds of each song \"Scan stations\" plays. Discovery mode has its own."
 msgstr ""
 
+msgctxt "#30631"
+msgid "Songs per refill"
+msgstr ""
+
+msgctxt "#30632"
+msgid "How many songs the checks add to a station at a time, and how many it starts with. Each refill is chosen around the station's latest song, so small refills let it meander in small steps and larger ones move in jumps. 6 is the tested default. Applies to the next station you start; without the checks a station is refilled by the mix size."
+msgstr ""
+
 msgctxt "#30500"
 msgid "Discovery mode"
 msgstr ""
