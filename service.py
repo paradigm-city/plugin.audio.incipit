@@ -1414,8 +1414,12 @@ def start_radio_start_check(state: dict, plugin) -> None:
         log_radio(f"Radio mode: the checks look at the station's first {len(tracks) - 1} song(s) and the mix "
                  f"for the picked song.")
         settings = state.get("settings") if isinstance(state.get("settings"), dict) else None
+        saved_intent = str(state.get("saved_intent") or "")  # a favourite's: judged against, not asked for again
+        if saved_intent:
+            log_radio(f"Radio mode: the favourite's saved description of the picked song is judged against: "
+                      f"{saved_intent!r}")
         start_radio_check(state, "start", lambda check: plugin.check_radio_start(
-            tracks, plugin.station_batch_size(state), check=check, settings=settings), seed=seed)
+            tracks, plugin.station_batch_size(state), check=check, settings=settings, intent=saved_intent), seed=seed)
 
 
 def playing_song_seconds_left() -> float:
