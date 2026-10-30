@@ -1,6 +1,6 @@
-# Incipit, a Kodi Add-on (formerly MusicIP)
+# Incipit, a Kodi Add-on
 
-Kodi music add-on that can create a mix from the currently playing audio track or from a song selected in the Kodi music library. The mixes come from the sound engine: sound prints made on this computer from a few 10-second snippets of every song (`soundprint/`). Until 2026-10-29 they came from a local MusicIP server; that code is kept dormant in `musicip_dormant.py`.
+Kodi music add-on that can create a mix from the currently playing audio track or from a song selected in the Kodi music library. The mixes come from the sound engine: sound prints made on this computer from a few 10-second snippets of every song (`soundprint/`).
 
 ## Features
 
@@ -24,9 +24,33 @@ A mix is made in three steps: **Source** (the sound engine's songs that sound al
 - **Advanced**: the sound engine (automatic analysis, status, analyse now, stop, set-up) and Claude Code (CLI path, statistics)
 - **Logging**: one switch per area (General, Mixing, AI and checks, Radio, Discovery mode, Saved-mix checks). With a switch on, that area writes detailed messages to `kodi.log`, each line tagged with its area, e.g. `[plugin.audio.incipit] [radio] ...`. Errors and warnings are always logged. The AI area logs every request to the AI in full, with its answer.
 
+## Prerequisites
+
+Incipit runs inside Kodi. Neither VS Code nor a Claude subscription is needed: without a subscription you get the sound engine's mixes, Radio and Discovery mode; only the AI checks (Character and Intent) and the AI's names for mixes and stations are missing.
+
+- **Kodi 21 (Omega)**, with your music scanned into Kodi's music library (browsing folders is not enough). Tested on Windows. Incipit reads Kodi's own music database (`MyMusic*.db`), so a library shared through a MySQL or MariaDB server is not analysed.
+- **Music as local files**, on a local drive or a mapped network drive (e.g. `M:\`). Songs that Kodi reaches through a network address (`smb://`, `nfs://`) are left out of the analysis.
+- **Python 3.9 or later** from [python.org](https://www.python.org/downloads/), for the sound engine's set-up only (Kodi's built-in Python can't make the environment it needs). On Windows, tick "Add python.exe to PATH" in the installer, or enter the path to `python.exe` in the add-on's settings (**Advanced** -> **Python for the set-up**). Your Python stays as it is: the set-up makes its own environment in the add-on's data folder.
+- **An internet connection for the set-up**: it downloads numpy, onnxruntime and PyAV (about 60 MB) and the DCLAP sound model (22 MB, licence AGPL-3.0, not part of the add-on). After that the sound engine works offline.
+- **Disk space**: about 200 MB for the environment, plus about 3.5 MB per 1,000 songs for the sound prints (about 550 MB for 153,000 songs).
+- **Time for the first analysis**: about 0.4 s per song on a 4-core PC, in the background at low priority; 153,000 songs took about 22 hours. A stopped analysis goes on where it stopped, and afterwards only new songs are analysed. No graphics card is needed.
+
+### Without Claude: switch the AI checks off
+
+Character and Intent are on by default and ask Claude through the Claude Code CLI. Without it, switch both off for mixes and for Radio:
+
+- **Mixing** -> **Tolerance**: Off, and **Mixing** -> **Perspective**: Off
+- **Radio** -> **Tolerance**: Off, and **Radio** -> **Perspective**: Off
+
+With both off, nothing is asked of an AI: a mix is the sound engine's songs as they are, a station plays its refills unchecked, and mixes and stations are named after their seed song (you can still name them yourself). Variety and "No artist repeat" still shape every mix.
+
+### With a Claude subscription (optional)
+
+For the checks, Incipit needs a Claude Pro or Max subscription and the Claude Code CLI, installed on its own (VS Code is not needed). On Windows, in PowerShell: `irm https://claude.ai/install.ps1 | iex`, then run `claude` once and log in. Incipit finds the CLI by itself (or enter its path under **Advanced** -> **Claude Code CLI**). It always uses the subscription: an Anthropic API key in the environment is ignored.
+
 ## Install
 
-1. Put the add-on files into a folder named `plugin.audio.incipit` (until 2026-10-29 `plugin.audio.musicip`; the add-on takes that one's data over at its first start).
+1. Put the add-on files into a folder named `plugin.audio.incipit`.
 2. Zip that folder itself, not only its contents.
 3. In Kodi, go to **Add-ons** -> **Install from ZIP file**.
 4. Install the zip.
@@ -69,22 +93,11 @@ Key documented flows:
 - External playback takeover handling
 - Repair readiness and auto-repair decision flow
 
-## MusicIP API request compatibility note 1.0.89
-
-Outgoing MusicIP mix requests now use the canonical API key casing for track-based size and artist-repeat rejection:
-
-- `sizeType=tracks`
-- `rejectType=tracks`
-
-The add-on still keeps internal configuration and sidecar keys lowercase, but maps them to the expected API parameter names when building the HTTP request.
-
-HTTP errors from the MusicIP server are now shown as a visible item in the plugin view instead of causing Kodi to report a failed directory listing.
-
 ## Generate mix autoplay note 1.0.90
 
 `Generate mix from playing audio` now behaves like the Discovery mix path after successful mix creation:
 
-- generate the MusicIP mix
+- generate the mix
 - save the mix
 - start playback immediately
 - show the generated mix view
@@ -130,10 +143,10 @@ Mix rows now expose keyboard shortcut actions in the Kodi music window:
 The keymap is shipped as:
 
 ```text
-resources/keymaps/musicip_mix_editing.xml
+resources/keymaps/incipit_mix_editing.xml
 ```
 
-The shortcut handlers only act on selected MusicIP mix rows that expose the matching `MusicIP.MixAction.*` properties. Discovery mode is unchanged.
+The shortcut handlers only act on selected mix rows. Discovery mode is unchanged.
 
 ## Mix editing keyboard shortcuts update 1.0.94
 
@@ -160,7 +173,7 @@ Discovery mode remains unchanged.
 The mix editing keymap is now actively installed into Kodi's user keymap folder:
 
 ```text
-special://profile/keymaps/musicip_mix_editing.xml
+special://profile/keymaps/incipit_mix_editing.xml
 ```
 
 and reloaded with `ReloadKeymaps` when it changes.
@@ -260,7 +273,7 @@ The background service processes the queue in small batches, writes refreshed da
 track_metadata_cache.db
 ```
 
-and updates the relevant mix sidecar snapshots. If the currently visible container is a MusicIP mix view, the service refreshes it once after a successful batch.
+and updates the relevant mix sidecar snapshots. If the currently visible container is a mix view, the service refreshes it once after a successful batch.
 
 Discovery mode behavior remains unchanged.
 
@@ -278,12 +291,3 @@ Flow:
 4. when the user moves the selection, the service rebuilds the container once
 
 This presents updated metadata without requiring manual navigation out and back into the mix, while avoiding sudden list rebuilds during passive viewing.
-
-## MusicIP library reload in the background
-
-Mixes no longer ask MusicIP to reload its library first (that made every mix slower). Instead the background service asks MusicIP to reload (`/server/reload`):
-
-- about three times a day (every 8 hours; the time of the last reload is kept across Kodi restarts, and Kodi's first two minutes are left alone)
-- right after Kodi has finished a music library scan, so songs new to Kodi's library reach the mixes too
-
-A reload scans MusicIP's music folders and takes in new songs, one at a time and minutes each, and MusicIP mixes little else meanwhile. So it waits while Radio or Discovery plays (they need MusicIP's mixes) and starts once they stop. When MusicIP doesn't answer within two minutes, it is still taking in songs and goes on by itself; this is logged, not treated as a failure. The reload runs in its own thread, so the service keeps going meanwhile. A failed reload (MusicIP not running) is logged and tried again after 30 minutes.
