@@ -24,7 +24,10 @@ it down. With both checks off the mix is the source's as it is, and nothing is a
 
 Mixing and Radio have their own values for all of these (Settings > **Mixing**, **Radio**). A mix can have its own
 Character and Intent ("Checks..." in its context menu); a favourite station keeps all of its own ("Station
-settings...").
+settings..."). A favourite also keeps what its picked song is about, as the AI described it when the station was
+saved (since 2026-10-30): it plays with that description from the start, and its first check judges against it
+instead of asking the AI again; a new perspective for the favourite drops it (the AI describes the song again at
+the next start). Its refills are described anew, as on any station.
 
 ## Source: the sound engine
 
