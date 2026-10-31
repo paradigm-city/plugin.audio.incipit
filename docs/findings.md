@@ -97,6 +97,12 @@ Not fixed. The planned fix is the library sync: remove a song's sound print when
 
 ## Resolved
 
+### F46 · The sound engine's analysis went on after Kodi had closed
+
+Found on 2026-10-31 by the listener: after quitting Kodi, the analysis's Python processes (one main process and its workers, at idle priority) kept running until the analysis was done. This was by design until now: `soundprint.client.start_analysis` starts the analysis detached and breaks it away from Kodi's job object, so that Kodi neither waits for it nor kills it halfway, and the setting's help said it "goes on even when Kodi is closed". Nothing told the analysis that Kodi had gone.
+
+Fixed in 9352fbd (2026-10-31): the add-on passes Kodi's process number (`--kodi-pid`; the add-on runs inside Kodi's process), and the analysis follows that process (`soundprint.state.Watched`, which on Windows holds a handle so the number can't pass to another process). Once Kodi has ended, the analysis stops the way the stop file stops it: after the songs in hand, with the store committed and the workers ended; its status says `"stopped_by": "kodi_closed"` and the log says so. Two minutes after Kodi's next start the service starts it again, as it does for an analysis that ended without finishing (killed, or the computer switched off); this is looked at once per start. An analysis stopped by hand waits for its usual time.
+
 ### F45 · The sound engine analyses a song again when only the case of its path changes
 
 Found on 2026-10-31 by the listener: after about 10 new albums, the analysis took on 19,423 songs instead of about 80. The sound store (`soundprint/store.py`) keys a song by its path exactly as Kodi lists it, and `soundprint.analyse.plan` treats a path it doesn't know as a new song. Another add-on had started Kodi scans with lower-cased folders (`d:\music\#modernrock\`, from `os.path.normcase`; fixed there since). Kodi compares paths with case, so it moved about 16,000 songs of three genre folders (#modernrock, #hardrock, #metalcore_modern) to the `d:\` spelling and listed about 3,850 of them twice, under both spellings. For the sound engine every `d:\` path was new, although the file, its size and its change time were the same. The run started at 12:48 analyses them again (about 2 hours), and the old `D:\` rows stay in the store (F36): a song stored under both spellings has the same sound print twice and can come twice into a mix, since the `D:\` copy isn't found in Kodi's library for the "same song only once" rule.
