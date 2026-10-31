@@ -120,6 +120,12 @@ class ClientTest(unittest.TestCase):
             self.assertEqual(kwargs["creationflags"], client.CREATE_NO_WINDOW | client.CREATE_NEW_PROCESS_GROUP
                              | client.CREATE_BREAKAWAY_FROM_JOB)
 
+    def test_an_analysis_started_by_kodi_follows_kodis_process(self):
+        started = []
+        client.start_analysis(self.data, "U", popen=lambda cmd, **kwargs: started.append(cmd) or SimpleNamespace(pid=1),
+                              kodi_pid=1472)
+        self.assertEqual(started[0][-3:], ["analyse", "--kodi-pid", "1472"])
+
     def test_without_leave_to_break_away_from_kodis_job_it_starts_inside_it(self):
         flags = []
 
@@ -207,6 +213,11 @@ class StatusTextTest(unittest.TestCase):
         self.assertIn("stopped today at 12:00 after 3 of 9", self.lines({"state": "stopped", "done": 3, "todo": 9})[1])
         self.assertIn("failed today at 12:00: OSError: disk", self.lines({"state": "failed", "error": "OSError: disk"})[1])
 
+    def test_an_analysis_that_stopped_with_kodi(self):
+        line = self.lines({"state": "stopped", "stopped_by": "kodi_closed", "done": 300, "todo": 1200})[1]
+        self.assertEqual(line, "The last analysis stopped when Kodi closed (today at 12:00) after 300 of 1,200 "
+                               "song(s). It goes on where it stopped two minutes after Kodi starts.")
+
     def test_a_finished_analysis_names_the_songs_taken_over(self):
         line = self.lines({"state": "finished", "done": 76, "taken_over": 11322, "missing": 0})[1]
         self.assertIn("76 song(s) analysed, 0 could not be read, 11,322 taken over (the same file, its path spelled "
@@ -282,6 +293,7 @@ class SoundEngineSettingsTest(KodiTestCase):
                                return_value={"started": True, "pid": 7, "command": ["py"]}) as start:
             self.run_plugin(action="soundprint_analyse")
         self.assertEqual(start.call_args[0][0], main.soundprint_data())
+        self.assertEqual(start.call_args[1]["kodi_pid"], os.getpid())  # the add-on runs inside Kodi's process
         self.assertNotified("analyses new songs in the background")
         self.assertIn("Sound engine analysis started (asked for in the settings): process 7", kodi.log_text())
 
@@ -354,6 +366,41 @@ class SoundEngineAnalysisTickTest(SourceTestCase):
         self.assertTrue(self.tick())
         self.assertIn("(after Kodi's library scan)", kodi.log_text())
         self.assertFalse(self.tick(1))
+
+    def last_analysis(self, **status):
+        os.makedirs(main.soundprint_data(), exist_ok=True)
+        state.write_status(main.soundprint_data(), status)
+
+    def test_an_analysis_that_stopped_with_kodi_goes_on_after_kodis_start(self):
+        service.save_json_file(service.soundprint_analysis_state_path(), {"last_ts": int(self.clock.now)})
+        self.last_analysis(state="stopped", stopped_by="kodi_closed", done=300, todo=1200)
+        self.assertFalse(self.tick())  # not while Kodi starts
+        self.assertTrue(self.tick(service.LIBRARY_UPDATE_STARTUP_DELAY_SECONDS))
+        self.assertIn("Sound engine analysis started (to go on with the analysis that stopped when Kodi closed)",
+                      kodi.log_text())
+
+    def test_an_analysis_that_ended_without_finishing_goes_on_after_kodis_start(self):
+        service.save_json_file(service.soundprint_analysis_state_path(), {"last_ts": int(self.clock.now)})
+        self.last_analysis(state="running", pid=0, done=300, todo=1200)  # killed: its process is gone
+        self.tick()
+        self.assertTrue(self.tick(service.LIBRARY_UPDATE_STARTUP_DELAY_SECONDS))
+        self.assertIn("(to go on with the analysis that ended without finishing)", kodi.log_text())
+
+    def test_going_on_is_tried_once_after_kodis_start(self):
+        self.start.side_effect = client.SoundprintError(client.NOT_SET_UP, "not set up")
+        service.save_json_file(service.soundprint_analysis_state_path(), {"last_ts": int(self.clock.now)})
+        self.last_analysis(state="stopped", stopped_by="kodi_closed", done=300, todo=1200)
+        self.tick()
+        self.assertFalse(self.tick(service.LIBRARY_UPDATE_STARTUP_DELAY_SECONDS))
+        self.assertFalse(self.tick(1))
+        self.assertEqual(self.start.call_count, 1)
+
+    def test_an_analysis_stopped_by_hand_waits_for_its_time(self):
+        service.save_json_file(service.soundprint_analysis_state_path(), {"last_ts": int(self.clock.now)})
+        self.last_analysis(state="stopped", done=300, todo=1200)
+        self.tick()
+        self.assertFalse(self.tick(service.LIBRARY_UPDATE_STARTUP_DELAY_SECONDS))
+        self.start.assert_not_called()
 
     def test_not_when_switched_off(self):
         kodi.settings["soundprint_auto_analyse"] = "false"

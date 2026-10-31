@@ -9,6 +9,7 @@ import json
 import random
 import os
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -328,6 +329,60 @@ class PlanTest(unittest.TestCase):
         with unittest.mock.patch.object(analyse, "plan", side_effect=plan):
             analyse.run([self.files["same"]], self.folder, "", 6, 1, 1, low=False, say=lambda line: None)
         self.assertEqual((seen[0]["state"], seen[0]["phase"], seen[0]["pid"]), ("running", "planning", os.getpid()))
+
+    def analyse_with(self, kodi_ended, **kwargs):
+        """run() with a stand-in pool that gives one result for each song to analyse; Kodi's process ended or not."""
+        def results(_, todo, chunksize=1):
+            for path, size, mtime in todo:
+                yield {"path": path, "size": size, "mtime": mtime, "length": 1.0, "vector": unit(1), "error": "",
+                       "windows": 6, "how": "seek", "decode_s": 0.1, "model_s": 0.1}
+
+        pool = unittest.mock.Mock()
+        pool.imap_unordered.side_effect = results
+        with unittest.mock.patch.object(model.Model, "__init__", return_value=None), \
+                unittest.mock.patch.dict(os.environ), \
+                unittest.mock.patch.object(analyse.multiprocessing, "get_context") as context, \
+                unittest.mock.patch.object(analyse, "Watched") as watched:
+            context.return_value.Pool.return_value = pool
+            watched.return_value.ended.return_value = kodi_ended
+            status = analyse.run([self.files["new"], self.files["changed"]], self.folder, "", 6, 1, 1, low=False,
+                                 say=lambda line: None, **kwargs)
+        return status, watched, pool
+
+    def test_an_analysis_started_by_kodi_stops_once_kodi_has_closed(self):
+        with self.assertLogs("soundprint", "INFO") as logged:
+            status, watched, pool = self.analyse_with(True, kodi_pid=4321)
+        self.assertEqual((status["state"], status["stopped_by"], status["done"], status["todo"]),
+                         ("stopped", "kodi_closed", 1, 2))
+        self.assertEqual(state.read_status(self.folder)["stopped_by"], "kodi_closed")
+        watched.assert_called_once_with(4321)
+        watched.return_value.close.assert_called_once()
+        pool.terminate.assert_called_once()
+        self.assertIn("Kodi (process 4321) has closed: the analysis stops after the songs in hand",
+                      "\n".join(logged.output))
+        self.assertIn(self.files["new"], self.store.known())  # the songs done are stored
+
+    def test_an_analysis_goes_on_while_kodi_runs(self):
+        status, _, _ = self.analyse_with(False, kodi_pid=4321)
+        self.assertEqual((status["state"], status["done"]), ("finished", 2))
+        self.assertNotIn("stopped_by", status)
+
+    def test_a_process_is_followed_until_it_ends(self):
+        process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+        watched = state.Watched(process.pid)
+        try:
+            self.assertFalse(watched.ended())
+            process.kill()
+            process.wait()
+            self.assertTrue(watched.ended())
+        finally:
+            watched.close()
+        self.assertFalse(state.Watched(0).ended())  # nothing to follow: the analysis was started by hand
+
+    def test_the_command_line_passes_kodis_process_on(self):
+        args = cli.arguments(["--data", self.folder, "analyse", "--kodi-pid", "4321"])
+        self.assertEqual(args.kodi_pid, 4321)
+        self.assertEqual(cli.arguments(["--data", self.folder, "analyse"]).kodi_pid, 0)
 
     def test_analysis_version_names_model_snippets_and_preroll(self):
         self.assertEqual(analysis_version(6), "dclap-v1/snippets-6/preroll-1")
