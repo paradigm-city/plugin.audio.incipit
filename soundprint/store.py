@@ -54,6 +54,12 @@ class Store:
         self.db.execute("INSERT OR REPLACE INTO songs VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                         (path, size, mtime, version, length, blob, error or None, time.time()))
 
+    def take_over(self, stored: str, path: str) -> None:
+        """path gets stored's row (its vector, or its failure), as stored now: the same file under another spelling
+        of its path. The stored row stays."""
+        self.db.execute("INSERT OR REPLACE INTO songs SELECT ?, size, mtime, version, length, vector, error, ? "
+                        "FROM songs WHERE path = ?", (path, time.time(), stored))
+
     def commit(self) -> None:
         self.db.commit()
 
