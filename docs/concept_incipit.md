@@ -101,7 +101,5 @@ the service takes the old ID's data over (`service.take_over_old_data`), so sett
 
 ## Ideas kept for later
 
-- **Ordering a mix** by sound distance: shortest path from the seed ("interpolation"), a round trip back to the
-  seed ("circle"), the largest smallest step ("contrast"), a bridge to a target song, sets, arcs of a profile value.
-- **Keeping the sound prints in step with Kodi's library** as songs are added and removed (F36).
-- **The sound engine on a quiet always-on box**: 3 snippets instead of 6 for a slower machine.
+In [roadmap.md](roadmap.md), numbered: among them ordering a mix by sound (I1), the sound prints in step with Kodi's
+library (I9, F36) and fewer snippets for a slower box (I12).
