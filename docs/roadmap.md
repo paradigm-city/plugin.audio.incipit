@@ -83,6 +83,13 @@ From the notes of 2026-10-29. With the checks on, a refill keeps "no artist repe
 queue's tail; without them, the rule holds only inside the new mix, so an artist can return right after the
 previous refill. To verify, then fix (it may be recorded as a finding).
 
+#### I32 · A Radio check moves on when a batch brings almost nothing
+
+From F34 (2026-10-24, closed 2026-10-31). A Radio check examines its batches from the first candidate list and
+brings further lists (from the songs that fit) only when that list runs out. When a batch brings almost nothing
+(0 or 1 of 18), the check could move on to the next list at once, and a check that keeps choosing too little
+could get more batches. Seen with MusicIP's lists; with the sound engine's not so far.
+
 ### Sound engine
 
 #### I9 · Sound prints in step with Kodi's library
