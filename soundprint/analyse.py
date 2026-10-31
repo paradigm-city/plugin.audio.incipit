@@ -5,7 +5,9 @@ Decoding and the model both use one CPU core per song, so songs are spread over 
 playback and Kodi keep the CPU whenever they need it.
 
 While it runs, status.json in the data folder says how far it is; a file named "stop" there ends it after the
-songs in hand (the next run picks up where it stopped). Every song gets a line in analysis.log.
+songs in hand (the next run picks up where it stopped). Started by Kodi, it follows Kodi's process and ends the same
+way once Kodi has closed; the add-on's service starts it again after Kodi's next start. Every song gets a line in
+analysis.log.
 """
 
 from __future__ import annotations
@@ -19,7 +21,7 @@ import time
 from typing import Dict, List, Sequence, Tuple
 
 from soundprint import analysis_version
-from soundprint.state import LOG_FILE, STOP_FILE, read_status, running, write_status
+from soundprint.state import LOG_FILE, STOP_FILE, Watched, read_status, running, write_status
 from soundprint.store import Store
 
 STATUS_EVERY = 5.0  # s
@@ -129,9 +131,11 @@ def logger_for(folder: str) -> logging.Logger:
 
 
 def run(paths: Sequence[str], folder: str, model_folder: str, snippets: int, workers: int, threads: int,
-        low: bool = True, prune: bool = False, limit: int = 0, retry_failed: bool = False, say=print) -> dict:
+        low: bool = True, prune: bool = False, limit: int = 0, retry_failed: bool = False, say=print,
+        kodi_pid: int = 0) -> dict:
     """Analyse what's new or changed among paths; returns the final status ("busy" when another analysis of this
-    data folder is running: two would write the same store)."""
+    data folder is running: two would write the same store). With kodi_pid, it stops as if asked to (stop file)
+    once that process has ended, and says so in the status ("stopped_by": "kodi_closed")."""
     os.makedirs(folder, exist_ok=True)
     log = logger_for(folder)
     other = running(folder)
@@ -140,6 +144,7 @@ def run(paths: Sequence[str], folder: str, model_folder: str, snippets: int, wor
         log.info(line)
         say(line)
         return {"state": "busy", "pid": other.get("pid")}
+    kodi = Watched(kodi_pid)
     if low:
         lower_priority()
     version = analysis_version(snippets)
@@ -208,6 +213,11 @@ def run(paths: Sequence[str], folder: str, model_folder: str, snippets: int, wor
                     status.update(seconds_per_song=round(rate, 3),
                                   eta=time.time() + rate * (len(todo) - status["done"]))
                     write_status(folder, status)
+                    if kodi.ended():
+                        status.update(state="stopped", stopped_by="kodi_closed")
+                        log.info("Kodi (process %d) has closed: the analysis stops after the songs in hand and goes "
+                                 "on after Kodi's next start", kodi_pid)
+                        break
                     if os.path.exists(stop):
                         status["state"] = "stopped"
                         break
@@ -234,3 +244,4 @@ def run(paths: Sequence[str], folder: str, model_folder: str, snippets: int, wor
         if os.path.exists(stop):
             os.remove(stop)
         store.close()
+        kodi.close()

@@ -6351,7 +6351,7 @@ def start_soundprint_analysis(reason: str = "asked for in the settings", quiet: 
     """Start analysing the library's new and changed songs in the background; True if one started."""
     data = soundprint_data()
     try:
-        started = soundprint.start_analysis(data, kodi_userdata())
+        started = soundprint.start_analysis(data, kodi_userdata(), kodi_pid=os.getpid())  # Kodi's process
     except soundprint.SoundprintError as exc:
         log_general(f"Sound engine analysis ({reason}) not started: {exc}", xbmc.LOGWARNING, always=True)
         if not quiet:
