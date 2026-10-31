@@ -85,7 +85,7 @@ class KodiTestCase(unittest.TestCase):
         service.METADATA_REFRESH_PENDING_VIEW_REFRESH = False
         service.METADATA_REFRESH_LAST_SELECTION_TOKEN = ""
         service.METADATA_REFRESH_LAST_REFRESH_TS = 0
-        service.LIBRARY_UPDATE.update(scan_finished=False, first_tick_ts=0.0)
+        service.LIBRARY_UPDATE.update(scan_finished=False, first_tick_ts=0.0, resume_checked=False)
         service.RADIO_TICK_SUMMARY["text"] = ""
 
         # Keep tests independent of the user's locale settings in Kodi.

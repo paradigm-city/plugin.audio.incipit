@@ -78,6 +78,39 @@ def process_alive(pid: int) -> bool:
     return True
 
 
+class Watched:
+    """A process the analysis follows (Kodi, which started it): ended() once it has exited. On Windows a handle is
+    held from the start, so the process number can't pass to another process while the analysis runs."""
+
+    SYNCHRONIZE = 0x00100000
+    WAIT_OBJECT_0 = 0
+
+    def __init__(self, pid: int):
+        self.pid, self.handle = pid, None
+        if pid > 0 and sys.platform == "win32":
+            import ctypes
+
+            self.handle = ctypes.windll.kernel32.OpenProcess(self.SYNCHRONIZE, False, pid)
+
+    def ended(self) -> bool:
+        if self.pid <= 0:  # nothing to follow
+            return False
+        if sys.platform != "win32":
+            return not process_alive(self.pid)
+        if not self.handle:  # gone before the analysis began
+            return True
+        import ctypes
+
+        return ctypes.windll.kernel32.WaitForSingleObject(self.handle, 0) == self.WAIT_OBJECT_0
+
+    def close(self) -> None:
+        if self.handle:
+            import ctypes
+
+            ctypes.windll.kernel32.CloseHandle(self.handle)
+            self.handle = None
+
+
 def running(folder: str, now: float = 0.0, alive=process_alive) -> dict:
     """The status of the analysis that is running now; {} if none is."""
     status = read_status(folder)

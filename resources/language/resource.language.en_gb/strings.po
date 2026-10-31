@@ -417,7 +417,7 @@ msgid "Analyse new songs by itself"
 msgstr ""
 
 msgctxt "#30810"
-msgid "Gives songs new to Kodi's library their sound prints after Kodi's library scan and every 8 hours. The analysis runs in the background at low priority, and goes on even when Kodi is closed. A song not analysed yet is analysed when it is a seed."
+msgid "Gives songs new to Kodi's library their sound prints after Kodi's library scan and every 8 hours. The analysis runs in the background at low priority; when Kodi closes, it stops after the songs in hand and goes on after Kodi's next start. A song not analysed yet is analysed when it is a seed."
 msgstr ""
 
 msgctxt "#30811"

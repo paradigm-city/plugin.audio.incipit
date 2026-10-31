@@ -2,7 +2,8 @@
 own Python environment (made by setup) as a separate process, without a console window, as the Claude CLI does.
 
 - neighbours: one short call per mix (python -m soundprint neighbours ..., JSON on stdout);
-- an analysis runs detached: it goes on when Kodi is closed and says how far it is in status.json;
+- an analysis runs detached, so Kodi doesn't wait for it, and says how far it is in status.json; it follows
+  Kodi's process and stops after the songs in hand once Kodi has closed (the service starts it again later);
 - setup makes the environment with a Python the listener has installed (Kodi's own can't make one).
 """
 
@@ -107,16 +108,18 @@ def neighbours(data: str, userdata: str, seed: str, count: int, window: int = 0,
     return answer
 
 
-def start_analysis(data: str, userdata: str, popen: Callable = subprocess.Popen) -> dict:
+def start_analysis(data: str, userdata: str, popen: Callable = subprocess.Popen, kodi_pid: int = 0) -> dict:
     """Start an analysis of the library's new and changed songs, detached; {"started": False, ...} when one is
-    running already."""
+    running already. With kodi_pid (Kodi's process: the add-on runs inside it), the analysis stops once Kodi has
+    closed."""
     reason = not_ready(data)
     if reason:
         raise SoundprintError(NOT_SET_UP, reason)
     other = running(data)
     if other:
         return {"started": False, "pid": other.get("pid")}
-    cmd = command(environment_python(data), data, userdata, "analyse")
+    cmd = command(environment_python(data), data, userdata, "analyse",
+                  *(["--kodi-pid", str(kodi_pid)] if kodi_pid else []))
     with open(os.path.join(data, "run.out"), "w", encoding="utf-8") as out, \
             open(os.path.join(data, "run.err"), "w", encoding="utf-8") as err:
         flags = window_flags() | (CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0)
@@ -227,6 +230,9 @@ def status_lines(data: str, now: float = 0.0, alive: Callable[[str], dict] = run
                      + (f", {taken_over:,} taken over (the same file, its path spelled differently)" if taken_over
                         else "")
                      + f"; {int(status.get('missing') or 0):,} song(s) of Kodi's library are not on disk.")
+    elif state == "stopped" and status.get("stopped_by") == "kodi_closed":
+        lines.append(f"The last analysis stopped when Kodi closed ({when(status.get('updated', now), now)}) after "
+                     f"{done:,} of {todo:,} song(s). It goes on where it stopped two minutes after Kodi starts.")
     elif state == "stopped":
         lines.append(f"The last analysis was stopped {when(status.get('updated', now), now)} after {done:,} of "
                      f"{todo:,} song(s). It goes on where it stopped when it starts again.")

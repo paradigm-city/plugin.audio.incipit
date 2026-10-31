@@ -2881,13 +2881,14 @@ def run_mix_collage_tick() -> str:
 # MusicIP's library reload used them too; its code is dormant in musicip_dormant.py.
 
 LIBRARY_UPDATE_STARTUP_DELAY_SECONDS = 120  # not while Kodi is still starting
-LIBRARY_UPDATE = {"scan_finished": False, "first_tick_ts": 0.0}
+LIBRARY_UPDATE = {"scan_finished": False, "first_tick_ts": 0.0, "resume_checked": False}
 
 
 # --- The sound engine's analysis: songs new to Kodi's library get
 # their sound prints after Kodi's music library scan and every few hours. The
 # analysis runs detached at low priority (soundprint.client.start_analysis), also while Radio plays: a song it
-# hasn't reached yet is analysed when it is a seed. Not started while one runs.
+# hasn't reached yet is analysed when it is a seed. Not started while one runs. It follows Kodi's process and stops
+# after the songs in hand once Kodi has closed; it goes on after Kodi's next start.
 
 SOUNDPRINT_ANALYSIS_INTERVAL_SECONDS = 8 * 3600
 
@@ -2897,14 +2898,23 @@ def soundprint_analysis_state_path() -> str:
 
 
 def soundprint_analysis_due(now: float, plugin) -> str:
-    """Why the sound engine should analyse new songs now ("" if not): Kodi's music library scan has finished, or
-    the last start is SOUNDPRINT_ANALYSIS_INTERVAL_SECONDS ago."""
+    """Why the sound engine should analyse new songs now ("" if not): Kodi's music library scan has finished, the
+    last analysis stopped when Kodi closed or ended without finishing (killed, the computer switched off; looked at
+    once after Kodi's start), or the last start is SOUNDPRINT_ANALYSIS_INTERVAL_SECONDS ago."""
     if not plugin.get_setting_bool("soundprint_auto_analyse", True):
         return ""
     if LIBRARY_UPDATE["scan_finished"]:
         return "after Kodi's library scan"
     if now - LIBRARY_UPDATE["first_tick_ts"] < LIBRARY_UPDATE_STARTUP_DELAY_SECONDS:
         return ""
+    if not LIBRARY_UPDATE["resume_checked"]:  # once after Kodi's start, so a failing start isn't tried every second
+        LIBRARY_UPDATE["resume_checked"] = True
+        data = plugin.soundprint_data()
+        last = plugin.soundprint.read_status(data)
+        if last.get("state") == "stopped" and last.get("stopped_by") == "kodi_closed":
+            return "to go on with the analysis that stopped when Kodi closed"
+        if last.get("state") == "running" and not plugin.soundprint.running(data):
+            return "to go on with the analysis that ended without finishing"
     record = load_json_file(soundprint_analysis_state_path())
     return "scheduled" if now - int(record.get("last_ts") or 0) >= SOUNDPRINT_ANALYSIS_INTERVAL_SECONDS else ""
 

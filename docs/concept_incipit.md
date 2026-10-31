@@ -35,7 +35,8 @@ the next start). Its refills are described anew, as on any station.
   second of pre-roll decoded and dropped, embedded by DCLAP (a distilled CLAP audio model, ONNX; AGPL, downloaded
   at the set-up, never bundled) and averaged into a 512-value vector. No tags are used, so little-known music is
   found as easily as famous music. The whole library (153,000 songs) took about 22 hours on this PC; new songs are
-  analysed after Kodi's library scan and every 8 hours. A song that Kodi lists under another spelling of its path
+  analysed after Kodi's library scan and every 8 hours. The analysis stops after the songs in hand when Kodi
+  closes and goes on two minutes after Kodi's next start (F46). A song that Kodi lists under another spelling of its path
   (the case changed, on Windows) keeps its sound print when the file is unchanged (F45). Package `soundprint/`, its own Python environment, its
   store `sound.db` and the matrix cache `vectors.npy` in the add-on's data folder.
 - **The nearest songs.** Cosine similarity to the seed's vector; a search takes about a second.
