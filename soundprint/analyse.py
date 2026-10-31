@@ -69,12 +69,30 @@ def analyse_song(item: Tuple[str, int, float]) -> dict:
                 "error": f"{type(exc).__name__}: {exc}", "decode_s": time.perf_counter() - started, "model_s": 0.0}
 
 
+def same_file(path: str, info: os.stat_result, known: Dict[str, Tuple[int, float, str, bool]],
+              spellings: Dict[str, List[str]], version: str, retry_failed: bool = False) -> str:
+    """A stored path that names the same file as path, spelled differently ("D:\\Music" and "d:\\music" on Windows,
+    where os.path.normcase makes them equal), with the same size and change time and the current version; "" if
+    there is none. Kodi keeps such a spelling as a song of its own (F45)."""
+    for stored in spellings.get(os.path.normcase(path), ()):
+        size, mtime, stored_version, failed = known[stored]
+        if (stored != path and size == info.st_size and abs(mtime - info.st_mtime) < 1e-3
+                and stored_version == version and not (failed and retry_failed)):
+            return stored
+    return ""
+
+
 def plan(paths: Sequence[str], store: Store, version: str, retry_failed: bool = False
-         ) -> Tuple[List[Tuple[str, int, float]], Dict[str, int]]:
-    """The songs to analyse (path, size, change time), and counts of the rest: unchanged, failed before (and
-    unchanged; analysed again with retry_failed, after a fix of the decoding), missing (the file isn't there)."""
+         ) -> Tuple[List[Tuple[str, int, float]], Dict[str, int], List[Tuple[str, str]]]:
+    """The songs to analyse (path, size, change time), counts of the rest: unchanged, failed before (and
+    unchanged; analysed again with retry_failed, after a fix of the decoding), missing (the file isn't there),
+    taken over; and the new paths whose row is taken over from another spelling of the same file (new, stored)."""
     known = store.known()
-    todo, counts = [], {"unchanged": 0, "failed_before": 0, "missing": 0}
+    spellings: Dict[str, List[str]] = {}
+    for stored in known:
+        spellings.setdefault(os.path.normcase(stored), []).append(stored)
+    todo, taken_over = [], []
+    counts = {"unchanged": 0, "failed_before": 0, "missing": 0, "taken_over": 0}
     for path in paths:
         try:
             info = os.stat(path)
@@ -90,8 +108,13 @@ def plan(paths: Sequence[str], store: Store, version: str, retry_failed: bool = 
             elif before[2] == version:
                 counts["unchanged"] += 1
                 continue
+        twin = "" if before else same_file(path, info, known, spellings, version, retry_failed)
+        if twin:
+            taken_over.append((path, twin))
+            counts["taken_over"] += 1
+            continue
         todo.append((path, info.st_size, info.st_mtime))
-    return todo, counts
+    return todo, counts, taken_over
 
 
 def logger_for(folder: str) -> logging.Logger:
@@ -132,17 +155,23 @@ def run(paths: Sequence[str], folder: str, model_folder: str, snippets: int, wor
             listed = set(paths)
             gone = store.remove(path for path in store.known() if path not in listed)
             log.info("removed %d stored song(s) that are no longer in the library", gone)
-        todo, counts = plan(paths, store, version, retry_failed)
+        todo, counts, taken_over = plan(paths, store, version, retry_failed)
         if limit:
             todo = todo[:limit]
         status = {"state": "running", "pid": os.getpid(), "started": time.time(), "version": version,
                   "songs": len(paths), "todo": len(todo), "done": 0, "failed": 0, **counts,
                   "workers": workers, "threads": threads, "snippets": snippets}
         line = (f"analysis {version}: {len(paths)} song(s) listed, {len(todo)} to analyse; {counts['unchanged']} "
-                f"unchanged, {counts['failed_before']} failed before, {counts['missing']} missing; {workers} "
+                f"unchanged, {counts['failed_before']} failed before, {counts['missing']} missing, "
+                f"{counts['taken_over']} taken over from another spelling of their path; {workers} "
                 f"worker(s) x {threads} thread(s), {'idle' if low else 'normal'} priority")
         log.info(line)
         say(line)
+        for path, stored in taken_over:
+            store.take_over(stored, path)
+            log.info("%s: taken over from %s (the same file, size and change time; the path differs only in case)",
+                     path, stored)
+        store.commit()
         write_status(folder, status)
         if not todo:
             status["state"] = "finished"

@@ -148,6 +148,17 @@ class StoreTest(unittest.TestCase):
         self.assertTrue(np.allclose(self.store.vector("a.mp3"), vector, atol=1e-3))
         self.assertEqual(self.store.known(), {"a.mp3": (10, 1.5, "v", False)})
 
+    def test_take_over_copies_a_row_to_another_path(self):
+        self.store.put("D:\\a.mp3", 10, 1.5, "v", 200.0, unit(1, 2))
+        self.store.put("D:\\bad.mp3", 11, 2.5, "v", 0.0, None, "broken")
+        self.store.take_over("D:\\a.mp3", "d:\\a.mp3")
+        self.store.take_over("D:\\bad.mp3", "d:\\bad.mp3")
+        self.store.commit()
+        self.assertTrue(np.allclose(self.store.vector("d:\\a.mp3"), unit(1, 2), atol=1e-3))
+        self.assertEqual(self.store.known()["d:\\a.mp3"], (10, 1.5, "v", False))
+        self.assertEqual(self.store.failures(), [("D:\\bad.mp3", "broken"), ("d:\\bad.mp3", "broken")])
+        self.assertEqual(self.store.counts(), {"analysed": 2, "failed": 2})
+
     def test_a_failure_keeps_its_reason_and_no_vector(self):
         self.store.put("bad.mp3", 10, 1.5, "v", 0.0, None, "InvalidDataError: x")
         self.assertIsNone(self.store.vector("bad.mp3"))
@@ -229,15 +240,63 @@ class PlanTest(unittest.TestCase):
 
     def test_new_changed_and_other_version_songs_are_analysed_the_rest_counted(self):
         paths = list(self.files.values()) + [os.path.join(self.folder, "gone.mp3")]
-        todo, counts = analyse.plan(paths, self.store, analysis_version(6))
+        todo, counts, taken_over = analyse.plan(paths, self.store, analysis_version(6))
         self.assertEqual(sorted(os.path.basename(path) for path, _, _ in todo),
                          ["changed.mp3", "new.mp3", "old_version.mp3"])
-        self.assertEqual(counts, {"unchanged": 1, "failed_before": 1, "missing": 1})
+        self.assertEqual(counts, {"unchanged": 1, "failed_before": 1, "missing": 1, "taken_over": 0})
+        self.assertEqual(taken_over, [])
 
     def test_songs_that_failed_before_are_analysed_again_when_asked(self):
-        todo, counts = analyse.plan(list(self.files.values()), self.store, analysis_version(6), retry_failed=True)
+        todo, counts, _ = analyse.plan(list(self.files.values()), self.store, analysis_version(6), retry_failed=True)
         self.assertIn("failed.mp3", [os.path.basename(path) for path, _, _ in todo])
         self.assertEqual(counts["failed_before"], 0)
+
+    def respelled(self, name):
+        """The stored file's path with another case, as Kodi lists it after a scan of a lower-cased folder (F45)."""
+        return self.files[name].swapcase()
+
+    @unittest.skipUnless(os.name == "nt", "paths differ only in case on Windows")
+    def test_the_same_file_spelled_differently_is_taken_over_not_analysed(self):
+        path = self.respelled("same")
+        todo, counts, taken_over = analyse.plan([path], self.store, analysis_version(6))
+        self.assertEqual((todo, taken_over), ([], [(path, self.files["same"])]))
+        self.assertEqual(counts["taken_over"], 1)
+
+    @unittest.skipUnless(os.name == "nt", "paths differ only in case on Windows")
+    def test_a_respelled_file_is_analysed_when_the_stored_one_differs(self):
+        for name in ("changed", "old_version"):
+            todo, counts, taken_over = analyse.plan([self.respelled(name)], self.store, analysis_version(6))
+            self.assertEqual(([path for path, _, _ in todo], taken_over), ([self.respelled(name)], []), name)
+
+    @unittest.skipUnless(os.name == "nt", "paths differ only in case on Windows")
+    def test_a_respelled_failure_is_taken_over_unless_failures_are_tried_again(self):
+        path = self.respelled("failed")
+        self.assertEqual(analyse.plan([path], self.store, analysis_version(6))[2], [(path, self.files["failed"])])
+        todo, _, taken_over = analyse.plan([path], self.store, analysis_version(6), retry_failed=True)
+        self.assertEqual(([p for p, _, _ in todo], taken_over), ([path], []))
+
+    def test_other_files_are_not_taken_over(self):
+        path = os.path.join(self.folder, "other.mp3")
+        with open(path, "wb") as handle:
+            handle.write(b"x" * 10)
+        todo, counts, taken_over = analyse.plan([path], self.store, analysis_version(6))
+        self.assertEqual(([p for p, _, _ in todo], taken_over, counts["taken_over"]), ([path], [], 0))
+
+    @unittest.skipUnless(os.name == "nt", "paths differ only in case on Windows")
+    def test_an_analysis_stores_the_taken_over_print_under_the_new_path_and_keeps_the_old(self):
+        self.store.put(self.files["same"], *self.store.known()[self.files["same"]][:2], analysis_version(6), 1.0,
+                       unit(1, 2))
+        self.store.commit()
+        path = self.respelled("same")
+        with self.assertLogs("soundprint", "INFO") as logged:
+            status = analyse.run([path], self.folder, "", 6, 1, 1, low=False, say=lambda line: None)
+        self.assertEqual((status["state"], status["todo"], status["taken_over"]), ("finished", 0, 1))
+        self.assertTrue(np.allclose(self.store.vector(path), unit(1, 2), atol=1e-3))
+        self.assertIsNotNone(self.store.vector(self.files["same"]))
+        self.assertEqual(self.store.known()[path], self.store.known()[self.files["same"]])
+        log = "\n".join(logged.output)
+        self.assertIn(f"{path}: taken over from {self.files['same']}", log)
+        self.assertIn("1 taken over from another spelling of their path", log)
 
     def test_nothing_to_do_finishes_at_once(self):
         status = analyse.run([self.files["same"]], self.folder, "", 6, 1, 1, low=False, say=lambda line: None)

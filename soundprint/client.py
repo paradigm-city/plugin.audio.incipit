@@ -221,9 +221,12 @@ def status_lines(data: str, now: float = 0.0, alive: Callable[[str], dict] = run
         lines.append(f"The last analysis ended without finishing (the computer was switched off, or its process "
                      f"was ended) after {done:,} of {todo:,} song(s). It goes on where it stopped when it starts again.")
     elif state == "finished":
+        taken_over = int(status.get("taken_over") or 0)
         lines.append(f"The last analysis finished {when(status.get('updated', now), now)}: {done:,} song(s) "
-                     f"analysed, {failed:,} could not be read; {int(status.get('missing') or 0):,} song(s) of Kodi's "
-                     f"library are not on disk.")
+                     f"analysed, {failed:,} could not be read"
+                     + (f", {taken_over:,} taken over (the same file, its path spelled differently)" if taken_over
+                        else "")
+                     + f"; {int(status.get('missing') or 0):,} song(s) of Kodi's library are not on disk.")
     elif state == "stopped":
         lines.append(f"The last analysis was stopped {when(status.get('updated', now), now)} after {done:,} of "
                      f"{todo:,} song(s). It goes on where it stopped when it starts again.")

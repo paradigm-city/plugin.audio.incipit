@@ -207,6 +207,12 @@ class StatusTextTest(unittest.TestCase):
         self.assertIn("stopped today at 12:00 after 3 of 9", self.lines({"state": "stopped", "done": 3, "todo": 9})[1])
         self.assertIn("failed today at 12:00: OSError: disk", self.lines({"state": "failed", "error": "OSError: disk"})[1])
 
+    def test_a_finished_analysis_names_the_songs_taken_over(self):
+        line = self.lines({"state": "finished", "done": 76, "taken_over": 11322, "missing": 0})[1]
+        self.assertIn("76 song(s) analysed, 0 could not be read, 11,322 taken over (the same file, its path spelled "
+                      "differently); 0 song(s)", line)
+        self.assertNotIn("taken over", self.lines({"state": "finished", "done": 5, "missing": 0})[1])
+
     def test_before_the_set_up(self):
         self.assertIn("isn't set up", client.status_lines(tempfile.mkdtemp())[0])
 

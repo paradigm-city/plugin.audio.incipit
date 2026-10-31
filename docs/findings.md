@@ -97,6 +97,12 @@ Not fixed. The planned fix is the library sync: remove a song's sound print when
 
 ## Resolved
 
+### F45 · The sound engine analyses a song again when only the case of its path changes
+
+Found on 2026-10-31 by the listener: after about 10 new albums, the analysis took on 19,423 songs instead of about 80. The sound store (`soundprint/store.py`) keys a song by its path exactly as Kodi lists it, and `soundprint.analyse.plan` treats a path it doesn't know as a new song. Another add-on had started Kodi scans with lower-cased folders (`d:\music\#modernrock\`, from `os.path.normcase`; fixed there since). Kodi compares paths with case, so it moved about 16,000 songs of three genre folders (#modernrock, #hardrock, #metalcore_modern) to the `d:\` spelling and listed about 3,850 of them twice, under both spellings. For the sound engine every `d:\` path was new, although the file, its size and its change time were the same. The run started at 12:48 analyses them again (about 2 hours), and the old `D:\` rows stay in the store (F36): a song stored under both spellings has the same sound print twice and can come twice into a mix, since the `D:\` copy isn't found in Kodi's library for the "same song only once" rule.
+
+Fixed in 6a1bde6 (2026-10-31): when a path is new but a stored path names the same file (equal under `os.path.normcase`, so differing only in case on Windows) with the same size, change time and analysis version, `soundprint.analyse.plan` takes its row over (`Store.take_over`) instead of analysing the file again; a failure is taken over too, unless failures are tried again. The analysis logs every song taken over and counts them in its first line and in the sound engine's status. The old spelling's row stays; removing it is F36's library sync.
+
 ### F44 · A favourite station played like an unknown one
 
 Found on 2026-10-30 by the listener: a favourite station (saved on purpose, perhaps renamed) kept its name and settings, but at every start its Station information said what it is about was "Not worked out yet", and its first check asked the AI to describe the picked song again, as for a station never heard before. The favourite had saved that description (`intent` in `radio_favourites.json`) since 2026-10-17, but only its own information window used it.
