@@ -356,6 +356,8 @@ Judging a finished MusicIP mix with drift above 0 was tested and does not work: 
 
 ## Known gaps
 
+The open ones are collected with numbers in [roadmap.md](roadmap.md) (I3, I17, I18).
+
 | Gap | Seen where | Status |
 |---|---|---|
 | **Acoustic ↔ electric sound** | The user rejected Crosby, Stills & Nash, Isabelle Mayereau and The Doors as "acoustic, not electronic, handmade". *Making* only distinguishes played from programmed, and timbre did not form an axis of its own in the study. | Kept in mind; axes unchanged for now. Candidate fix: *sound* (acoustic ↔ electric ↔ electronic) instead of or next to *making*. |
@@ -366,6 +368,9 @@ Judging a finished MusicIP mix with drift above 0 was tested and does not work: 
 | **MusicIP must know the paths** | Moved files that MusicIP hasn't rescanned can't seed a submix (HTTP 500); for the first mix this blocked the master-seed fallback. | Rescan MusicIP after moving files; the replacement step skips to an earlier seed. |
 
 ## Deferred
+
+Collected with numbers in [roadmap.md](roadmap.md) (I4, I20 to I23, I29; journey, arc, ordering and map in I1). "A mix
+like an album" is built (cover collages, the mix's description).
 
 | Idea | Reason |
 |---|---|
@@ -424,6 +429,8 @@ Tested from Kodi 21's Python (3.8.15) on Windows, inside the running add-on:
 - `auth status` prints the account's e-mail address; the add-on logs only whether the CLI is logged in.
 
 ## Next steps
+
+What is still open here is in [roadmap.md](roadmap.md) (I3, I19, I31).
 
 Updated 2026-10-17. Done since the pilot: F12, the add-on (cache, CLI route, checks for saved mixes, new mixes, "More like this" and Radio), naming, the single-dimension rule. Open:
 

@@ -1,6 +1,6 @@
 # Findings
 
-Problems found in the add-on code during reviews and testing, with their current status.
+Problems found in the add-on code during reviews and testing, with their current status. Ideas for new or changed behaviour are in [roadmap.md](roadmap.md).
 
 How this file is kept up to date:
 

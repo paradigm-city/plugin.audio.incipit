@@ -1,6 +1,6 @@
 # Suggestion Engine Concept
 
-Status: **background** since 2026-10-29: MusicIP was replaced by the sound engine (sound prints of every song, by sound alone), not by the map of related artists drafted here; see [concept_incipit.md](concept_incipit.md). This draft (2026-10-25, work item 3 of 2026-10-24) is kept for the trials that led there and for the relation map as an idea. Terms of AI Mix Assist are in [glossary_ai_mix_assist.md](glossary_ai_mix_assist.md).
+Status: **background** since 2026-10-29: MusicIP was replaced by the sound engine (sound prints of every song, by sound alone), not by the map of related artists drafted here; see [concept_incipit.md](concept_incipit.md). This draft (2026-10-25, work item 3 of 2026-10-24) is kept for the trials that led there and for the relation map as an idea ([roadmap.md](roadmap.md), I27). Terms of AI Mix Assist are in [glossary_ai_mix_assist.md](glossary_ai_mix_assist.md).
 
 ## In one sentence
 

@@ -145,6 +145,8 @@ Terms used in [concept_ai_mix_assist.md](concept_ai_mix_assist.md) and in the pi
 
 ## Later ideas, deferred
 
+Collected with numbers, with the other ideas, in [roadmap.md](roadmap.md).
+
 | Term | Meaning | Why deferred |
 |---|---|---|
 | **Context tags** | 2–4 tags per unit from a fixed list of ~30 settings or scenes (*late night, road trip, club…*), compared by overlap. | First step **if** dry runs show "right values, wrong world" misses. |
