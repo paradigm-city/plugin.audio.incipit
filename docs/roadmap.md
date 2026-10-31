@@ -54,6 +54,19 @@ its description "in your words". Catch: only rated music can be found (2026-10-1
 remedy: rate the whole library in small portions in the background. Next step: a spike with 3 or 4 prompts showing
 the top seed candidates.
 
+#### I33 · Mix recipes
+
+From the listener, 2026-10-31. Worked out in [concept_mix_recipes.md](concept_mix_recipes.md) (draft). A
+**recipe** is a named set of the settings that shape a mix or a station: Source (variety, no artist repeat),
+Character (tolerance, or off), Intent (perspective, or off; accept borderline), the mix size, a station's drift and
+songs per refill (which covers I6); not the seed. Example: a maximally wide source, filtered only through the
+emotional intent (variety 9, Character off, Intent Emotional).
+
+Factory recipes come with the add-on, the listener's own are saved from any mix, station or favourite ("Save as
+recipe...", without the seed). A recipe can be applied to an existing mix (rework: narrow down with the new
+checks, then fill back with "More like this"; or remake from the seed, I3) or to a station (from its next refill).
+Five decisions are still open; see the concept.
+
 ### Radio
 
 #### I5 · Carry on when the station's own playlist plays again
@@ -207,32 +220,32 @@ CHANGELOG.md and are partly out of date; a link to the changelog could replace t
 
 ## Parked
 
-#### I27 · A relation map of artists
+### I27 · A relation map of artists
 
 From the suggestion engine concept, 2026-10-25 (concept_suggestion_engine.md). Candidates from how the library's
 artists relate (members, solo work, collaborations, scenes, influences, as AllMusic's "related artists" do) instead
 of by sound. Parked on 2026-10-26 for the sound engine, which found the right world in the trials; kept as a
 possible second source next to it, e.g. for an artist's own circle.
 
-#### I28 · Sound words for little-known music
+### I28 · Sound words for little-known music
 
 From the pilot of 2026-10-29. Albums the AI doesn't know get a guessed description; the idea was to ground it in
 words from the sound print (from LAION's CC0 text tower). Parked: the listener's ears showed the AI's errors there
 came from intent read from the names, which F38 fixed by marking such songs "little known".
 
-#### I29 · Colour vector
+### I29 · Colour vector
 
 From concept_ai_mix_assist.md (*Deferred*). An embedding of the album's description (about 384 numbers) to compare
 context without names. Parked: needs a model Kodi can't run, likely encodes genre again, and the intent check covers
 the same ground.
 
-#### I30 · A language rule
+### I30 · A language rule
 
 From concept_ai_mix_assist.md (decided 2026-10-18). A sung track in another language than the seed's counts as a
 miss, from a per-album language label asked of the AI. Not built: no mix so far was spoiled by a language jump.
 Revisit if listening shows it.
 
-#### I31 · Slider labels by library percentiles
+### I31 · Slider labels by library percentiles
 
 From concept_ai_mix_assist.md (*Build decisions*). Placing the labels of value sliders by the library's
 percentiles. Only needed for advanced sliders, which are not built.
