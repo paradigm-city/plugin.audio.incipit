@@ -8,30 +8,13 @@ How this file is kept up to date:
 - A fixed finding moves to **Resolved**, keeping its number, with the commit that fixed it.
 - A finding reproduced by a test lists that test under **Test**. Such tests are marked `@unittest.expectedFailure`. `tests/test_findings.py` checks that every one of these tests is listed under **Open**, and that every test listed under **Open** still fails. When a fix makes such a test pass, CI fails until the decorator is removed and the finding is moved to **Resolved**.
 
-Last reviewed: 2026-10-22
+Last reviewed: 2026-10-31
 
 ## Open
-
-### F14 · Kodi crashes while a mix listing is being built
-
-Kodi crashed (access violation) twice while the add-on was building a folder listing:
-
-- 2026-10-15, right after a new mix was generated inside the mix listing (`browse_mix`): in `xbmcplugin.addDirectoryItem()` → `CPluginDirectory::AddItem` → `CFileItemList::Add`, while copying a song's music tag.
-- 2026-10-11: in `xbmcplugin.setPluginCategory()` → `CPluginDirectory::SetProperty`, the first call of a listing.
-
-- 2026-10-17, opening a stored mix (`browse_mix`, "Loaded stored mix from cache"), about 0.1 s into adding its tracks: again in `xbmcplugin.addDirectoryItem()` → `CPluginDirectory::AddItem` → `CFileItemList::Add`, this time while inserting into the list's lookup map. No mix was being generated, so the listing itself was fast.
-
-- 2026-10-25, during Radio playback: `kodi.old.log` ends at 09:58:18, right after a song change ("now playing 'Extrawelt - Zu Fuss'", no check running, no listing being built). Kodi left no crash dump this time, so the cause is unknown and may not be this pattern.
-
-All three stacks were resolved with Kodi 21.3's debug symbols (`kodi-21.3-Omega-x64.pdb` from mirrors.kodi.tv matches the installed build). In all cases Kodi's object for the pending folder request was no longer valid when the add-on called into it. This happens when Kodi gives up a folder request while the add-on is still working on it, for example when the screen changes (`Container.Update`, `Container.Refresh`, Back) during a slow listing. Generating a mix inside a listing takes several seconds (MusicIP reload, the confirmation dialog, the mix itself), which leaves a wide window. F8 is the same pattern from the other side: actions run as folder requests that switch screens instead of returning a listing.
-
-The add-on can't check whether Kodi still waits for a listing. The 2026-10-17 crash shows that a slow listing is not required: the add-on adds tracks one call at a time (40 calls for a 40-track mix), and the crash hits during that loop. Adding all items in one call (`xbmcplugin.addDirectoryItems`) would shrink that window to a single call. A likely fix is to stop doing slow work and dialogs inside folder requests: generate mixes in a `RunPlugin` action, then show the stored mix with `Container.Update`, whose listing is fast.
 
 ### F17 · A Radio test failed once
 
 `test_radio_mode.StartFromAnySongTest.test_new_station_is_not_mistaken_for_other_playback` failed once on 2026-10-15 during a full test run (`stop_reason` was `''` instead of `external_playback`) and passed in the next 10 runs, alone and in the full suite. It failed once more later the same day (1 of about 20 full runs). On 2026-10-17 another Radio test, `test_radio_mode.TuningTest.test_no_redraw_while_kodi_is_loading_a_list`, failed once in a full run (no redraw where one was expected) and passed alone, in its module and in the next two full runs; likely the same cause. On 2026-10-19 the first test failed once more (1 of 2 full runs after a merge), again with `stop_reason` `''`. On 2026-10-21 two more Radio tests failed once each in full runs, `test_radio_mode.TuningTest.test_no_redraw_while_kodi_is_loading_a_list` (on `main`) and `test_radio_mode.TuningTest.test_the_radio_screen_follows_the_snippets`; both passed alone and in the next runs. On 2026-10-22 `test_no_redraw_while_kodi_is_loading_a_list` failed once more (no redraw, 0 builtins instead of 1) and passed in the next full run. On 2026-10-24 one test failed in a full run after a prompt-only change (`mixassist/checks.py`); the output wasn't kept, so which test is unknown, and the next three full runs passed. Later on 2026-10-24, `test_no_redraw_while_kodi_is_loading_a_list` failed once more in a full run after the listening-perspective change and passed in the next full run. On 2026-10-28 one test failed in a full run after the sound engine's decoding fix (`soundprint/audio.py`, which no Radio test touches); the output wasn't kept, and the next two full runs passed. On 2026-10-29 `test_no_redraw_while_kodi_is_loading_a_list` failed once more (0 builtins instead of 1) in a full run that took 93 s instead of the usual 40 to 60 s, with the fake MusicIP server already replaced by an in-process stand-in (tests/fake_source.py), and passed in the next four full runs; so the server is not the cause. On 2026-10-30 it failed once more (0 builtins instead of 1) in a full run on `feature/mix-mode` (the first screen and Mix mode; no Radio code changed) and passed alone and in the next full runs. After the merge into `main` the same day, `test_radio_mode.StartFromAnySongTest.test_new_station_is_not_mistaken_for_other_playback` failed in 2 of 4 full runs (`stop_reason` not `external_playback`) and passed 5 times alone; the merged change touches no Radio code and no clock. On `feature/radio-batch-size` (same day), `test_no_redraw_while_kodi_is_loading_a_list` and `test_the_radio_screen_follows_the_snippets` failed together in 1 of 5 full runs. On `fix/favourite-keeps-intent` (same day), Radio tests failed in 2 of 4 full runs: once `test_the_radio_screen_follows_the_snippets`, once `test_new_station_is_not_mistaken_for_other_playback` together with `test_no_redraw_while_kodi_is_loading_a_list`. The flaky failures are getting more frequent and all sit in the Radio tests. The test uses the fake clock, so the cause is probably state left behind by another test (a background thread or the fake MusicIP server) rather than real time. Not reproduced yet.
-
-Mitigated in 6f6ba14 (2026-10-17), not fixed (the fault is in Kodi): listings are handed to Kodi in one call (`addDirectoryItems`), and screen redraws from the background (the service, AI Mix Assist's tidy-up) wait while Kodi is loading a list (`Container.IsUpdating`, busy dialog). If it happens again, the next step is the one above: generate mixes outside a listing.
 
 ### F3 · "Unknown date" is listed first among saved mix dates
 
@@ -60,34 +43,7 @@ These plugin functions are never called:
 
 Found on 2026-10-11 while removing the Discovery command channel (F6). They are unrelated to that change.
 
-### F29 · "Settings" on the first screen has "Play" in its context menu
-
-Found by the user on 2026-10-21: the context menu of "Settings" shows Play, Play using..., Play next, Queue item, Information and Add to favourites, like a song; the other entries of the first screen (folders) show only "Add to favourites". Kodi gives every entry that is not a folder its play entries, and an add-on can't remove Kodi's entries (only add its own).
-
-"Settings" is an action, not a folder, since dd92060 (2026-10-10): as a folder Kodi expected a listing from it, logged an error, and the Back key could open the settings again. Options looked at on 2026-10-21: a folder again (brings those problems back), or taking "Settings" off the first screen (the add-on's settings stay reachable through Kodi's add-on menu). Kept as it is for now.
-
-### F34 · A station whose first MusicIP list mostly doesn't fit runs dry
-
-Seen by the user on 2026-10-24 with the favourite "Cold Precision Electro" (seed: Kraftwerk, "Vitamin"; drift "Stay close to the picked song"). The refill checks chose 0 of 6 songs three times in a row. MusicIP's list for "Vitamin" is mostly lounge, nu-jazz and downtempo (Thievery Corporation, dZihan & Kamien, Beanfield), which every perspective rejects. The AI accepted 2 of 144 candidates with Mixed (Close), 19 of 216 with Cultural (Close) and 9 of 216 with Emotional (5 of 72 at Close, 4 of 144 at Balanced). The checks were counted with the AI log; the perspective is not the cause.
-
-Two things in the search make it worse:
-
-- **Balanced examines fewer songs than Close.** `RADIO_CHECK_BATCHES` gives Focused 6 batches of 18, Close 4 and Balanced 2, because a stricter station needs more to choose from. When the list is mostly misfits, a station set to Balanced examines 36 songs and finds nothing, where the same station at Close examines 72.
-- **The check stays on the first list.** `radio_more_candidates` brings MusicIP's lists for the songs that fit only when the first list runs out. That list has more than 70 candidates, so the batch limit always ends the check first ("2 batch(es) and 1 list(s)"). The songs that did fit, for example Fred und Luna's "Monotonikum", would seed better lists. With "Stay close", every refill asks MusicIP about "Vitamin" again and gets much the same list.
-
-The same misfits were also judged again and again: that evening, 797 rejections were of only 534 different songs (Jazz Liberatorz' "Always Something" 7 times). Since 2026-10-24 a playing station remembers the songs its checks turned down and leaves them out of later checks, so a check reaches new songs sooner (see `concept_radio_mode.md`).
-
-Still open: move on to the next list when a batch brings almost nothing (for example 0 or 1 of 18), and give a check that keeps choosing too little more batches. Not decided yet.
-
-On 2026-10-25, with Emotional from the artist's side, the same station got 7 songs from 4 checks (2, 1, 1 and 3 of about 70 examined each, always from 1 list). The user reproduced the thin suggestions in MusicIP itself, and added compilations and fringe music to the library in the hope of better lists. A second limit showed in that log: see F35. MusicIP was then scanning the new folders, so later lists for this seed may differ; the counts above are from before.
-
-### F31 · MusicIP doesn't notice changed tags
-
-Reported by the user on 2026-10-22: MusicIP's library reload (`/server/reload`, run by the service every 8 hours and after Kodi's music library scan) takes in new files, but it doesn't notice changed tags in files it already knows, even when the file's date has changed. MusicIP then keeps a song's old artist, album, title and genre while Kodi's library has the new ones.
-
-Why it matters: good tags make good mixes. MusicIP uses its own copy of the tags, for example for "no artist repeat within N tracks" and for its filters, while the add-on and AI Mix Assist read Kodi's tags (labels, genre hints for the AI's ratings). Songs whose tags were corrected stay wrong on MusicIP's side, and the two libraries drift apart.
-
-Not solved. Still to find out: whether MusicIP can be made to read a file's tags again (an API call, a setting, or removing the song from its library and taking it in again), and how the add-on could find the songs whose tags changed (for example Kodi's library dates against the time of the last reload). Taking in a song takes MusicIP minutes, one song at a time, so any fix has to touch only the changed songs and wait while Radio or Discovery plays.
+On 2026-10-31 only `add_discovery_run_action_item()` is left: the other two went with MusicIP's code into `musicip_dormant.py` (3fe67a0).
 
 ### F36 · The sound engine can suggest songs that are no longer in the library
 
@@ -177,6 +133,23 @@ Fixed in 476c940 (2026-10-25): `assist.turned_down_reason` gives the profile's r
 
 **Test:** `test_mixassist_tidy_up.AssistTest.test_a_song_the_ai_would_take_is_turned_down_with_the_profiles_reason`, `test_mixassist_tidy_up.AssistTest.test_emotional_leaves_production_out_of_the_profile`
 
+### F34 · A station whose first MusicIP list mostly doesn't fit runs dry
+
+Seen by the user on 2026-10-24 with the favourite "Cold Precision Electro" (seed: Kraftwerk, "Vitamin"; drift "Stay close to the picked song"). The refill checks chose 0 of 6 songs three times in a row. MusicIP's list for "Vitamin" is mostly lounge, nu-jazz and downtempo (Thievery Corporation, dZihan & Kamien, Beanfield), which every perspective rejects. The AI accepted 2 of 144 candidates with Mixed (Close), 19 of 216 with Cultural (Close) and 9 of 216 with Emotional (5 of 72 at Close, 4 of 144 at Balanced). The checks were counted with the AI log; the perspective is not the cause.
+
+Two things in the search make it worse:
+
+- **Balanced examines fewer songs than Close.** `RADIO_CHECK_BATCHES` gives Focused 6 batches of 18, Close 4 and Balanced 2, because a stricter station needs more to choose from. When the list is mostly misfits, a station set to Balanced examines 36 songs and finds nothing, where the same station at Close examines 72.
+- **The check stays on the first list.** `radio_more_candidates` brings MusicIP's lists for the songs that fit only when the first list runs out. That list has more than 70 candidates, so the batch limit always ends the check first ("2 batch(es) and 1 list(s)"). The songs that did fit, for example Fred und Luna's "Monotonikum", would seed better lists. With "Stay close", every refill asks MusicIP about "Vitamin" again and gets much the same list.
+
+The same misfits were also judged again and again: that evening, 797 rejections were of only 534 different songs (Jazz Liberatorz' "Always Something" 7 times). Since 2026-10-24 a playing station remembers the songs its checks turned down and leaves them out of later checks, so a check reaches new songs sooner (see `concept_radio_mode.md`).
+
+Still open: move on to the next list when a batch brings almost nothing (for example 0 or 1 of 18), and give a check that keeps choosing too little more batches. Not decided yet.
+
+On 2026-10-25, with Emotional from the artist's side, the same station got 7 songs from 4 checks (2, 1, 1 and 3 of about 70 examined each, always from 1 list). The user reproduced the thin suggestions in MusicIP itself, and added compilations and fringe music to the library in the hope of better lists. A second limit showed in that log: see F35. MusicIP was then scanning the new folders, so later lists for this seed may differ; the counts above are from before.
+
+Closed on 2026-10-31: obsolete. Since 3fe67a0 (2026-10-29) the sound engine makes the lists instead of MusicIP. For "Vitamin" about a third of its nearest songs fit (pilot of 2026-10-29: 31 % with Emotional, MusicIP 11 %), and a station that stays close draws its lists at variety 2 or more, so they don't repeat. The rule that was still open (move on to the next list when a batch brings almost nothing) is kept as an idea: [roadmap.md](roadmap.md), I32.
+
 ### F32 · A favourite station's artwork could stay without its number
 
 Found by the user on 2026-10-24: station 10's artwork had no number. While it played on 2026-10-23, the background service was still running the add-on code from before favourites had numbers (the service loads `main.py` once, at Kodi's start) and saved the station's newest collage without the number. The check for artwork to (re)draw only compared the stored look of the number (`artwork_mark`), which that save had left in place, so the unnumbered picture was taken as done.
@@ -185,11 +158,29 @@ Fixed on 2026-10-24: a favourite's picture counts as numbered only when its orig
 
 **Test:** `test_radio_favourites.FavouriteNumberTest.test_artwork_saved_without_the_number_by_older_code_gets_it`
 
+### F31 · MusicIP doesn't notice changed tags
+
+Reported by the user on 2026-10-22: MusicIP's library reload (`/server/reload`, run by the service every 8 hours and after Kodi's music library scan) takes in new files, but it doesn't notice changed tags in files it already knows, even when the file's date has changed. MusicIP then keeps a song's old artist, album, title and genre while Kodi's library has the new ones.
+
+Why it matters: good tags make good mixes. MusicIP uses its own copy of the tags, for example for "no artist repeat within N tracks" and for its filters, while the add-on and AI Mix Assist read Kodi's tags (labels, genre hints for the AI's ratings). Songs whose tags were corrected stay wrong on MusicIP's side, and the two libraries drift apart.
+
+Not solved. Still to find out: whether MusicIP can be made to read a file's tags again (an API call, a setting, or removing the song from its library and taking it in again), and how the add-on could find the songs whose tags changed (for example Kodi's library dates against the time of the last reload). Taking in a song takes MusicIP minutes, one song at a time, so any fix has to touch only the changed songs and wait while Radio or Discovery plays.
+
+Closed on 2026-10-31: obsolete. Since 3fe67a0 (2026-10-29) MusicIP no longer makes mixes. The sound engine reads no tags (the add-on takes artist, album and title from Kodi's library), and a file whose tags change gets a new size or change time, so it is analysed again.
+
 ### F30 · Tests wrote a usage.db into the working directory
 
 Found on 2026-10-22: after a full test run from `tests/`, an untracked `tests/profile/addon_data/plugin.audio.musicip/mixassist/usage.db` appeared (from the repository root it lands in `profile/`, which `.gitignore` had been hiding). The mixassist tests report usage events (`mixassist.usage.emit`) while no test Kodi is set up; importing `main.py` had registered its sink, and the fake Kodi then translated `special://profile` with an empty root, into a relative path.
 
 Fixed in the test fakes: `fake_kodi` refuses `special://` paths outside a test's Kodi, so such events are dropped (`emit` never fails the work it reports).
+
+### F29 · "Settings" on the first screen has "Play" in its context menu
+
+Found by the user on 2026-10-21: the context menu of "Settings" shows Play, Play using..., Play next, Queue item, Information and Add to favourites, like a song; the other entries of the first screen (folders) show only "Add to favourites". Kodi gives every entry that is not a folder its play entries, and an add-on can't remove Kodi's entries (only add its own).
+
+"Settings" is an action, not a folder, since dd92060 (2026-10-10): as a folder Kodi expected a listing from it, logged an error, and the Back key could open the settings again. Options looked at on 2026-10-21: a folder again (brings those problems back), or taking "Settings" off the first screen (the add-on's settings stay reachable through Kodi's add-on menu). Kept as it is for now.
+
+Closed on 2026-10-31 as won't fix, with the listener: Kodi adds these entries to every entry that is not a folder, and the add-on can't remove them; both ways out are worse (see above).
 
 ### F28 · Saved mixes had "Information" twice in the context menu
 
@@ -270,6 +261,25 @@ Fixed in 26ae462 (2026-10-15): gaps sharing a submix seed share one submix, ever
 Found by the user on 2026-10-15: closing the editor with Esc showed "Saved. Tidy up the mix to apply it." `Dialog().input()` returns "" when cancelled, which the editor took as "go back to the AI's statement".
 
 Fixed in 26ae462 (2026-10-15) with the keyboard dialog, as for F2. `test_main_mix_assist.EditIntentTest` covers it.
+
+### F14 · Kodi crashes while a mix listing is being built
+
+Kodi crashed (access violation) twice while the add-on was building a folder listing:
+
+- 2026-10-15, right after a new mix was generated inside the mix listing (`browse_mix`): in `xbmcplugin.addDirectoryItem()` → `CPluginDirectory::AddItem` → `CFileItemList::Add`, while copying a song's music tag.
+- 2026-10-11: in `xbmcplugin.setPluginCategory()` → `CPluginDirectory::SetProperty`, the first call of a listing.
+
+- 2026-10-17, opening a stored mix (`browse_mix`, "Loaded stored mix from cache"), about 0.1 s into adding its tracks: again in `xbmcplugin.addDirectoryItem()` → `CPluginDirectory::AddItem` → `CFileItemList::Add`, this time while inserting into the list's lookup map. No mix was being generated, so the listing itself was fast.
+
+- 2026-10-25, during Radio playback: `kodi.old.log` ends at 09:58:18, right after a song change ("now playing 'Extrawelt - Zu Fuss'", no check running, no listing being built). Kodi left no crash dump this time, so the cause is unknown and may not be this pattern.
+
+All three stacks were resolved with Kodi 21.3's debug symbols (`kodi-21.3-Omega-x64.pdb` from mirrors.kodi.tv matches the installed build). In all cases Kodi's object for the pending folder request was no longer valid when the add-on called into it. This happens when Kodi gives up a folder request while the add-on is still working on it, for example when the screen changes (`Container.Update`, `Container.Refresh`, Back) during a slow listing. Generating a mix inside a listing takes several seconds (MusicIP reload, the confirmation dialog, the mix itself), which leaves a wide window. F8 is the same pattern from the other side: actions run as folder requests that switch screens instead of returning a listing.
+
+The add-on can't check whether Kodi still waits for a listing. The 2026-10-17 crash shows that a slow listing is not required: the add-on adds tracks one call at a time (40 calls for a 40-track mix), and the crash hits during that loop. Adding all items in one call (`xbmcplugin.addDirectoryItems`) would shrink that window to a single call. A likely fix is to stop doing slow work and dialogs inside folder requests: generate mixes in a `RunPlugin` action, then show the stored mix with `Container.Update`, whose listing is fast.
+
+Mitigated in 6f6ba14 (2026-10-17), not fixed (the fault is in Kodi): listings are handed to Kodi in one call (`addDirectoryItems`), and screen redraws from the background (the service, AI Mix Assist's tidy-up) wait while Kodi is loading a list (`Container.IsUpdating`, busy dialog). If it happens again, the next step is the one above: generate mixes outside a listing.
+
+Closed on 2026-10-31: not seen again. The last crash dump Kodi wrote is from 2026-10-18 12:06, a day after the mitigation (its stack was not resolved); the end of 2026-10-25 left none, and Kodi hasn't crashed in the 13 days since. Since 2026-10-29 mixes come from the sound engine (about a second) instead of MusicIP, so listings that make a mix are shorter still. If it happens again, open a new finding and take the next step above.
 
 ### F13 · Saved mixes had two context menu entries for the same information
 
