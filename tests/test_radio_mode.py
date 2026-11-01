@@ -472,6 +472,10 @@ class StationTest(RadioTestCase):
         self.assertEqual(len(set(kodi.playlist_files())), 9)  # nothing repeats
         self.assertFalse(kodi.playlist[-1][1].getLabel()[:1].isdigit())
 
+    def others(self):
+        """Library songs that aren't the station's (its seed is drawn at random)."""
+        return [song for song in SONGS if song not in kodi.playlist_files()]
+
     def test_a_playlist_cut_short_by_the_listener_is_topped_up(self):
         self.start()
         self.tick(service.RADIO_STOP_GRACE_SECONDS)
@@ -502,7 +506,7 @@ class StationTest(RadioTestCase):
     def test_a_song_queued_from_the_library_ends_the_station(self):
         self.start()
         self.tick(service.RADIO_STOP_GRACE_SECONDS)
-        fake_kodi.PlayList(0).add(SONGS[30], index=2)  # "Play next": the station's context may be tainted
+        fake_kodi.PlayList(0).add(self.others()[0], index=2)  # "Play next": the station's context may be tainted
         radio = self.tick()
         self.assertEqual((radio["phase"], radio["stop_reason"]), ("off", "songs_added"))
         self.assertTrue(kodi.player.playing)  # Kodi plays on
@@ -511,7 +515,7 @@ class StationTest(RadioTestCase):
     def test_a_new_playlist_that_holds_a_station_song_ends_the_station(self):
         self.start()
         self.tick(service.RADIO_STOP_GRACE_SECONDS)
-        album = [kodi.playlist[1], (SONGS[31], None), (SONGS[32], None)]  # the album of a song the station played
+        album = [kodi.playlist[1]] + [(song, None) for song in self.others()[:2]]  # the album of a song the station played
         kodi.playlist[:] = album
         kodi.go_to(1)
         self.assertEqual(self.tick()["stop_reason"], "songs_added")
@@ -519,7 +523,7 @@ class StationTest(RadioTestCase):
     def test_a_mix_of_the_addon_ends_the_station(self):
         self.start()
         self.tick(service.RADIO_STOP_GRACE_SECONDS)
-        main.play_tracks_as_music_playlist([kodi.playlist_files()[0]] + SONGS[31:34])  # seeded from the playing song
+        main.play_tracks_as_music_playlist([kodi.playlist_files()[0]] + self.others()[:3])  # seeded from the playing song
         self.assertEqual((self.radio()["phase"], self.radio()["stop_reason"]), ("off", "mix_started"))
         self.assertNotIn("rejected", self.radio())
         self.assertEqual(self.tick()["stop_reason"], "mix_started")
