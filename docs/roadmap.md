@@ -207,6 +207,37 @@ Claude subscription, and the add-on removes `ANTHROPIC_API_KEY` from every call 
 key as an alternative route would give the checks to listeners without a subscription (README, *Prerequisites*);
 the costs per mix would have to be shown (the statistics already count tokens).
 
+### Screen
+
+#### I36 · A screen during playback: what plays, and music to discover
+
+From the listener, 2026-11-02. While a mix or station plays and nobody touches Kodi, a full screen shows the
+station's or mix's information (name, seed, profile, intent, what is playing and next, the station's events), and
+suggests artists and albums that would fit the mix's or station's criteria but are not in the library: "would fit"
+(close to the profile and intent) and "could fit" (a step further out, as the variety reaches). Notes:
+
+- Where it shows: the listener's wish is that it fits into Kodi, perhaps as a music visualisation. Kodi's
+  visualisations are compiled add-ons (C++), which a Python add-on can't be; but Kodi's full-screen music screen,
+  where the chosen visualisation runs and the skin shows the song over it, is the place. As Artist Slideshow does
+  (installed here; Arctic Fuse shows its pictures there), the service publishes what to show as window properties
+  (`Window(Home).Property(Incipit.…)`) for skins that take them up, and lays a screen of its own over the
+  visualisation for skins that don't. Kodi's screensaver is off during audio playback by default
+  (`screensaver.disableforaudio`, on here), so a screensaver (`xbmc.ui.screensaver`) would need that switch turned
+  off; the full-screen music screen needs nothing.
+- The suggestions come from Claude, as the checks do: from the profile, the intent and its perspective, and the
+  artists playing; judged as a DJ would, from the music's intent, not by popularity. Left out what Kodi's library
+  has (artists and albums, compared as the artist rule compares them); every album checked against MusicBrainz, so
+  nothing invented is shown (I21 uses MusicBrainz too). One call per mix or station, kept with it.
+- One suggestion at a time (the listener's wish, 2026-11-02: time to take it in), with its cover, why it fits and
+  "would" or "could fit"; the next one with the next song (3 to 5 minutes, and never in the middle of something).
+- Open: the overlay at the bottom or down one side.
+- Every suggestion shown is kept (the listener's wish, 2026-11-02), so it doesn't come again and can be reviewed
+  later: a "Suggestions" folder in the add-on, newest first, each with "would" or "could fit", why, and the station
+  or mix it came from (which can be played again); the listener takes out what isn't for them. One that later turns
+  up in the library (after Kodi's library scan) is marked so. With everything kept, the screen needs no key to keep
+  one.
+- Cover art from the Cover Art Archive, shown, not stored in the add-on.
+
 ### Housekeeping
 
 #### I25 · GitHub Actions on Node.js 24
@@ -272,7 +303,7 @@ Workers: the same 400 songs (339 folders) analysed with each set-up in turn, bel
 own, Kodi running:
 
 | Workers x threads | s per song | machine busy | analysis |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 4 x 2 | 0.37 | 65% | 55% |
 | 6 x 2 | 0.37 | 83% | 72% |
 | 8 x 1 | 0.38 | 85% | 71% |
