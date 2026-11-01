@@ -29,7 +29,7 @@ msgid "Variety"
 msgstr ""
 
 msgctxt "#30307"
-msgid "How far a mix may reach from the seed. 0 keeps a mix close to the seed's sound; 9 gives the widest choice. For the sound engine: 0 takes the nearest songs by sound, a very cohesive mix; each step reaches further out and draws more of the far songs; at 9 a mix draws from the whole library, across genres, near songs only a little more likely than far ones. Character and Intent keep a loose mix consistent in mood and character."
+msgid "How far a mix may reach from the seed. 0 keeps a mix close to the seed's sound; 9 gives the widest choice. For the sound engine: 0 draws from the nearest songs by sound, a very cohesive mix that still differs each time; each step reaches further out and draws more of the far songs; at 9 a mix draws from the whole library, across genres, near songs only a little more likely than far ones. Character and Intent keep a loose mix consistent in mood and character."
 msgstr ""
 
 msgctxt "#30310"
@@ -305,7 +305,7 @@ msgid "Stations"
 msgstr ""
 
 msgctxt "#30625"
-msgid "How far a station's songs may reach from the song they come from. 0: the nearest songs by sound, a very cohesive station; each step reaches further out and draws more of the far songs; at 9 the songs come from the whole library, across genres. A station that stays close to its picked song uses at least 2, so its refills don't repeat. Mixing has its own, and so can a favourite station."
+msgid "How far a station's songs may reach from the song they come from. 0: the nearest songs by sound, a very cohesive station; each step reaches further out and draws more of the far songs; at 9 the songs come from the whole library, across genres. A station's songs never come back: each refill comes from the nearest songs it hasn't had. Mixing has its own, and so can a favourite station."
 msgstr ""
 
 msgctxt "#30626"
