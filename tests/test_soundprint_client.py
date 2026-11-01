@@ -40,6 +40,39 @@ def answer(songs, **fields):
                            for number, path in enumerate(songs)]}, **fields)
 
 
+# Prints its own priority class and that of a worker it spawns, as the analysis does.
+PRIORITY_PROBE = """import ctypes, multiprocessing
+from ctypes import wintypes
+
+
+def priority_class():
+    return ctypes.windll.kernel32.GetPriorityClass(wintypes.HANDLE(-1))
+
+
+def report(queue):
+    queue.put(priority_class())
+
+
+if __name__ == "__main__":
+    context = multiprocessing.get_context("spawn")
+    queue = context.Queue()
+    worker = context.Process(target=report, args=(queue,))
+    worker.start()
+    print(priority_class(), queue.get(timeout=60))
+    worker.join()
+"""
+# Lowers its own priority as the analysis does, then reads back the CPU class and the I/O priority.
+LOWER_PRIORITY_PROBE = """import ctypes
+from ctypes import wintypes
+from soundprint import state
+print(state.lower_priority())
+io, size = ctypes.c_ulong(9), ctypes.c_ulong()
+ctypes.windll.ntdll.NtQueryInformationProcess(wintypes.HANDLE(-1), state.PROCESS_IO_PRIORITY, ctypes.byref(io), 4,
+                                              ctypes.byref(size))
+print(f"class {ctypes.windll.kernel32.GetPriorityClass(wintypes.HANDLE(-1)):#x} io {io.value}")
+"""
+
+
 class FakeRun:
     def __init__(self, stdout="", stderr="", returncode=0, error=None):
         self.result = SimpleNamespace(stdout=stdout, stderr=stderr, returncode=returncode)
@@ -78,7 +111,8 @@ class ClientTest(unittest.TestCase):
         self.assertEqual(cmd[-8:], ["neighbours", SEED, "--count", "25", "--artist-window", "6", "--variety", "3"])
         self.assertEqual(kwargs["cwd"], client.ADDON_FOLDER)
         self.assertEqual(kwargs["timeout"], client.NEIGHBOURS_TIMEOUT)
-        self.assertEqual(kwargs["creationflags"], client.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
+        self.assertEqual(kwargs["creationflags"], client.CREATE_NO_WINDOW | client.BELOW_NORMAL_PRIORITY_CLASS
+                         if sys.platform == "win32" else 0)  # a mix waits for it: ahead of the analysis
 
     def test_a_seed_without_sound_print_is_an_empty_answer(self):
         run = FakeRun(json.dumps(answer([], seed_vector="not a local file")))
@@ -117,8 +151,33 @@ class ClientTest(unittest.TestCase):
         self.assertEqual(kwargs["stdout"].name, os.path.join(self.data, "run.out"))
         self.assertEqual(kwargs["stdin"], subprocess.DEVNULL)
         if sys.platform == "win32":
-            self.assertEqual(kwargs["creationflags"], client.CREATE_NO_WINDOW | client.CREATE_NEW_PROCESS_GROUP
-                             | client.CREATE_BREAKAWAY_FROM_JOB)
+            self.assertEqual(kwargs["creationflags"], client.CREATE_NO_WINDOW | client.IDLE_PRIORITY_CLASS
+                             | client.CREATE_NEW_PROCESS_GROUP | client.CREATE_BREAKAWAY_FROM_JOB)
+
+    def test_the_set_up_runs_at_idle_priority(self):
+        run = FakeRun("ready: x")
+        client.setup(tempfile.mkdtemp(), "U", "py", runner=run)
+        self.assertEqual(run.calls[0][1]["creationflags"],
+                         client.CREATE_NO_WINDOW | client.IDLE_PRIORITY_CLASS if sys.platform == "win32" else 0)
+
+    @unittest.skipUnless(sys.platform == "win32", "Windows priority classes")
+    def test_the_priority_class_reaches_every_process_of_the_tool(self):
+        """The launcher of a Python environment starts the real interpreter as its child, and the analysis starts
+        workers: started with the class, all of them have it (the analysis used to lower only itself, later)."""
+        script = os.path.join(tempfile.mkdtemp(), "priority_probe.py")  # spawn imports the script again
+        with open(script, "w", encoding="utf-8") as handle:
+            handle.write(PRIORITY_PROBE)
+        completed = subprocess.run([sys.executable, script], capture_output=True, text=True, timeout=90,
+                                   creationflags=client.window_flags(client.IDLE_PRIORITY_CLASS))
+        self.assertEqual(completed.stdout.split(), [str(client.IDLE_PRIORITY_CLASS)] * 2, completed.stderr)
+
+    @unittest.skipUnless(sys.platform == "win32", "Windows priorities")
+    def test_lower_priority_sets_idle_cpu_and_very_low_io(self):
+        """In a process of its own (it would lower this one's). It once failed without a word: F47."""
+        completed = subprocess.run([sys.executable, "-c", LOWER_PRIORITY_PROBE], capture_output=True, text=True,
+                                   timeout=60, cwd=client.ADDON_FOLDER)
+        lines = completed.stdout.splitlines()
+        self.assertEqual(lines, ["idle CPU priority, very low I/O priority", "class 0x40 io 0"], completed.stderr)
 
     def test_an_analysis_started_by_kodi_follows_kodis_process(self):
         started = []
