@@ -111,7 +111,7 @@ class ClientTest(unittest.TestCase):
         self.assertEqual(cmd[-8:], ["neighbours", SEED, "--count", "25", "--artist-window", "6", "--variety", "3"])
         self.assertEqual(kwargs["cwd"], client.ADDON_FOLDER)
         self.assertEqual(kwargs["timeout"], client.NEIGHBOURS_TIMEOUT)
-        self.assertEqual(kwargs["creationflags"], client.CREATE_NO_WINDOW | client.BELOW_NORMAL_PRIORITY_CLASS
+        self.assertEqual(kwargs["creationflags"], client.CREATE_NO_WINDOW | client.NORMAL_PRIORITY_CLASS
                          if sys.platform == "win32" else 0)  # a mix waits for it: ahead of the analysis
 
     def test_a_stations_songs_go_to_the_tool_in_a_file_removed_afterwards(self):
@@ -170,14 +170,14 @@ class ClientTest(unittest.TestCase):
         self.assertEqual(kwargs["stdout"].name, os.path.join(self.data, "run.out"))
         self.assertEqual(kwargs["stdin"], subprocess.DEVNULL)
         if sys.platform == "win32":
-            self.assertEqual(kwargs["creationflags"], client.CREATE_NO_WINDOW | client.IDLE_PRIORITY_CLASS
+            self.assertEqual(kwargs["creationflags"], client.CREATE_NO_WINDOW | client.BELOW_NORMAL_PRIORITY_CLASS
                              | client.CREATE_NEW_PROCESS_GROUP | client.CREATE_BREAKAWAY_FROM_JOB)
 
-    def test_the_set_up_runs_at_idle_priority(self):
+    def test_the_set_up_runs_below_normal_priority(self):
         run = FakeRun("ready: x")
         client.setup(tempfile.mkdtemp(), "U", "py", runner=run)
         self.assertEqual(run.calls[0][1]["creationflags"],
-                         client.CREATE_NO_WINDOW | client.IDLE_PRIORITY_CLASS if sys.platform == "win32" else 0)
+                         client.CREATE_NO_WINDOW | client.BELOW_NORMAL_PRIORITY_CLASS if sys.platform == "win32" else 0)
 
     @unittest.skipUnless(sys.platform == "win32", "Windows priority classes")
     def test_the_priority_class_reaches_every_process_of_the_tool(self):
@@ -187,16 +187,17 @@ class ClientTest(unittest.TestCase):
         with open(script, "w", encoding="utf-8") as handle:
             handle.write(PRIORITY_PROBE)
         completed = subprocess.run([sys.executable, script], capture_output=True, text=True, timeout=90,
-                                   creationflags=client.window_flags(client.IDLE_PRIORITY_CLASS))
-        self.assertEqual(completed.stdout.split(), [str(client.IDLE_PRIORITY_CLASS)] * 2, completed.stderr)
+                                   creationflags=client.window_flags(client.BELOW_NORMAL_PRIORITY_CLASS))
+        self.assertEqual(completed.stdout.split(), [str(client.BELOW_NORMAL_PRIORITY_CLASS)] * 2, completed.stderr)
 
     @unittest.skipUnless(sys.platform == "win32", "Windows priorities")
-    def test_lower_priority_sets_idle_cpu_and_very_low_io(self):
+    def test_lower_priority_sets_below_normal_cpu_and_very_low_io(self):
         """In a process of its own (it would lower this one's). It once failed without a word: F47."""
         completed = subprocess.run([sys.executable, "-c", LOWER_PRIORITY_PROBE], capture_output=True, text=True,
                                    timeout=60, cwd=client.ADDON_FOLDER)
         lines = completed.stdout.splitlines()
-        self.assertEqual(lines, ["idle CPU priority, very low I/O priority", "class 0x40 io 0"], completed.stderr)
+        self.assertEqual(lines, ["below-normal CPU priority, very low I/O priority", "class 0x4000 io 0"],
+                         completed.stderr)
 
     def test_an_analysis_started_by_kodi_follows_kodis_process(self):
         started = []

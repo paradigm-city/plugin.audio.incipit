@@ -1,8 +1,8 @@
 """Analysing many songs: worker processes, each with its own model; only the main process writes the store.
 
 Decoding and the model both use one CPU core per song, so songs are spread over processes rather than threads
-(Python threads would share one core for the spectrogram). The processes run at idle priority by default, so
-playback and Kodi keep the CPU whenever they need it.
+(Python threads would share one core for the spectrogram). The processes run at below-normal priority by default,
+so playback and Kodi keep the CPU whenever they need it.
 
 While it runs, status.json in the data folder says how far it is; a file named "stop" there ends it after the
 songs in hand (the next run picks up where it stopped). Started by Kodi, it follows Kodi's process and ends the same
