@@ -412,6 +412,25 @@ class NearestTest(unittest.TestCase):
         found, _, _ = neighbours.nearest(self.store, "seed", 50, rng=random.Random(1))
         self.assertEqual(sorted(path for path, _, _ in found), ["close", "far", "middle"])
 
+    def test_a_file_under_two_spellings_is_taken_once_in_kodis(self):
+        for path, vector in (("D:\\Music\\seed.mp3", unit(1, -0.01)), ("d:\\music\\seed.mp3", unit(1, -0.01)),
+                             ("D:\\Music\\twin.mp3", unit(1, 0.05)), ("d:\\music\\twin.mp3", unit(1, 0.05))):
+            self.store.put(path, 1, 1.0, "v", 1.0, vector)  # the old spellings ("D:\Music") kept by F45
+        self.store.commit()
+        known = {"d:\\music\\twin.mp3": ("Neu!", "Hallo Gallo"), "d:\\music\\seed.mp3": ("Neu!", "Seed"),
+                 "seed": ("Kraftwerk", "Radioactivity"), "close": ("Cluster", "Close"),
+                 "middle": ("Harmonia", "Middle"), "far": ("Moebius", "Far")}
+        with unittest.mock.patch.object(neighbours, "CASE_BLIND", True):
+            found, _, left_out = neighbours.nearest(self.store, "d:\\music\\seed.mp3", 3, in_order=True,
+                                                    details=lambda path: known.get(path, ("", "")))
+            self.assertEqual([path for path, _, _ in found], ["seed", "d:\\music\\twin.mp3", "close"])
+            self.assertEqual(left_out["same_song"], 2)  # the seed's old spelling and the twin's
+            found, _, left_out = neighbours.nearest(self.store, "d:\\music\\seed.mp3", 3, in_order=True,
+                                                    details=lambda path: known.get(path, ("", "")),
+                                                    leave_out=["D:/MUSIC/TWIN.mp3"])
+            self.assertEqual([path for path, _, _ in found], ["seed", "close", "middle"])
+            self.assertEqual(left_out["listed"], 2)  # both spellings: one file
+
     def test_listed_songs_are_left_out_their_paths_compared_as_the_add_on_does(self):
         self.store.put("D:\\music\\close2.mp3", 1, 1.0, "v", 1.0, unit(1, 0.25))
         self.store.commit()

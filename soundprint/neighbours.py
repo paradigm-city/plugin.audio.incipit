@@ -9,7 +9,8 @@ For a mix, three rules on top of the order by sound (all optional):
 - no artist repeat within `window` songs, as MusicIP's reject size: the seed is the mix's first song, and a song
   whose artist is among the last `window` songs is passed over (an album's songs are often each other's nearest);
   artists are compared as AI Mix Assist compares them (mixassist.cache.artist_key);
-- the same song twice (the same artist and title on another album, or a copy) only once, and never the seed's;
+- the same song twice (the same artist and title on another album, or a copy, or the same file under another
+  spelling of its path: file_key) only once, and never the seed's;
 - variety (0 to 9, as MusicIP's setting): how far into the order by sound a mix reaches, and how random it is.
   A mix chooses from the nearest `reach` songs: at 0 half as many again as it holds (TIGHTEST_REACH), so it still
   varies from one time to the next, then each step the same factor deeper, up to the whole library at 9 (a measure,
@@ -34,6 +35,7 @@ from __future__ import annotations
 
 import os
 import random
+from collections import Counter
 from typing import Callable, Iterable, List, Optional, Tuple
 
 import numpy as np
@@ -75,6 +77,17 @@ def identity(path: str) -> str:
     return (path or "").replace("\\", "/").strip()
 
 
+# Windows' paths ignore case: "d:\music\a.mp3" and "D:\music\a.mp3" are one file. The store can hold both, the old
+# spelling kept when a song was taken over to Kodi's new one (F45), with the same vector (F50).
+CASE_BLIND = os.name == "nt"
+
+
+def file_key(path: str) -> str:
+    """The file a path names: its identity, without case where paths ignore it."""
+    key = identity(path)
+    return key.casefold() if CASE_BLIND else key
+
+
 def reach(count: int, variety: int, songs: int) -> int:
     """How deep into the order by sound a mix of count songs reaches: TIGHTEST_REACH times count at variety 0, all
     songs at 9, the same factor deeper with each step (never less than at 0)."""
@@ -106,11 +119,14 @@ def nearest(store: Store, seed: str, count: int, model_folder: str = "", snippet
     vector = vector / (np.linalg.norm(vector) + 1e-9)
     similarity = np.asarray(matrix @ vector)
     variety = max(0, min(9, variety))
-    listed = {identity(path) for path in leave_out}
-    leave = np.array([index for index, path in enumerate(paths) if identity(path) in listed], dtype=np.int64) \
+    files = [file_key(path) for path in paths]
+    listed = {file_key(path) for path in leave_out}
+    leave = np.array([index for index, key in enumerate(files) if key in listed], dtype=np.int64) \
         if listed else np.empty(0, dtype=np.int64)
     left_out["listed"] = int(len(leave))
-    if details is None and not window and in_order:
+    # One file under two spellings (F50): it is taken once, in the spelling Kodi knows (the other has no details).
+    twins = {key for key, number in Counter(files).items() if number > 1}
+    if details is None and not window and in_order and not twins:
         take = min(len(paths), count + 1 + len(leave))
         order = np.argpartition(-similarity, take - 1)[:take]
         order = order[np.argsort(-similarity[order])]
@@ -132,13 +148,14 @@ def nearest(store: Store, seed: str, count: int, model_folder: str = "", snippet
     seed_details = details(seed) if details else ("", "")
     seen_songs = {song_key(seed_details)} if seed_details[1] else set()
     recent = [artist_key(seed_details[0])]  # the mix's artists so far, the seed first
+    taken = {file_key(seed)}  # the files in the mix, the seed first
     mix: List[Tuple[str, float, int]] = []
     for position in positions:
         index = order[position]
         path = paths[index]
         artist, title = details(path) if details else ("", "")
         key = song_key((artist, title))
-        if title and key in seen_songs:
+        if (title and key in seen_songs) or files[index] in taken or (details and not title and files[index] in twins):
             left_out["same_song"] += 1
             continue
         name = artist_key(artist)
@@ -147,6 +164,7 @@ def nearest(store: Store, seed: str, count: int, model_folder: str = "", snippet
             continue
         if title:
             seen_songs.add(key)
+        taken.add(files[index])
         recent.append(name)
         mix.append((path, float(similarity[index]), int(ranks[position])))
         if len(mix) >= count:
