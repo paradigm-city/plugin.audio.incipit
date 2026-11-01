@@ -327,7 +327,8 @@ class StartFromAnySongTest(RadioTestCase):
     def test_new_station_is_not_mistaken_for_other_playback(self):
         self.start()
         # The service may look before Kodi has switched to the new station's first song.
-        main.save_radio_state(dict(self.radio(), queue=[{"file": SONGS[30], "label": "x"}], playing_started_ts=int(self.clock.now)))
+        elsewhere = "D:\\music\\Elsewhere\\01 Other.mp3"  # not in the playlist: the playlist isn't the station's
+        main.save_radio_state(dict(self.radio(), queue=[{"file": elsewhere, "label": "x"}], playing_started_ts=int(self.clock.now)))
         self.assertEqual(self.tick()["phase"], "playing")
         self.assertEqual(self.tick(service.RADIO_STOP_GRACE_SECONDS)["stop_reason"], "external_playback")
 
@@ -470,6 +471,72 @@ class StationTest(RadioTestCase):
         self.assertEqual(kodi.playlist_files(), [entry["file"] for entry in radio["queue"]])
         self.assertEqual(len(set(kodi.playlist_files())), 9)  # nothing repeats
         self.assertFalse(kodi.playlist[-1][1].getLabel()[:1].isdigit())
+
+    def test_a_playlist_cut_short_by_the_listener_is_topped_up(self):
+        self.start()
+        self.tick(service.RADIO_STOP_GRACE_SECONDS)
+        cut = kodi.playlist_files()[2:]
+        del kodi.playlist[2:]  # 5 songs cut to 2 in Kodi's playlist (2026-11-01)
+        kodi.go_to(1)  # the last song plays
+        radio = self.tick()
+        self.assertEqual(radio["phase"], "playing")
+        self.assertEqual(kodi.playlist_files(), [entry["file"] for entry in radio["queue"]])
+        self.assertGreater(len(radio["queue"]), 2)  # the 2 left and a refill
+        self.assertFalse(set(cut) & set(kodi.playlist_files()[2:]))  # what was cut doesn't come back
+        self.assertTrue({main.normalize_track_identity(path) for path in cut} <= set(radio["seen"]))
+        self.assertTrue({main.normalize_track_identity(path) for path in cut}
+                        <= set(self.source.mix_requests()[-1]["leave_out"]))
+        edited = [event for event in radio["events"] if event["kind"] == "playlist_edited"]
+        self.assertEqual(len(edited[0]["removed"]), 3)
+        self.assertIn("You took 3 song(s) out of the playlist", dict(main.radio_info_pages(radio))["History (3)"])
+
+    def test_a_new_order_is_followed(self):
+        self.start()
+        self.tick(service.RADIO_STOP_GRACE_SECONDS)
+        kodi.playlist[3], kodi.playlist[4] = kodi.playlist[4], kodi.playlist[3]
+        radio = self.tick()
+        self.assertEqual(radio["phase"], "playing")
+        self.assertEqual([entry["file"] for entry in radio["queue"]], kodi.playlist_files())
+        self.assertNotIn("playlist_edited", [event["kind"] for event in radio["events"]])
+
+    def test_a_song_queued_from_the_library_ends_the_station(self):
+        self.start()
+        self.tick(service.RADIO_STOP_GRACE_SECONDS)
+        fake_kodi.PlayList(0).add(SONGS[30], index=2)  # "Play next": the station's context may be tainted
+        radio = self.tick()
+        self.assertEqual((radio["phase"], radio["stop_reason"]), ("off", "songs_added"))
+        self.assertTrue(kodi.player.playing)  # Kodi plays on
+        self.assertEqual(len(kodi.playlist), 6)
+
+    def test_a_new_playlist_that_holds_a_station_song_ends_the_station(self):
+        self.start()
+        self.tick(service.RADIO_STOP_GRACE_SECONDS)
+        album = [kodi.playlist[1], (SONGS[31], None), (SONGS[32], None)]  # the album of a song the station played
+        kodi.playlist[:] = album
+        kodi.go_to(1)
+        self.assertEqual(self.tick()["stop_reason"], "songs_added")
+
+    def test_a_mix_of_the_addon_ends_the_station(self):
+        self.start()
+        self.tick(service.RADIO_STOP_GRACE_SECONDS)
+        main.play_tracks_as_music_playlist([kodi.playlist_files()[0]] + SONGS[31:34])  # seeded from the playing song
+        self.assertEqual((self.radio()["phase"], self.radio()["stop_reason"]), ("off", "mix_started"))
+        self.assertNotIn("rejected", self.radio())
+        self.assertEqual(self.tick()["stop_reason"], "mix_started")
+
+    def test_a_video_ends_the_station_at_once(self):
+        self.start()
+        self.tick(service.RADIO_STOP_GRACE_SECONDS)
+        kodi.play_video("D:\\videos\\film.mkv")
+        self.assertEqual((self.tick()["phase"], self.radio()["stop_reason"]), ("off", "other_media"))
+
+    def test_a_playlist_without_the_stations_songs_is_left_alone(self):
+        self.start()
+        self.tick(service.RADIO_STOP_GRACE_SECONDS)
+        queue = self.radio()["queue"]
+        kodi.playlist[:] = [("D:\\music\\Elsewhere\\song.mp3", None)]
+        self.assertEqual(service.follow_playlist_edits(self.radio()), "")
+        self.assertEqual(self.radio()["queue"], queue)
 
     def test_songs_are_labelled_with_their_artists(self):
         self.start()
