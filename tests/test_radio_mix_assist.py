@@ -177,9 +177,11 @@ class RadioMixAssistTest(RadioBase):
         service.refill_radio_queue(radio, checked=True)
         self.finish_check()
         args, kwargs = self.refill_check.call_args
+        turned_down_ids = {main.normalize_track_identity(path) for path in turned_down}
+        self.assertTrue(turned_down_ids <= set(self.source.mix_requests()[-1]["leave_out"]))  # left out by the search
         self.assertEqual(args[1], fresh)
-        self.assertTrue({main.normalize_track_identity(path) for path in turned_down} <= set(kwargs["seen"]))
-        self.assertEqual(service.RADIO_CHECK["fallback"], turned_down + fresh)  # they may still keep it playing
+        self.assertTrue(turned_down_ids <= set(kwargs["seen"]))
+        self.assertEqual(service.RADIO_CHECK["fallback"], fresh)
 
     def test_the_station_forgets_them_when_it_stops_or_its_settings_change(self):
         first, second = (main.normalize_track_identity(song) for song in SONGS[1:3])
@@ -225,10 +227,11 @@ class RadioMixAssistTest(RadioBase):
 
     def test_more_candidates_come_from_the_songs_that_fit_then_earlier_seeds(self):
         mixes = {"chosen2": ["chosen2", "known", "n1"], "chosen1": ["n2"], "older": ["n3"]}
-        requested = []
+        requested, left_out = [], []
 
-        def fetch(seed, size, params=None):
+        def fetch(seed, size, params=None, leave_out=()):
             requested.append(seed)
+            left_out.append(set(leave_out))
             return mixes[seed]
 
         with mock.patch.object(main, "fetch_mix", side_effect=fetch):
@@ -237,11 +240,12 @@ class RadioMixAssistTest(RadioBase):
             self.assertEqual(more(["chosen1", "chosen2"]), ["n2"])
             self.assertEqual(more(["chosen1", "chosen2"]), [])  # RADIO_CHECK_LISTS: the first list and 2 more
         self.assertEqual(requested, ["chosen2", "chosen1"])
+        self.assertEqual(left_out, [{"known"}, {"known"}])  # the search leaves the station's songs out
 
     def test_staying_close_looks_again_at_the_picked_song_first(self):
         requested = []
 
-        def fetch(seed, size, params=None):
+        def fetch(seed, size, params=None, leave_out=()):
             requested.append((seed, params["variety"]))
             return [seed, f"new from {seed}"]
 
@@ -255,18 +259,24 @@ class RadioMixAssistTest(RadioBase):
             more(["chosen"])
         self.assertEqual(requested, [("chosen", 0)])  # drifting: the songs that fit first, the variety as set
 
-    def test_staying_close_keeps_musicips_mixes_from_repeating(self):
+    def test_staying_close_keeps_the_variety_set(self):
         kodi.settings["radio_variety"] = "0"
-        self.assertEqual(main.radio_mix_parameters(75, {"drift": 0})["variety"], main.RADIO_STAY_CLOSE_MIN_VARIETY)
+        self.assertEqual(main.radio_mix_parameters(75, {"drift": 0})["variety"], 0)
         self.assertEqual(main.radio_mix_parameters(75, {"drift": 1})["variety"], 0)
         kodi.settings["radio_variety"] = "5"
         self.assertEqual(main.radio_mix_parameters(75, {"drift": 0})["variety"], 5)
 
-    def test_a_station_that_stays_close_asks_musicip_with_variety(self):
+    def test_a_station_that_stays_close_leaves_its_songs_out_of_each_mix(self):
         kodi.settings.update({"radio_variety": "0", "mix_assist_radio_drift": "0"})
-        self.started_station()
-        self.assertEqual({query["variety"] for query in self.source.mix_requests()}, {"2"})  # start and refill
-        self.assertIn("variety 2", self.radio()["events"][0]["parameters"])
+        radio = self.started_station()
+        requests = self.source.mix_requests()
+        self.assertEqual({query["variety"] for query in requests}, {"0"})  # start and refill: the variety set
+        self.assertIn("variety 0", self.radio()["events"][0]["parameters"])
+        self.assertNotIn("leave_out", requests[0])  # the station's first mix
+        station = {main.normalize_track_identity(entry["file"]) for entry in radio["queue"]}
+        self.assertTrue(station <= set(requests[1]["leave_out"]))  # the start check's mix: its first songs
+        service.refill_radio_queue(self.radio(), checked=True)
+        self.assertTrue(station <= set(self.source.mix_requests()[-1]["leave_out"]))
 
     def test_a_refill_may_look_further_from_earlier_checked_songs_and_the_picked_song(self):
         radio = self.started_station()

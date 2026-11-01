@@ -114,6 +114,25 @@ class ClientTest(unittest.TestCase):
         self.assertEqual(kwargs["creationflags"], client.CREATE_NO_WINDOW | client.BELOW_NORMAL_PRIORITY_CLASS
                          if sys.platform == "win32" else 0)  # a mix waits for it: ahead of the analysis
 
+    def test_a_stations_songs_go_to_the_tool_in_a_file_removed_afterwards(self):
+        seen = {}
+
+        def run(cmd, **kwargs):
+            listed = cmd[cmd.index("--leave-out") + 1]
+            with open(listed, encoding="utf-8") as handle:
+                seen.update(cmd=cmd, file=listed, paths=handle.read().splitlines())
+            return subprocess.CompletedProcess(cmd, 0, json.dumps(answer(NEAR)), "")
+
+        client.neighbours(self.data, "U", SEED, 25, runner=run, leave_out=["D:/music/ä.mp3", "", NEAR[0]])
+        self.assertEqual(seen["paths"], ["D:/music/ä.mp3", NEAR[0]])
+        self.assertEqual(os.path.dirname(seen["file"]), self.data)
+        self.assertFalse(os.path.exists(seen["file"]))
+        self.assertNotIn("--in-order", seen["cmd"])
+        run = FakeRun(json.dumps(answer(NEAR)))
+        client.neighbours(self.data, "U", SEED, 25, runner=run, in_order=True)  # nothing to leave out: no file
+        self.assertEqual(run.calls[0][0][-1:], ["--in-order"])
+        self.assertNotIn("--leave-out", run.calls[0][0])
+
     def test_a_seed_without_sound_print_is_an_empty_answer(self):
         run = FakeRun(json.dumps(answer([], seed_vector="not a local file")))
         with self.assertRaises(client.SoundprintError) as caught:
@@ -322,10 +341,28 @@ class SoundEngineMixTest(KodiTestCase):
         self.assertIn("Sound engine mix request: seed", log)
         self.assertIn("3 for an artist played too recently, 1 the same song again", log)
         self.assertIn(f"1. {NEAR[0]} (similarity 0.900, rank 1, A - T0)", log)
-        self.assertIn("variety 0: the nearest songs", log)
+        self.assertIn("variety 0: drawn from the nearest 25, the nearer the likelier", log)
         kodi.settings["mix_variety"] = "9"
         main.fetch_mix(SEED, 20)
         self.assertIn("variety 9: drawn from the nearest 25, the nearer the likelier", kodi.log_text())
+
+    def test_a_stations_mix_leaves_its_songs_out(self):
+        self.log_everything()
+        self.neighbours.return_value = answer(NEAR, left_out={"artist": 0, "same_song": 0, "listed": 2})
+        main.fetch_mix(SEED, 20, {"variety": 0, "rejectsize": 0}, leave_out={"D:/music/a.mp3", "D:/music/b.mp3"})
+        self.assertEqual(sorted(self.neighbours.call_args[1]["leave_out"]), ["D:/music/a.mp3", "D:/music/b.mp3"])
+        log = kodi.log_text()
+        self.assertIn("variety 0, leaving out 2 song(s) the station has had.", log)
+        self.assertIn("variety 0: drawn from the nearest 25 the station hasn't had (2 of its songs left out first)", log)
+        main.fetch_mix(SEED, 20)
+        self.assertEqual(list(self.neighbours.call_args[1]["leave_out"]), [])  # a mix: nothing left out
+
+    def test_characters_scale_takes_the_nearest_songs_in_order(self):
+        main.CHARACTER_SCALES.clear()
+        self.addCleanup(main.CHARACTER_SCALES.clear)
+        with mock.patch.object(main.mix_assist_library, "resolve", return_value=[{"key": "seed"}]):
+            main.character_reference(SEED, None)
+        self.assertTrue(self.neighbours.call_args[1]["in_order"])
 
     def test_a_song_without_sound_print_is_an_empty_mix(self):
         self.neighbours.side_effect = client.SoundprintError(client.NOT_ANALYSED, "no sound print (not analysed)")
