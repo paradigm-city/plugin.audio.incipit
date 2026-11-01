@@ -78,6 +78,42 @@ def process_alive(pid: int) -> bool:
     return True
 
 
+IDLE_PRIORITY_CLASS = 0x00000040
+PROCESS_IO_PRIORITY = 33  # NtSetInformationProcess's ProcessIoPriority (as psutil's ionice uses it)
+IO_PRIORITY_VERY_LOW = 0  # the I/O priority of background work (Windows' own background mode uses it)
+
+
+def lower_priority() -> str:
+    """Idle CPU priority and very low I/O priority for this process (Windows; elsewhere nice 19, which also gives
+    the lowest I/O priority of its class). Started by the add-on, an analysis has the idle class from the start
+    (soundprint.client.IDLE_PRIORITY_CLASS) and passes it on; this covers one started by hand, and the I/O priority,
+    which every process sets for itself. Returns what was set, for the log."""
+    done = []
+    try:
+        if sys.platform == "win32":
+            import ctypes
+            from ctypes import wintypes
+
+            # The current process. GetCurrentProcess() gives the same, but ctypes returned it as a 32-bit int,
+            # which named no process, so SetPriorityClass failed without a word (F47).
+            process = wintypes.HANDLE(-1)
+            if ctypes.windll.kernel32.SetPriorityClass(process, IDLE_PRIORITY_CLASS):
+                done.append("idle CPU priority")
+            else:
+                done.append(f"CPU priority not lowered (error {ctypes.windll.kernel32.GetLastError()})")
+            hint = ctypes.c_ulong(IO_PRIORITY_VERY_LOW)
+            status = ctypes.windll.ntdll.NtSetInformationProcess(process, PROCESS_IO_PRIORITY, ctypes.byref(hint),
+                                                                 ctypes.sizeof(hint))
+            done.append("very low I/O priority" if status == 0 else
+                        f"I/O priority not lowered (status {status & 0xFFFFFFFF:#010x})")
+        else:
+            os.nice(19)
+            done.append("nice 19 (CPU and I/O)")
+    except Exception as exc:
+        done.append(f"priority not lowered: {type(exc).__name__}: {exc}")
+    return ", ".join(done)
+
+
 class Watched:
     """A process the analysis follows (Kodi, which started it): ended() once it has exited. On Windows a handle is
     held from the start, so the process number can't pass to another process while the analysis runs."""
