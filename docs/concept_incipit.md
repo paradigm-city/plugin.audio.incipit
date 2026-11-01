@@ -40,12 +40,14 @@ the next start). Its refills are described anew, as on any station.
   (the case changed, on Windows) keeps its sound print when the file is unchanged (F45). Package `soundprint/`, its own Python environment, its
   store `sound.db` and the matrix cache `vectors.npy` in the add-on's data folder.
 - **The nearest songs.** Cosine similarity to the seed's vector; a search takes about a second.
-- **Variety** (0 to 9). 0: the nearest songs, nearest first, a very cohesive mix. Each step reaches the same
-  factor further (for a mix of 25: the nearest 66, 457, 3,175, 22,039 and all songs at 1, 3, 5, 7 and 9), and each
+- **Variety** (0 to 9). 0: drawn from the nearest songs (half as many again as the mix holds), a very cohesive mix
+  that still differs each time (since 2026-11-01, roadmap I34). Each step reaches the same factor further (for a mix
+  of 25: the nearest 38 at 0, then 66, 457, 3,175, 22,039 and all songs at 1, 3, 5, 7 and 9), and each
   song is drawn at random, the nearer the likelier (weight 1 / rank^p, p from 1 at variety 0 to 0.7 at 9). Near and
   far songs alternate, so a loose mix crosses genres and keeps finding its way back to the seed. Measured on the
   whole library: for Kraftwerk's "Vitamin", rock and metal sit at ranks 34,000 to 100,000; at variety 9 about a
-  fifth of a mix comes from there.
+  fifth of a mix comes from there. A station's mixes leave its played, queued and turned-down songs out before the
+  draw, so each refill comes from the nearest songs the station hasn't had.
 - **No artist repeat within N** (MusicIP's reject size, kept as the one artist rule): counted over the finished
   mix, the seed first; the checks keep to it too when they add or replace songs, and a station counts the songs
   already queued.

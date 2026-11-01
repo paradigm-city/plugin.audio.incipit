@@ -26,7 +26,7 @@ The service keeps the station running:
 
 - When fewer than 3 songs are left, it requests a new mix seeded from the **last song in the queue**, so the station drifts gradually, like a radio programme. If that mix brings nothing new, it tries the two songs before it. After a failed or empty request it waits a minute before trying again.
 - With the checks, each refill adds **Songs per refill** songs (Settings > Radio > Checks; 2 to 10, default 6; since 2026-10-30 a setting, for experiments with drift, before a fixed 6, and until 2026-10-24 8), chosen from the sound engine's 75 suggestions for the last queued song; the station also starts with that many. Small refills let a station meander in small steps, larger ones move in jumps. A station keeps the value it started with (`batch` in its state; Station information shows it), so a change applies to the next station. Without the checks a refill is a mix of the mix size.
-- Songs already played or queued in this session are skipped, so nothing repeats.
+- Songs already played or queued in this session are skipped, so nothing repeats: the sound engine leaves them (and the songs the checks turned down) out before it chooses, so each mix brings the nearest songs the station hasn't had, at any variety (since 2026-11-01; before, a station that stayed close used at least variety 2, roadmap I34).
 - With the checks on, songs a check turned down are not checked again while the station plays (decided by the user, 2026-10-24). The station forgets them when it stops, and when its Character or Intent changes, since they might fit then. They can still be queued unchecked when the station would otherwise run dry.
 - The playlist keeps the last 10 played songs; older ones are removed.
 
