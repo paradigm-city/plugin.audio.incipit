@@ -77,6 +77,10 @@ def setup(args) -> int:
     """The tool's own environment, so nothing is installed into the listener's Python."""
     import venv
 
+    from soundprint.state import lower_priority
+
+    print(f"set-up at {lower_priority()}", flush=True)
+
     python = environment_python(args.data)
     if not os.path.isfile(python):
         print(f"making a Python environment in {os.path.dirname(os.path.dirname(python))}", flush=True)

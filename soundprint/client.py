@@ -18,12 +18,18 @@ import sys
 import time
 from typing import Callable, Dict, List, Optional
 
-from soundprint.state import environment_python, model_folder, model_present, read_status, request_stop, running
+from soundprint.state import (IDLE_PRIORITY_CLASS, environment_python, model_folder, model_present, read_status,
+                              request_stop, running)
 
 ADDON_FOLDER = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CREATE_NO_WINDOW = 0x08000000
 CREATE_NEW_PROCESS_GROUP = 0x00000200
 CREATE_BREAKAWAY_FROM_JOB = 0x01000000  # not ended with Kodi, should Kodi end its processes
+# Priority classes, given at the start so the environment's launcher (Scripts\python.exe) and every process it starts
+# have them from the first moment (a child takes an idle or below-normal class over from its parent): the analysis
+# and the set-up run at IDLE_PRIORITY_CLASS (only when nothing else wants the CPU; they lower their I/O priority
+# themselves, state.lower_priority), a search, which a mix waits for, below normal: ahead of the analysis, behind Kodi.
+BELOW_NORMAL_PRIORITY_CLASS = 0x00004000
 NEIGHBOURS_TIMEOUT = 120  # s; the first search after many new songs reads all vectors
 SETUP_TIMEOUT = 1800  # s; pip downloads about 60 MB
 # Kodi's own Python settings would make the tool's Python load Kodi's library instead of its own.
@@ -54,8 +60,9 @@ def environment(base: Optional[Dict[str, str]] = None) -> Dict[str, str]:
     return variables
 
 
-def window_flags() -> int:
-    return CREATE_NO_WINDOW if sys.platform == "win32" else 0
+def window_flags(priority: int = 0) -> int:
+    """Windows' flags for a process of the tool: no console window, and the priority class given."""
+    return CREATE_NO_WINDOW | priority if sys.platform == "win32" else 0
 
 
 def command(python: str, data: str, userdata: str, *args: str) -> List[str]:
@@ -71,10 +78,10 @@ def not_ready(data: str) -> str:
     return ""
 
 
-def run(cmd: List[str], timeout: int, runner: Callable = subprocess.run):
+def run(cmd: List[str], timeout: int, runner: Callable = subprocess.run, priority: int = 0):
     try:
         return runner(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", env=environment(),
-                      cwd=ADDON_FOLDER, timeout=timeout, creationflags=window_flags())
+                      cwd=ADDON_FOLDER, timeout=timeout, creationflags=window_flags(priority))
     except subprocess.TimeoutExpired:
         raise SoundprintError(TIMEOUT, f"The sound engine did not answer within {timeout} s.")
     except OSError as exc:
@@ -94,7 +101,8 @@ def neighbours(data: str, userdata: str, seed: str, count: int, window: int = 0,
     if reason:
         raise SoundprintError(NOT_SET_UP, reason)
     completed = run(command(environment_python(data), data, userdata, "neighbours", seed, "--count", str(count),
-                            "--artist-window", str(window), "--variety", str(variety)), NEIGHBOURS_TIMEOUT, runner)
+                            "--artist-window", str(window), "--variety", str(variety)), NEIGHBOURS_TIMEOUT, runner,
+                priority=BELOW_NORMAL_PRIORITY_CLASS)
     try:
         answer = json.loads(completed.stdout)
     except ValueError:
@@ -122,7 +130,7 @@ def start_analysis(data: str, userdata: str, popen: Callable = subprocess.Popen,
                   *(["--kodi-pid", str(kodi_pid)] if kodi_pid else []))
     with open(os.path.join(data, "run.out"), "w", encoding="utf-8") as out, \
             open(os.path.join(data, "run.err"), "w", encoding="utf-8") as err:
-        flags = window_flags() | (CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0)
+        flags = window_flags(IDLE_PRIORITY_CLASS) | (CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0)
         kwargs = dict(stdin=subprocess.DEVNULL, stdout=out, stderr=err, cwd=ADDON_FOLDER, env=environment(),
                       close_fds=True)
         if sys.platform != "win32":
@@ -156,7 +164,7 @@ def setup(data: str, userdata: str, base_python: str, runner: Callable = subproc
     """Make the tool's environment and download the model (minutes); returns what it printed last. The whole
     output goes to setup.log in the data folder."""
     os.makedirs(data, exist_ok=True)
-    completed = run(command(base_python, data, userdata, "setup"), SETUP_TIMEOUT, runner)
+    completed = run(command(base_python, data, userdata, "setup"), SETUP_TIMEOUT, runner, priority=IDLE_PRIORITY_CLASS)
     with open(os.path.join(data, "setup.log"), "w", encoding="utf-8") as handle:
         handle.write(f"{' '.join(command(base_python, data, userdata, 'setup'))}\n\n{completed.stdout}\n"
                      f"{completed.stderr}")

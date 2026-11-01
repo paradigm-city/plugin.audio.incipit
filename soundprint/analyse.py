@@ -16,12 +16,12 @@ import logging
 import logging.handlers
 import multiprocessing
 import os
-import sys
 import time
 from typing import Dict, List, Sequence, Tuple
 
 from soundprint import analysis_version
-from soundprint.state import LOG_FILE, STOP_FILE, Watched, read_status, running, write_status
+from soundprint.state import (LOG_FILE, STOP_FILE, Watched, lower_priority, read_status, running,
+                              write_status)
 from soundprint.store import Store
 
 STATUS_EVERY = 5.0  # s
@@ -29,20 +29,6 @@ COMMIT_EVERY = 25  # songs
 
 MODEL = None
 SNIPPETS = 0
-
-
-def lower_priority() -> None:
-    """Idle priority for this process (and, on Windows, the processes it starts)."""
-    try:
-        if sys.platform == "win32":
-            import ctypes
-
-            idle = 0x00000040
-            ctypes.windll.kernel32.SetPriorityClass(ctypes.windll.kernel32.GetCurrentProcess(), idle)
-        else:
-            os.nice(19)
-    except Exception:
-        pass
 
 
 def start_worker(model_folder: str, threads: int, snippets: int, low: bool) -> None:
@@ -145,8 +131,7 @@ def run(paths: Sequence[str], folder: str, model_folder: str, snippets: int, wor
         say(line)
         return {"state": "busy", "pid": other.get("pid")}
     kodi = Watched(kodi_pid)
-    if low:
-        lower_priority()
+    priority = lower_priority() if low else "normal priority"
     version = analysis_version(snippets)
     # running from now on, while the files are looked at (that takes a while for a large library)
     write_status(folder, {"state": "running", "phase": "planning", "pid": os.getpid(), "started": time.time(),
@@ -169,7 +154,7 @@ def run(paths: Sequence[str], folder: str, model_folder: str, snippets: int, wor
         line = (f"analysis {version}: {len(paths)} song(s) listed, {len(todo)} to analyse; {counts['unchanged']} "
                 f"unchanged, {counts['failed_before']} failed before, {counts['missing']} missing, "
                 f"{counts['taken_over']} taken over from another spelling of their path; {workers} "
-                f"worker(s) x {threads} thread(s), {'idle' if low else 'normal'} priority")
+                f"worker(s) x {threads} thread(s), {priority}")
         log.info(line)
         say(line)
         for path, stored in taken_over:
