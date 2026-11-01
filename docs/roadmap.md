@@ -159,17 +159,6 @@ end them at once. Small gain; not needed so far.
 From a conversation, 2026-10-31 (F46). The analysis stops when Kodi closes; the set-up (pip and the model download,
 a few minutes) still finishes on its own. It could follow Kodi's process as the analysis does. Rare.
 
-#### I35 · More workers for the analysis
-
-From a conversation, 2026-11-01 (after F47). Measured live on this PC (i3-10100, 8 logical CPUs) with Kodi playing:
-the analysis's 4 workers x 2 threads used about 47% of the machine (each worker about one logical CPU), and the
-machine as a whole about 72%, so about 2 logical CPUs stayed free although the analysis runs at idle priority; 0.50 s
-per song. Neither priority held it back: very low or normal I/O priority gave the same rate (0.51 and 0.50 s per
-song; the library is on a SATA SSD), and with free CPU the idle class takes nothing away. More workers (e.g. 5 or 6,
-`--workers`, default CPU threads / 2) might use the free CPU; to measure on a fresh run, also against the box staying
-quiet (the target hardware is an always-on box). An earlier run that day took 0.81 s per song while other work (test
-runs, a browser) took the CPU, which idle priority gives way to, as intended.
-
 ### Character and Intent
 
 #### I17 · Acoustic, electric, electronic
@@ -265,6 +254,36 @@ From concept_ai_mix_assist.md (*Build decisions*). Placing the labels of value s
 percentiles. Only needed for advanced sliders, which are not built.
 
 ## Done
+
+### I35 · Analysis priority and workers
+
+From a conversation, 2026-11-01 (after F47); the priority changed the same day in b9ccaa3 on
+`feature/analysis-priority-and-workers`. Measured live on this PC (i3-10100: 4 cores, 8 logical CPUs) with Kodi
+playing, the analysis at idle priority: 4 workers x 2 threads used about 47% of the machine, the machine as a whole
+about 72%; 0.50 s per song. Very low or normal I/O priority gave the same rate (0.51 and 0.50 s per song; the
+library is on a SATA SSD). An earlier run that day took 0.81 s per song while other work (test runs, a browser) took
+the CPU, which idle priority gives way to entirely.
+
+Priority: the analysis and the set-up now run below normal (behind Kodi, which plays at normal priority, but no
+longer behind every other program), a search at normal priority (a mix waits for it; ahead of the analysis). The
+I/O priority stays very low.
+
+Workers: the same 400 songs (339 folders) analysed with each set-up in turn, below normal, into data folders of their
+own, Kodi running:
+
+| Workers x threads | s per song | machine busy | analysis |
+|---|---|---|---|
+| 4 x 2 | 0.37 | 65% | 55% |
+| 6 x 2 | 0.37 | 83% | 72% |
+| 8 x 1 | 0.38 | 85% | 71% |
+| 5 x 2 | 0.50 | 83% | 56% |
+| 6 x 1 | 0.59 | 81% | 56% |
+| 4 x 2 again | 0.51 | 76% | 46% |
+
+The first three ran under the same conditions: more processes took more CPU but analysed no faster; the 4 cores
+are busy with 4 x 2 already, and the second thread of a core adds next to nothing here. In the last three a browser
+at normal priority took up to 14% of the machine, so they compare only with each other (4 x 2 repeated: 0.51 s).
+The default stays at CPU threads / 2 workers with 2 threads each, the quietest of the fastest.
 
 ### I34 · A station's search leaves out the station's songs
 
