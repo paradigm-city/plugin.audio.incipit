@@ -53,6 +53,12 @@ Not fixed. The planned fix is the library sync: remove a song's sound print when
 
 ## Resolved
 
+### F47 · The sound engine's analysis ran at normal priority
+
+Found on 2026-11-01 by the listener: the sound engine's processes ran at normal priority, although the analysis is meant to run at idle priority. `soundprint.analyse.lower_priority` called `SetPriorityClass(GetCurrentProcess(), IDLE)` through ctypes without declaring the types: ctypes returned the current-process handle (-1) as a 32-bit int and passed it back zero-extended, a handle that names no process, so the call failed, and the error was swallowed. The main process and its four workers ran at normal priority since the sound engine was built (2026-10-28); the environment's launcher (`Scripts\python.exe`, which starts the real interpreter as its child) was never lowered at all. The search for a mix and the set-up ran at normal priority by design.
+
+Fixed in 5e8b9fd (2026-11-01): the add-on starts the analysis and the set-up with `IDLE_PRIORITY_CLASS` and a search with `BELOW_NORMAL_PRIORITY_CLASS` (ahead of the analysis, behind Kodi); Windows passes an idle or below-normal class on to every process started from there, the launcher, the interpreter and the workers (tested). `soundprint.state.lower_priority` passes a proper handle, also sets a very low I/O priority (`NtSetInformationProcess`, ProcessIoPriority, as psutil's ionice), runs in the analysis, its workers and the set-up, and says in the analysis log what it set ("idle CPU priority, very low I/O priority") or why it couldn't. On Linux and macOS it stays `nice 19`, which also lowers the I/O priority.
+
 ### F46 · The sound engine's analysis went on after Kodi had closed
 
 Found on 2026-10-31 by the listener: after quitting Kodi, the analysis's Python processes (one main process and its workers, at idle priority) kept running until the analysis was done. This was by design until now: `soundprint.client.start_analysis` starts the analysis detached and breaks it away from Kodi's job object, so that Kodi neither waits for it nor kills it halfway, and the setting's help said it "goes on even when Kodi is closed". Nothing told the analysis that Kodi had gone.

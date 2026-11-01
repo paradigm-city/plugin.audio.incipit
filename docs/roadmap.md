@@ -103,6 +103,20 @@ brings further lists (from the songs that fit) only when that list runs out. Whe
 (0 or 1 of 18), the check could move on to the next list at once, and a check that keeps choosing too little
 could get more batches. Seen with MusicIP's lists; with the sound engine's not so far.
 
+#### I34 · A station's search leaves out the station's songs
+
+From a conversation, 2026-11-01. A station that stays close draws its mixes at variety 2 or more
+(`RADIO_STAY_CLOSE_MIN_VARIETY`), overriding a lower variety set by the listener. Reason: when no song of a station
+has passed a check yet, every refill (and the checks' "once more" for the picked song) asks the sound engine about
+the picked song again, and at variety 0 that gives the same 75 nearest songs each time; the station's songs and
+its rejected ones are filtered out only afterwards, so the station runs dry. Instead, the search could leave out
+the station's songs (played, queued, rejected) before it chooses (a file of paths passed to `neighbours`): variety 0
+would then mean the nearest songs not heard yet, walking outward, and the floor could go. Open: variety 0 is fixed
+(the nearest songs, nearest first), so two stations from the same song would play the same songs in the same order.
+Variety 0 could instead draw at random, the nearer the likelier (weight 1 / rank, as above 0), from a pool a little
+larger than the mix, say 1.5 times its size; variety 1 already reaches about 2.3 to 2.7 times, so 0 stays the
+tightest. Whether that applies to Radio only, or to mixes too (where "the same song, the same mix" would then go).
+
 ### Sound engine
 
 #### I9 · Sound prints in step with Kodi's library
