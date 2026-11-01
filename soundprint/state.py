@@ -78,16 +78,21 @@ def process_alive(pid: int) -> bool:
     return True
 
 
-IDLE_PRIORITY_CLASS = 0x00000040
+# Below normal, not idle: behind Kodi, which plays at normal priority, but not behind everything else that runs on
+# the computer (a browser, other programs): at idle priority the analysis gave way to all of it (0.81 s per song
+# while other work ran, 0.50 s without, 2026-11-01; I35).
+BELOW_NORMAL_PRIORITY_CLASS = 0x00004000
 PROCESS_IO_PRIORITY = 33  # NtSetInformationProcess's ProcessIoPriority (as psutil's ionice uses it)
 IO_PRIORITY_VERY_LOW = 0  # the I/O priority of background work (Windows' own background mode uses it)
+NICE = 10  # elsewhere: below normal, and an I/O priority below normal too (Linux takes it from the nice value)
 
 
 def lower_priority() -> str:
-    """Idle CPU priority and very low I/O priority for this process (Windows; elsewhere nice 19, which also gives
-    the lowest I/O priority of its class). Started by the add-on, an analysis has the idle class from the start
-    (soundprint.client.IDLE_PRIORITY_CLASS) and passes it on; this covers one started by hand, and the I/O priority,
-    which every process sets for itself. Returns what was set, for the log."""
+    """Below-normal CPU priority and very low I/O priority for this process (Windows; elsewhere nice 10, which also
+    lowers the I/O priority within its class). Started by the add-on, an analysis has the below-normal class from the
+    start (soundprint.client starts it so) and passes it on; this covers one started by hand, and the I/O priority,
+    which every process sets for itself (measured on an SSD: no slower than normal I/O priority, I35). Returns what
+    was set, for the log."""
     done = []
     try:
         if sys.platform == "win32":
@@ -97,8 +102,8 @@ def lower_priority() -> str:
             # The current process. GetCurrentProcess() gives the same, but ctypes returned it as a 32-bit int,
             # which named no process, so SetPriorityClass failed without a word (F47).
             process = wintypes.HANDLE(-1)
-            if ctypes.windll.kernel32.SetPriorityClass(process, IDLE_PRIORITY_CLASS):
-                done.append("idle CPU priority")
+            if ctypes.windll.kernel32.SetPriorityClass(process, BELOW_NORMAL_PRIORITY_CLASS):
+                done.append("below-normal CPU priority")
             else:
                 done.append(f"CPU priority not lowered (error {ctypes.windll.kernel32.GetLastError()})")
             hint = ctypes.c_ulong(IO_PRIORITY_VERY_LOW)
@@ -107,8 +112,8 @@ def lower_priority() -> str:
             done.append("very low I/O priority" if status == 0 else
                         f"I/O priority not lowered (status {status & 0xFFFFFFFF:#010x})")
         else:
-            os.nice(19)
-            done.append("nice 19 (CPU and I/O)")
+            os.nice(NICE)
+            done.append(f"nice {NICE} (CPU and I/O)")
     except Exception as exc:
         done.append(f"priority not lowered: {type(exc).__name__}: {exc}")
     return ", ".join(done)
