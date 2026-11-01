@@ -159,6 +159,17 @@ end them at once. Small gain; not needed so far.
 From a conversation, 2026-10-31 (F46). The analysis stops when Kodi closes; the set-up (pip and the model download,
 a few minutes) still finishes on its own. It could follow Kodi's process as the analysis does. Rare.
 
+#### I35 · More workers for the analysis
+
+From a conversation, 2026-11-01 (after F47). Measured live on this PC (i3-10100, 8 logical CPUs) with Kodi playing:
+the analysis's 4 workers x 2 threads used about 47% of the machine (each worker about one logical CPU), and the
+machine as a whole about 72%, so about 2 logical CPUs stayed free although the analysis runs at idle priority; 0.50 s
+per song. Neither priority held it back: very low or normal I/O priority gave the same rate (0.51 and 0.50 s per
+song; the library is on a SATA SSD), and with free CPU the idle class takes nothing away. More workers (e.g. 5 or 6,
+`--workers`, default CPU threads / 2) might use the free CPU; to measure on a fresh run, also against the box staying
+quiet (the target hardware is an always-on box). An earlier run that day took 0.81 s per song while other work (test
+runs, a browser) took the CPU, which idle priority gives way to, as intended.
+
 ### Character and Intent
 
 #### I17 · Acoustic, electric, electronic
