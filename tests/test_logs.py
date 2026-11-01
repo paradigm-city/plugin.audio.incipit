@@ -156,9 +156,7 @@ class RadioLogTest(SourceTestCase):
         self.assertIn("checks off; no check running; refill allowed now.", summary)
 
     def test_refill_seeds_and_songs(self):
-        state = main.get_radio_state()
-        state["queue"] = state["queue"][:2]
-        service.save_radio_state(state)
+        del kodi.playlist[2:]  # the playlist runs low: the station follows it
         self.tick(5)
         self.assertTrue(self.radio_lines("refilling."))
         self.assertTrue(self.radio_lines("Radio mode: refill seeds to try"))

@@ -205,6 +205,7 @@ class FakeLibrary:
 class PlayerState:
     def __init__(self):
         self.playing = False
+        self.video = False  # what plays is a video (playing is True too)
         self.position = -1
         self.file = ""
         self.time = 0.0
@@ -346,10 +347,18 @@ class KodiState:
         """Simulate Kodi playing a single file (e.g. started from the library)."""
         tag_values.setdefault("url", path)
         self.player.playing = True
+        self.player.video = False
         self.player.position = -1
         self.player.file = path
         self.player.time = 0.0
         self.player.tag = InfoTagMusic(**tag_values)
+
+    def play_video(self, path):
+        """Simulate Kodi playing a video (other media than the music playlist)."""
+        self.player.playing, self.player.video = True, True
+        self.player.position = -1
+        self.player.file = path
+        self.player.tag = None
 
     def playlist_files(self):
         return [url for url, _item in self.playlist]
@@ -358,7 +367,7 @@ class KodiState:
         if not 0 <= position < len(self.playlist):
             raise JsonRpcError(f"Invalid playlist position {position}")
         url, item = self.playlist[position]
-        self.player.playing = True
+        self.player.playing, self.player.video = True, False
         self.player.position = position
         self.player.file = url
         try:
@@ -458,7 +467,10 @@ class Player:
         pass
 
     def isPlayingAudio(self):
-        return kodi.player.playing
+        return kodi.player.playing and not kodi.player.video
+
+    def isPlayingVideo(self):
+        return kodi.player.playing and kodi.player.video
 
     def isPlaying(self):
         return kodi.player.playing

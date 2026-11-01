@@ -1242,6 +1242,61 @@ def log_radio_tick(summary: str) -> None:
         log_radio(f"Radio mode: {summary}")
 
 
+def music_playlist_files() -> list[str] | None:
+    """The music playlist's files in order; None when Kodi can't say."""
+    try:
+        items = execute_jsonrpc("Playlist.GetItems", {"playlistid": xbmc.PLAYLIST_MUSIC, "properties": ["file"]})
+    except Exception as exc:
+        log_radio(f"Radio mode: could not read the playlist: {exc}")
+        return None
+    return [str(item.get("file") or "") for item in (items or {}).get("items") or []]
+
+
+def follow_playlist_edits(state: dict) -> str:
+    """The listener edited the station's playlist. Songs taken out or moved: the station's queue becomes the
+    playlist, so a refill comes when the playlist runs low, not when the queue as the station left it does
+    (2026-11-01: 5 songs cut to 2, and the station stopped after them); the songs taken out stay seen, so they don't
+    come back. Songs that aren't the station's (queued or played next from the library, a new playlist that still
+    holds one of its songs, the add-on's own mix): the station ends, its context may be tainted (the listener's
+    decision, 2026-11-01); returns the reason, else "". A playlist without any of the station's songs is left
+    alone: other playback, which the tick ends the station for when it plays."""
+    files = music_playlist_files()
+    if files is None:
+        return ""
+    queue = state["queue"]
+    key = normalize_discovery_playback_path
+    if [key(file) for file in files] == [key(str(entry["file"])) for entry in queue]:
+        return ""
+    station: dict[str, list[dict]] = {}
+    for entry in queue:
+        station.setdefault(key(str(entry["file"])), []).append(entry)
+    if not any(key(file) in station for file in files):
+        return ""
+    followed, added = [], []
+    for file in files:
+        mine = station.get(key(file))
+        if mine:
+            followed.append(mine.pop(0))
+        elif file:
+            added.append(file)
+    if added:
+        log_radio(f"Radio mode: {len(added)} song(s) in the playlist that aren't the station's (queued or played "
+                  f"from the library, or a new playlist); the station ends, Kodi plays on:")
+        for file in added:
+            log_radio(f"Radio mode:   not the station's: {path_to_label(file)!r} ({file!r})")
+        return "songs_added"
+    removed = [entry for entries in station.values() for entry in entries]
+    state["queue"] = followed
+    if removed:
+        add_radio_event(state, "playlist_edited", removed=[str(entry.get("label") or "") for entry in removed])
+    log_radio(f"Radio mode: the playlist was edited: {len(queue)} queued before, {len(followed)} now"
+              + (f", {len(removed)} taken out" if removed else ", the order changed")
+              + "; the station follows the playlist.")
+    for entry in removed:
+        log_radio(f"Radio mode:   taken out: {entry.get('label')!r} ({entry['file']!r})")
+    return ""
+
+
 def run_radio_tick() -> None:
     state = load_radio_state()
     phase = str(state.get("phase") or "off")
@@ -1272,6 +1327,14 @@ def run_radio_tick() -> None:
         playing = False
 
     if not playing:
+        try:
+            video = bool(xbmc.Player().isPlayingVideo())
+        except Exception:
+            video = False
+        if video:  # other media: the station ends at once (a stop waits, as songs have short gaps)
+            log_radio("Radio mode: a video plays.")
+            end_radio(state, "other_media")
+            return
         since = int(state.get("not_playing_since") or 0)
         if since <= 0:
             state["not_playing_since"] = now
@@ -1287,9 +1350,15 @@ def run_radio_tick() -> None:
 
     queue = [entry for entry in state.get("queue") or [] if isinstance(entry, dict) and entry.get("file")]
     state["queue"] = queue
+    just_started = now - int(state.get("playing_started_ts") or 0) < RADIO_STOP_GRACE_SECONDS
+    if not just_started:  # a new station may still be replacing the old one's playlist
+        reason = follow_playlist_edits(state)
+        if reason:
+            end_radio(state, reason)
+            return
+        queue = state["queue"]
     current_file = get_current_playing_file_for_discovery()
     queued = {normalize_discovery_playback_path(str(entry["file"])) for entry in queue}
-    just_started = now - int(state.get("playing_started_ts") or 0) < RADIO_STOP_GRACE_SECONDS
     if current_file and normalize_discovery_playback_path(current_file) not in queued and not just_started:
         # A new station may still be replacing the old one's playback during the grace period.
         log_radio(f"Radio mode: {current_file!r} plays, which is not one of the station's {len(queue)} queued song(s).")

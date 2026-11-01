@@ -5298,7 +5298,7 @@ def open_radio_station(seed: str, favourite: dict | None, progress) -> bool:
 
     progress(90, "Starting playback")
     try:
-        play_tracks_as_music_playlist(tracks, metadata_list, numbered=False)
+        play_tracks_as_music_playlist(tracks, metadata_list, numbered=False, station=True)
         enqueue_metadata_refresh_for_tracks(tracks, metadata_list=metadata_list, reason_context="radio")
     except Exception as exc:
         save_radio_state({"phase": "off", "stopped_ts": int(time.time()), "stop_reason": "playback_failed"})
@@ -5311,6 +5311,22 @@ def open_radio_station(seed: str, favourite: dict | None, progress) -> bool:
               xbmc.LOGINFO)
     notify(plain(f"Playing {favourite_title(favourite)}.") if favourite else "Station picked.")
     return True
+
+
+def end_playing_station(reason: str) -> None:
+    """The add-on replaces a playing station's playlist (a mix): the station ends, as service.end_radio ends it (the
+    service would end it too, at its next look, for the songs that aren't the station's)."""
+    if radio_phase() != "playing":
+        return
+    state = get_radio_state()
+    state.pop("rejected", None)
+    state.pop("rejected_with", None)
+    now = int(time.time())
+    state.update({"phase": "off", "stopped_ts": now, "stop_reason": reason, "ui_refresh_requested": True,
+                  "ui_refresh_ts": now})
+    save_radio_state(state)
+    log_radio(f"Radio mode stopped: {reason}. Station {state.get('name') or ''!r}, played "
+              f"{int(state.get('played') or 0)} song(s).")
 
 
 def stop_radio() -> None:
@@ -7327,10 +7343,14 @@ def play_tracks_as_music_playlist(
     tracks: list[str],
     track_metadata_list: list[dict] | None = None,
     numbered: bool = True,
+    station: bool = False,
 ) -> list[xbmcgui.ListItem]:
+    """Play the tracks as the music playlist. Anything but a station's own start (station) ends a playing station."""
     playable_tracks = [track for track in tracks if str(track or "").strip()]
     if not playable_tracks:
         raise MusicIPError("The generated mix contains no playable tracks.")
+    if not station:
+        end_playing_station("mix_started")
 
     if not isinstance(track_metadata_list, list) or len(track_metadata_list) != len(playable_tracks):
         track_metadata_list = collect_mix_track_metadata(playable_tracks, allow_live_lookup=False)
@@ -9016,6 +9036,9 @@ def format_radio_event(event: dict) -> list[str]:
     if kind == "nothing_fitted":
         return [f"Nothing from {event.get('seed', '?')} fitted ({event.get('skipped_count', 0)} songs); "
                 "trying an earlier song"]
+    if kind == "playlist_edited":
+        removed = event.get("removed") or []
+        return [f"You took {len(removed)} song(s) out of the playlist"] + [f"- {label}" for label in removed]
     if kind == "profile":
         return ["The late AI check updated the station's profile"]
     if kind == "musicip_failed":  # the kinds' names date from MusicIP

@@ -75,7 +75,10 @@ From the listener, 2026-10-24 (concept_radio_mode.md, *Possible improvements*). 
 `player_stop` when Kodi lost its audio device), Kodi can go on playing the station's songs still in the playlist
 while the radio adds nothing; to the listener it looks like a station that stopped refilling. Options: when playback
 resumes on the stopped station's playlist (same files, same order), carry on with the station; or at least say in a
-notification that the station has ended.
+notification that the station has ended. Since 2026-11-01 a station records why it ended (`player_stop`,
+`songs_added`, `mix_started`, `other_media`, `external_playback`, `manual_stop`): only a stop would carry on, the
+others ended it on purpose (F48). The end forgets the songs the checks turned down (`rejected`); a station that
+carries on would have to keep them.
 
 #### I6 · A favourite station keeps its own "Songs per refill"
 
