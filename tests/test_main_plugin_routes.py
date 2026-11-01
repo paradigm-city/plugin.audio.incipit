@@ -504,28 +504,39 @@ class GenerateFromPlayingAudioTest(SourceTestCase):
         self.assertEqual(kodi.playlist[1][1].getLabel(), "2. (Unknown Artist) - 01 Overkill")
         self.assertEqual((kodi.player.position, kodi.player.file), (0, SEED))
         self.assertNotified("Playing generated mix.")
+        self.assertEqual(kodi.ended, [])  # an action: the mix is shown with Container.Update
         update = kodi.builtins[-1]
         self.assertTrue(update.startswith("Container.Update(") and update.endswith(",replace)"))
         self.assertEqual(plugin_query(update)["cache_path"], main.get_current_mix_cache_path())
         sidecar = self.read_json(main.mix_meta_path_from_cache_path(main.get_current_mix_cache_path()))
         self.assertEqual(sidecar["mix_generation_parameters"]["size"], 20)
 
-    def test_server_error_is_listed(self):
+    def test_server_error_is_notified(self):
         kodi.play_file(SEED)
         self.source.mix_status = 500
         kodi.respond("select", 0)
         self.run_plugin(action="generate_current_mix")
-        self.assertEqual(self.listed_labels(), ["Mix failed: The sound engine failed: server error"])
-        self.assertEqual(kodi.playlist, [])
+        self.assertNotified("Mix failed: The sound engine failed: server error")
+        self.assertEqual((kodi.playlist, kodi.ended, kodi.directory_items), ([], [], []))  # an action: no listing
 
-    def test_playback_failure_is_listed(self):
+    def test_playback_failure_is_notified(self):
         kodi.play_file(SEED)
         self.source.set_mix(SEED, [T1])
         kodi.respond("select", 0)
         with mock.patch("fake_kodi.Player.play", side_effect=RuntimeError("player busy")):
             self.run_plugin(action="generate_current_mix")
-        self.assertEqual(self.listed_labels(), ["Mix playback failed: player busy"])
+        self.assertNotified("Mix playback failed: player busy")
+        self.assertEqual((kodi.ended, kodi.directory_items), ([], []))
         self.assertEqual(self.current_mix_tracks(), [SEED, T1])
+
+    def test_a_cancelled_mix_is_notified_as_it_is(self):
+        kodi.play_file(SEED)
+        self.source.set_mix(SEED, [T1])
+        kodi.respond("select", -1)
+        self.run_plugin(action="generate_current_mix")
+        self.assertEqual(kodi.notifications[-1][2], "warning")
+        self.assertNotIn("Mix failed", kodi.notification_messages()[-1])
+        self.assertEqual((kodi.player.file, main.get_current_mix_cache_path(), kodi.ended), (SEED, "", []))
 
     def test_nothing_playing(self):
         with self.assertRaisesRegex(main.MusicIPError, "No audio is currently playing."):
@@ -605,7 +616,6 @@ class FolderEntriesTest(SourceTestCase):
 
     def prepare_for(self, action):
         kodi.reset()
-        kodi.settings.update({"host": "127.0.0.1", "port": str(self.source.port)})
         for n in range(1, 4):
             kodi.library.add_song(f"D:\\music\\{n}.mp3", title=f"Song {n}", duration=240)
         if action in ("discovery_next", "discovery_stop", "discovery_mix_current"):
@@ -617,14 +627,20 @@ class FolderEntriesTest(SourceTestCase):
         kodi.ended.clear()
 
     def test_menus_offer_these_folders(self):
-        self.assertEqual(sorted(self.folder_actions()), sorted([
-            "generate_current_mix", "mix_mode", "radio_mode", "saved_mixes",
-            "discovery_start", "discovery_mix_current", "discovery_next", "discovery_stop",
-        ]))
+        self.assertEqual(sorted(self.folder_actions()), ["mix_mode", "radio_mode", "saved_mixes"])
 
-    @unittest.expectedFailure
+    def test_the_menus_actions_are_not_folders(self):
+        # F8, F49: they switch screens or start playback, so Kodi must not wait for a listing from them.
+        self.folder_actions()
+        actions = {plugin_query(url).get("action"): (item, is_folder) for url, item, is_folder in kodi.directory_items}
+        for action in ("generate_current_mix", "discovery_start", "discovery_mix_current", "discovery_next",
+                       "discovery_stop"):
+            with self.subTest(action=action):
+                item, is_folder = actions[action]
+                self.assertFalse(is_folder)
+                self.assertEqual(item.getProperty("IsPlayable"), "false")
+
     def test_folder_entries_end_their_directory(self):
-        # Known issue F8: these actions replace the screen with Container.Update instead of returning a listing.
         without_listing = []
         for action in self.folder_actions():
             self.prepare_for(action)
