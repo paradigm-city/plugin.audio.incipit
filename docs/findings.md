@@ -12,10 +12,6 @@ Last reviewed: 2026-10-31
 
 ## Open
 
-### F49 · Kodi crashed when "Generate mix from playing audio" started its mix
-
-On 2026-11-01 at 13:40:28 Kodi crashed (dump `kodi_crashlog-21.3 Git_20251031-a3a448d26b-20261101-134028.dmp`) right after the mix of "Generate mix from playing audio" started to play: the log ends with the first song's "PAPlayer::PrepareStream - Ready". The action was started from a test (JSON-RPC `Addons.ExecuteAddon`, which Kodi ran as a folder request of the music window, as the add-on's menu runs it, F8), its confirmation dialog was answered, the mix came from the sound engine and the add-on cleared the playlist, played the mix and ended the playing station (F48). The stack isn't resolved yet (Kodi 21.3's symbols, see F14). It matches F14's pattern: slow work and a dialog inside a folder request, with Kodi's screen changing meanwhile. F14's next step applies: make the mix in a `RunPlugin` action, outside a listing.
-
 ### F17 · A Radio test failed once
 
 `test_radio_mode.StartFromAnySongTest.test_new_station_is_not_mistaken_for_other_playback` failed once on 2026-10-15 during a full test run (`stop_reason` was `''` instead of `external_playback`) and passed in the next 10 runs, alone and in the full suite. It failed once more later the same day (1 of about 20 full runs). On 2026-10-17 another Radio test, `test_radio_mode.TuningTest.test_no_redraw_while_kodi_is_loading_a_list`, failed once in a full run (no redraw where one was expected) and passed alone, in its module and in the next two full runs; likely the same cause. On 2026-10-19 the first test failed once more (1 of 2 full runs after a merge), again with `stop_reason` `''`. On 2026-10-21 two more Radio tests failed once each in full runs, `test_radio_mode.TuningTest.test_no_redraw_while_kodi_is_loading_a_list` (on `main`) and `test_radio_mode.TuningTest.test_the_radio_screen_follows_the_snippets`; both passed alone and in the next runs. On 2026-10-22 `test_no_redraw_while_kodi_is_loading_a_list` failed once more (no redraw, 0 builtins instead of 1) and passed in the next full run. On 2026-10-24 one test failed in a full run after a prompt-only change (`mixassist/checks.py`); the output wasn't kept, so which test is unknown, and the next three full runs passed. Later on 2026-10-24, `test_no_redraw_while_kodi_is_loading_a_list` failed once more in a full run after the listening-perspective change and passed in the next full run. On 2026-10-28 one test failed in a full run after the sound engine's decoding fix (`soundprint/audio.py`, which no Radio test touches); the output wasn't kept, and the next two full runs passed. On 2026-10-29 `test_no_redraw_while_kodi_is_loading_a_list` failed once more (0 builtins instead of 1) in a full run that took 93 s instead of the usual 40 to 60 s, with the fake MusicIP server already replaced by an in-process stand-in (tests/fake_source.py), and passed in the next four full runs; so the server is not the cause. On 2026-10-30 it failed once more (0 builtins instead of 1) in a full run on `feature/mix-mode` (the first screen and Mix mode; no Radio code changed) and passed alone and in the next full runs. After the merge into `main` the same day, `test_radio_mode.StartFromAnySongTest.test_new_station_is_not_mistaken_for_other_playback` failed in 2 of 4 full runs (`stop_reason` not `external_playback`) and passed 5 times alone; the merged change touches no Radio code and no clock. On `feature/radio-batch-size` (same day), `test_no_redraw_while_kodi_is_loading_a_list` and `test_the_radio_screen_follows_the_snippets` failed together in 1 of 5 full runs. On `fix/favourite-keeps-intent` (same day), Radio tests failed in 2 of 4 full runs: once `test_the_radio_screen_follows_the_snippets`, once `test_new_station_is_not_mistaken_for_other_playback` together with `test_no_redraw_while_kodi_is_loading_a_list`. The flaky failures are getting more frequent and all sit in the Radio tests. The test uses the fake clock, so the cause is probably state left behind by another test (a background thread or the fake MusicIP server) rather than real time. Not reproduced yet.
@@ -25,17 +21,6 @@ On 2026-11-01 at 13:40:28 Kodi crashed (dump `kodi_crashlog-21.3 Git_20251031-a3
 `group_saved_mixes_by_date()` in `main.py` gives "Unknown date" a sort key meant to put it last, but then sorts with `reverse=True`, so it comes first. This only affects mixes whose save time can't be read.
 
 **Test:** `test_main_saved_mixes.OrderingAndCleanupTest.test_unknown_date_group_sorts_last`
-
-### F8 · Menu actions are folders but return no listing
-
-In the main menu and the Discovery menu, these entries are added as folders, but their actions never call `endOfDirectory()`. They switch screens with `Container.Update(…,replace)` instead:
-
-- **Generate mix from playing audio** (`generate_current_mix`, on success)
-- **Start discovery mode**, **Skip to next discovery song**, **Stop discovery mode**, **Create mix from current discovery song** (`discovery_start`, `discovery_next`, `discovery_stop`, `discovery_mix_current`)
-
-For **Settings** the same pattern produced `XFILE::CDirectory::GetDirectory - Error getting plugin://plugin.audio.musicip/?action=open_settings` in `kodi.log` (fixed in dd92060). For these entries no such error has been seen in `kodi.log` so far, likely because the screen switch cancels Kodi's pending folder request.
-
-**Test:** `test_main_plugin_routes.FolderEntriesTest.test_folder_entries_end_their_directory`
 
 ### F11 · More unused code in main.py
 
@@ -56,6 +41,25 @@ Found on 2026-10-28 while planning how to keep the sound prints in step with Kod
 Not fixed. The planned fix is the library sync: remove a song's sound print when Kodi removes the song, prune at startup, and leave out stored songs that Kodi doesn't list when searching.
 
 ## Resolved
+
+### F49 · Kodi crashed when "Generate mix from playing audio" started its mix
+
+On 2026-11-01 at 13:40:28 Kodi crashed (dump `kodi_crashlog-21.3 Git_20251031-a3a448d26b-20261101-134028.dmp`) right after the mix of "Generate mix from playing audio" started to play: the log ends with the first song's "PAPlayer::PrepareStream - Ready". The action was started from a test (JSON-RPC `Addons.ExecuteAddon`, which Kodi ran as a folder request of the music window, as the add-on's menu runs it, F8), its confirmation dialog was answered, the mix came from the sound engine and the add-on cleared the playlist, played the mix and ended the playing station (F48). The stack isn't resolved yet (Kodi 21.3's symbols, see F14). It matches F14's pattern: slow work and a dialog inside a folder request, with Kodi's screen changing meanwhile. F14's next step applies: make the mix in a `RunPlugin` action, outside a listing.
+
+Fixed in a062eba (2026-11-01): "Generate mix from playing audio" is an action now, not a folder (as Radio mode's entries are): Kodi runs it without waiting for a listing, so the dialog, the mix, its start and the switch to the new mix happen while no folder request is pending. What goes wrong is notified ("Mix failed: …", "Mix playback failed: …") instead of listed. Mix mode's Discovery entries, which also make a mix and switch screens, became actions too (F8). Not yet tested in Kodi.
+
+### F8 · Menu actions are folders but return no listing
+
+In the main menu and the Discovery menu, these entries are added as folders, but their actions never call `endOfDirectory()`. They switch screens with `Container.Update(…,replace)` instead:
+
+- **Generate mix from playing audio** (`generate_current_mix`, on success)
+- **Start discovery mode**, **Skip to next discovery song**, **Stop discovery mode**, **Create mix from current discovery song** (`discovery_start`, `discovery_next`, `discovery_stop`, `discovery_mix_current`)
+
+For **Settings** the same pattern produced `XFILE::CDirectory::GetDirectory - Error getting plugin://plugin.audio.musicip/?action=open_settings` in `kodi.log` (fixed in dd92060). For these entries no such error has been seen in `kodi.log` so far, likely because the screen switch cancels Kodi's pending folder request.
+
+Fixed in a062eba (2026-11-01, with F49): these entries are actions now, not folders, so Kodi expects no listing from them; the folders left in the menus (Mix mode, Radio mode, Saved mixes) all end their listing.
+
+**Test:** `test_main_plugin_routes.FolderEntriesTest.test_folder_entries_end_their_directory`, `test_the_menus_actions_are_not_folders`
 
 ### F50 · A song's old path spelling comes back in mixes, next to the song itself
 
@@ -298,6 +302,8 @@ All three stacks were resolved with Kodi 21.3's debug symbols (`kodi-21.3-Omega-
 The add-on can't check whether Kodi still waits for a listing. The 2026-10-17 crash shows that a slow listing is not required: the add-on adds tracks one call at a time (40 calls for a 40-track mix), and the crash hits during that loop. Adding all items in one call (`xbmcplugin.addDirectoryItems`) would shrink that window to a single call. A likely fix is to stop doing slow work and dialogs inside folder requests: generate mixes in a `RunPlugin` action, then show the stored mix with `Container.Update`, whose listing is fast.
 
 Mitigated in 6f6ba14 (2026-10-17), not fixed (the fault is in Kodi): listings are handed to Kodi in one call (`addDirectoryItems`), and screen redraws from the background (the service, AI Mix Assist's tidy-up) wait while Kodi is loading a list (`Container.IsUpdating`, busy dialog). If it happens again, the next step is the one above: generate mixes outside a listing.
+
+Step taken in a062eba (2026-11-01) after F49: the menus' entries that make a mix or switch screens are actions, not folders (F8). A mix's refresh still makes its new mix inside the listing (`browse_mix`).
 
 Closed on 2026-10-31: not seen again. The last crash dump Kodi wrote is from 2026-10-18 12:06, a day after the mitigation (its stack was not resolved); the end of 2026-10-25 left none, and Kodi hasn't crashed in the 13 days since. Since 2026-10-29 mixes come from the sound engine (about a second) instead of MusicIP, so listings that make a mix are shorter still. If it happens again, open a new finding and take the next step above.
 
