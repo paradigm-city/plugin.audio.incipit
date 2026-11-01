@@ -15,8 +15,9 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import time
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, Iterable, List, Optional
 
 from soundprint.state import (IDLE_PRIORITY_CLASS, environment_python, model_folder, model_present, read_status,
                               request_stop, running)
@@ -94,15 +95,29 @@ def last_line(text: str) -> str:
 
 
 def neighbours(data: str, userdata: str, seed: str, count: int, window: int = 0, variety: int = 0,
-               runner: Callable = subprocess.run) -> dict:
+               runner: Callable = subprocess.run, leave_out: Iterable[str] = (), in_order: bool = False) -> dict:
     """The tool's answer (see soundprint.__main__.neighbours): songs nearest to seed, with similarity, artist and
-    title, no artist repeated within window songs; raises SoundprintError when there are none."""
+    title, no artist repeated within window songs, none of leave_out (paths: a station's songs, passed in a file);
+    in_order: the nearest, nearest first, without a random choice. Raises SoundprintError when there are none."""
     reason = not_ready(data)
     if reason:
         raise SoundprintError(NOT_SET_UP, reason)
-    completed = run(command(environment_python(data), data, userdata, "neighbours", seed, "--count", str(count),
-                            "--artist-window", str(window), "--variety", str(variety)), NEIGHBOURS_TIMEOUT, runner,
-                priority=BELOW_NORMAL_PRIORITY_CLASS)
+    cmd = command(environment_python(data), data, userdata, "neighbours", seed, "--count", str(count),
+                  "--artist-window", str(window), "--variety", str(variety)) + (["--in-order"] if in_order else [])
+    listed = [path for path in leave_out if path]
+    handle, leave_file = tempfile.mkstemp(prefix="leave-out-", suffix=".txt", dir=data) if listed else (None, "")
+    try:
+        if listed:
+            with os.fdopen(handle, "w", encoding="utf-8") as out:
+                out.write("\n".join(listed) + "\n")
+            cmd += ["--leave-out", leave_file]
+        completed = run(cmd, NEIGHBOURS_TIMEOUT, runner, priority=BELOW_NORMAL_PRIORITY_CLASS)
+    finally:
+        if leave_file:
+            try:
+                os.remove(leave_file)
+            except OSError:
+                pass
     try:
         answer = json.loads(completed.stdout)
     except ValueError:

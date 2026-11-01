@@ -62,7 +62,7 @@ For the checks, Incipit needs a Claude Pro or Max subscription and the Claude Co
 - The add-on uses the song title from Kodi metadata when available.
 - If no title tag is available, it falls back to the current filename without extension.
 - The refresh action forces Kodi to re-run the request and bypass plugin disk caching.
-- At variety 0 the sound engine returns the same nearest songs for the same seed, so the refreshed mix is identical; raise the variety for a different choice.
+- Even at variety 0 the sound engine draws a mix at random from the seed's nearest songs (half as many again as the mix holds), so a refreshed mix differs; raise the variety to reach further out.
 
 - When a list item path is set in Kodi, the add-on also writes the same value into the corresponding `MusicInfoTag` URL field.
 - The add-on now also writes artist and album into the corresponding `MusicInfoTag` when Kodi can resolve that metadata from the current player or the music library.

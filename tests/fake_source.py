@@ -17,16 +17,26 @@ class FakeSource:
         self.mixes[seed] = list(tracks)
 
     def mix_requests(self):
-        """Every mix asked for, as {"song", "size", "rejectsize", "variety"} (numbers as text)."""
+        """Every mix asked for, as {"song", "size", "rejectsize", "variety"} (numbers as text), with "leave_out" (the
+        identities left out, sorted) when there were any."""
         return list(self.requests)
 
-    def neighbours(self, data, userdata, seed, count, window=0, variety=0, runner=None):
+    def neighbours(self, data, userdata, seed, count, window=0, variety=0, runner=None, leave_out=(), in_order=False):
         from soundprint import client  # importable once the add-on's folder is on the path (support.py)
 
-        self.requests.append({"song": seed, "size": str(count), "rejectsize": str(window), "variety": str(variety)})
+        def identity(path):  # as soundprint.neighbours.identity
+            return (path or "").replace("\\", "/").strip()
+
+        request = {"song": seed, "size": str(count), "rejectsize": str(window), "variety": str(variety)}
+        listed = {identity(path) for path in leave_out}
+        if listed:
+            request["leave_out"] = sorted(listed)
+        if in_order:
+            request["in_order"] = True
+        self.requests.append(request)
         if self.mix_status != 200 or seed in self.failing_seeds:
             raise client.SoundprintError(client.FAILED, "The sound engine failed: server error")
-        tracks = self.mixes.get(seed, [])[:count]
+        tracks = [path for path in self.mixes.get(seed, []) if identity(path) not in listed][:count]
         if not tracks:
             raise client.SoundprintError(client.NOT_ANALYSED, "The sound engine found no songs (stored; 1000 song(s) "
                                                                "analysed).")

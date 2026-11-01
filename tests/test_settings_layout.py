@@ -58,9 +58,9 @@ class RadioValuesTest(KodiTestCase):
         self.assertEqual(main.radio_mix_parameters(75), {"size": 75, "variety": 4, "rejectsize": 6})
         self.assertEqual(main.get_effective_mix_parameters()["variety"], 7)  # Mixing keeps its own
 
-    def test_a_station_that_stays_close_still_varies(self):
-        kodi.settings.update(radio_variety="0", mix_assist_radio_drift="0")
-        self.assertEqual(main.radio_mix_parameters(75)["variety"], main.RADIO_STAY_CLOSE_MIN_VARIETY)
+    def test_a_station_that_stays_close_keeps_the_variety_set(self):
+        kodi.settings.update(radio_variety="0", mix_assist_radio_drift="0")  # its mixes leave its songs out instead
+        self.assertEqual(main.radio_mix_parameters(75)["variety"], 0)
 
     def test_station_names_have_their_own_switch(self):
         kodi.settings.update(mix_assist_name_mixes="false", radio_name_stations="true")

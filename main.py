@@ -2472,18 +2472,21 @@ def prepend_seed_track(seed_song: str, tracks: list[str]) -> list[str]:
     return result
 
 
-def fetch_sound_mix(seed_song: str, size: int, params: dict, progress=None) -> list[str]:
+def fetch_sound_mix(seed_song: str, size: int, params: dict, progress=None, leave_out=()) -> list[str]:
     """The sound engine's mix for a seed: the songs nearest to it by sound, each song once, with the mix's variety
-    and its rule for artists (no artist repeat within the reject size)."""
+    and its rule for artists (no artist repeat within the reject size), none of leave_out (a station's songs)."""
     window, variety = int(params.get("rejectsize") or 0), int(params.get("variety") or 0)
+    leave_out = list(leave_out)
     if progress:
         progress(15, "Looking for songs that sound alike")
     log_mixing(f"Sound engine mix request: seed {seed_song!r}, size {size}, "
                + (f"no artist repeat within {window} song(s)" if window else "artists may repeat")
-               + f", variety {variety}.")
+               + f", variety {variety}"
+               + (f", leaving out {len(leave_out)} song(s) the station has had." if leave_out else "."))
     started = time.time()
     try:
-        answer = soundprint.neighbours(soundprint_data(), kodi_userdata(), seed_song, size, window, variety)
+        answer = soundprint.neighbours(soundprint_data(), kodi_userdata(), seed_song, size, window, variety,
+                                       leave_out=leave_out)
     except soundprint.SoundprintError as exc:
         log_mixing(f"Sound engine mix for {seed_song!r} failed ({exc.kind}) after {time.time() - started:.1f} s: "
                    f"{exc}", xbmc.LOGWARNING if exc.kind == soundprint.NOT_ANALYSED else xbmc.LOGERROR)
@@ -2499,8 +2502,10 @@ def fetch_sound_mix(seed_song: str, size: int, params: dict, progress=None) -> l
     log_mixing(f"Sound engine answered in {time.time() - started:.1f} s (search {answer.get('seconds', 0)} s; the "
                f"seed's sound print {answer.get('seed_vector', '')}; {int(answer.get('analysed') or 0):,} song(s) "
                f"analysed; "
-               + (f"variety {variety}: drawn from the nearest {reach:,}, the nearer the likelier; " if variety
-                  else "variety 0: the nearest songs; ")
+               + f"variety {variety}: drawn from the nearest {reach:,}"
+               + (f" the station hasn't had ({left_out.get('listed', 0):,} of its songs left out first)" if leave_out
+                  else "")
+               + ", the nearer the likelier; "
                + f"left out on the way: {left_out.get('artist', 0)} for an artist played too recently, "
                f"{left_out.get('same_song', 0)} the same song again) with {len(songs)} song(s) for {seed_song!r} "
                f"({artist} - {title}):"
@@ -2514,10 +2519,11 @@ def fetch_sound_mix(seed_song: str, size: int, params: dict, progress=None) -> l
 SOUND_ENGINE_SETUP_HINT = "Set it up in Settings > Advanced > Set up the sound engine."
 
 
-def fetch_mix(seed_song: str, size: int, mix_params: dict | None = None, progress=None) -> list[str]:
-    """The mix for a seed, from the sound engine. progress(percent, text), if given, is told about each step."""
+def fetch_mix(seed_song: str, size: int, mix_params: dict | None = None, progress=None, leave_out=()) -> list[str]:
+    """The mix for a seed, from the sound engine. progress(percent, text), if given, is told about each step;
+    leave_out: songs (paths or identities) the mix leaves out, a station's songs."""
     params = mix_params or get_effective_mix_parameters(size_override=size)
-    return fetch_sound_mix(seed_song, size, params, progress)
+    return fetch_sound_mix(seed_song, size, params, progress, leave_out)
 
 
 def fetch_mix_with_defaults(seed_song: str, size: int, progress=None) -> list[str]:
@@ -7498,7 +7504,8 @@ def character_reference(seed: str, store, recorded: dict | None = None) -> list[
         return CHARACTER_SCALES[key]
     started = time.time()
     try:
-        answer = soundprint.neighbours(soundprint_data(), kodi_userdata(), seed, CHARACTER_SCALE_SONGS, 0, 0)
+        answer = soundprint.neighbours(soundprint_data(), kodi_userdata(), seed, CHARACTER_SCALE_SONGS, 0, 0,
+                                       in_order=True)
         paths = [song["path"] for song in answer["songs"]]
         units = mix_assist_library.resolve([seed] + paths, execute_jsonrpc, recorded or {})
     except Exception as exc:
@@ -8207,21 +8214,17 @@ def radio_check_progress(check=None):
 # station's earlier seeds, until enough songs fit (2026-10-24).
 RADIO_CHECK_BATCHES = (6, 4, 2, 2, 2)
 RADIO_CHECK_LISTS = 3
-# A station that stays close to its picked song asks for a mix of that song again and again; variety keeps those
-# mixes from repeating. MusicIP's variety 0 gave the same 75 songs every time, 1 about half of them new (measured
-# 2026-10-24). The sound engine's variety 0 is just as fixed (its nearest songs, in order), so the rule stays; its
-# variety 2 draws a mix of 75 from the nearest ~400 at random.
-RADIO_STAY_CLOSE_MIN_VARIETY = 2
+# A station that stays close to its picked song asks for a mix of that song again and again. Its mixes leave out
+# the station's songs (played, queued, turned down) before the sound engine chooses, so each one brings the nearest
+# songs the station hasn't had, at any variety; until 2026-11-01 such a station used at least variety 2, as the
+# sound engine's mixes at 0 were its nearest songs in order, the same each time, and the station ran dry (roadmap
+# I34).
 
 
 def radio_mix_parameters(size: int, settings: dict | None = None) -> dict:
-    """The parameters of a station's mixes: its variety and artist rule (a favourite's own, else Radio's); a station
-    that stays close to the picked song gets at least RADIO_STAY_CLOSE_MIN_VARIETY."""
-    params = {"size": max(1, int(size)), "variety": max(0, min(9, station_setting_index(settings, "variety"))),
-              "rejectsize": max(0, min(20, station_setting_index(settings, "rejectsize")))}
-    if get_radio_drift_half_life(settings) == 0:
-        params["variety"] = max(int(params.get("variety") or 0), RADIO_STAY_CLOSE_MIN_VARIETY)
-    return params
+    """The parameters of a station's mixes: its variety and artist rule (a favourite's own, else Radio's)."""
+    return {"size": max(1, int(size)), "variety": max(0, min(9, station_setting_index(settings, "variety"))),
+            "rejectsize": max(0, min(20, station_setting_index(settings, "rejectsize")))}
 
 
 def radio_check_batches(settings: dict | None = None) -> int:
@@ -8231,8 +8234,8 @@ def radio_check_batches(settings: dict | None = None) -> int:
 
 def radio_more_candidates(seeds: list[str], seen, settings: dict | None = None, picked: str = ""):
     """more() for a Radio check: the next candidate list, from the songs chosen so far (the newest first), then from
-    seeds, without the station's songs (seen: identities); [] when the lists are used up. A station that stays
-    close asks about its picked song first, once more (its mixes vary, see radio_mix_parameters)."""
+    seeds, without the station's songs (seen: identities; the sound engine leaves them out before it chooses);
+    [] when the lists are used up. A station that stays close asks about its picked song first, once more."""
     used, seen = set(), set(seen)
     lists = {"left": RADIO_CHECK_LISTS - 1}
     again = [picked] if picked and get_radio_drift_half_life(settings) == 0 else []
@@ -8245,7 +8248,8 @@ def radio_more_candidates(seeds: list[str], seen, settings: dict | None = None, 
                 return []
             used.add(normalize_track_identity(seed))
             try:
-                mix = fetch_mix(seed, mix_assist.MUSICIP_MAX_MIX, radio_mix_parameters(mix_assist.MUSICIP_MAX_MIX, settings))
+                mix = fetch_mix(seed, mix_assist.MUSICIP_MAX_MIX, radio_mix_parameters(mix_assist.MUSICIP_MAX_MIX, settings),
+                                leave_out=seen)
             except MusicIPError as exc:
                 log_radio(f"Radio mode: the mix for {seed!r} failed: {exc}", xbmc.LOGWARNING)
                 continue
@@ -8267,7 +8271,8 @@ def check_radio_start(tracks: list[str], count: int, check=None, settings: dict 
     judged against instead of asking the AI again (it has its name too)."""
     seed = tracks[0]
     try:
-        mix = fetch_mix(seed, mix_assist.MUSICIP_MAX_MIX, radio_mix_parameters(mix_assist.MUSICIP_MAX_MIX, settings))
+        mix = fetch_mix(seed, mix_assist.MUSICIP_MAX_MIX, radio_mix_parameters(mix_assist.MUSICIP_MAX_MIX, settings),
+                        leave_out=[normalize_track_identity(track) for track in tracks])
     except MusicIPError as exc:
         log_radio(f"Radio mode: the mix for the start check failed: {exc}", xbmc.LOGWARNING)
         mix = []

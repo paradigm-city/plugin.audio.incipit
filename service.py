@@ -1689,13 +1689,17 @@ def refill_radio_queue(state: dict, checked: bool = False) -> int:
 
     server_error = None
     seed_entries = refill_seed_entries(state, checked)[offset:offset + RADIO_REFILL_SEEDS]
+    # The sound engine leaves the station's songs out before it chooses: the nearest songs the station hasn't had.
+    leave_out = seen_set | rejected_songs(state, plugin)
     log_radio(f"Radio mode: refill seeds to try (skipping {offset} earlier choice(s)): "
-              f"{[str(entry['file']) for entry in seed_entries]!r}; {len(seen_set)} song(s) seen this session.")
+              f"{[str(entry['file']) for entry in seed_entries]!r}; {len(seen_set)} song(s) seen this session, "
+              f"{len(leave_out) - len(seen_set)} more turned down; the mixes leave them out.")
     for entry in seed_entries:
         seed = str(entry["file"])
         try:
             request_size = RADIO_CHECK_SIZE if checked else size
-            tracks = plugin.fetch_mix(seed, request_size, plugin.radio_mix_parameters(request_size, settings))
+            tracks = plugin.fetch_mix(seed, request_size, plugin.radio_mix_parameters(request_size, settings),
+                                      leave_out=leave_out)
         except Exception as exc:
             if isinstance(exc, plugin.MusicIPError) and "empty mix" in str(exc):
                 log_radio(f"Radio mode: the sound engine returned no songs for {seed!r}.")
@@ -1737,7 +1741,7 @@ def refill_radio_queue(state: dict, checked: bool = False) -> int:
         reference_song = used_seed if drifting else str(state.get("seed") or used_seed)
         reference = state.get("reference") if isinstance(state.get("reference"), dict) else None
         neighbours = [str(entry["file"]) for entry in queue]
-        # Songs the station turned down before aren't judged again; they may still keep it from running dry.
+        # Songs the station turned down before aren't judged again (the mixes leave them out already).
         rejected = rejected_songs(state, plugin)
         candidates = [track for track in new_tracks if plugin.normalize_track_identity(track) not in rejected]
         batch = plugin.station_batch_size(state)  # songs per checked refill ("Songs per refill")

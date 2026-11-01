@@ -64,8 +64,10 @@ def arguments(argv=None) -> argparse.Namespace:
     near.add_argument("--count", type=int, default=100)
     near.add_argument("--artist-window", type=int, default=0,
                       help="no artist repeat within this many songs, the seed counted (0: repeats allowed)")
-    near.add_argument("--variety", type=int, default=0, help="0: the nearest songs; up to 9: a random choice "
+    near.add_argument("--variety", type=int, default=0, help="0: a random choice among the nearest songs; up to 9: "
                                                              "reaching further out, spread from near to far")
+    near.add_argument("--in-order", action="store_true", help="the nearest songs, nearest first (no random choice)")
+    near.add_argument("--leave-out", help="a file with one path per line: songs to leave out (a station's songs)")
     commands.add_parser("failures")
     args = parser.parse_args(argv)
     args.data = args.data or os.path.join(args.userdata, "addon_data", ADDON_ID, "soundprint")
@@ -150,15 +152,18 @@ def neighbours(args) -> int:
         database = songs.kodi_database(args.userdata)
     except FileNotFoundError:
         database = ""
+    leave_out = songs.from_list(args.leave_out) if args.leave_out else []
     details = songs.Details(database)
     store = Store(args.data)
     try:
         found, source, left_out = nearest(store, args.seed, args.count, args.model if os.path.isdir(args.model) else "",
-                                          details=details, window=args.artist_window, variety=args.variety)
+                                          details=details, window=args.artist_window, variety=args.variety,
+                                          leave_out=leave_out, in_order=args.in_order)
         analysed = store.counts()["analysed"]
         print(json.dumps({"seed": args.seed, "seed_vector": source, "seed_details": list(details(args.seed)),
                           "library": database, "analysed": analysed, "left_out": left_out,
-                          "reach": reach(args.count, args.variety, analysed),
+                          "reach": args.count if args.in_order else
+                          reach(args.count, args.variety, analysed - left_out["listed"]),
                           "seconds": round(time.perf_counter() - started, 2),
                           "songs": [{"path": path, "similarity": round(similarity, 4), "rank": rank,
                                      "artist": details(path)[0], "title": details(path)[1]}
