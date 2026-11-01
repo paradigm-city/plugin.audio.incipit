@@ -228,9 +228,16 @@ suggests artists and albums that would fit the mix's or station's criteria but a
   artists playing; judged as a DJ would, from the music's intent, not by popularity. Left out what Kodi's library
   has (artists and albums, compared as the artist rule compares them); every album checked against MusicBrainz, so
   nothing invented is shown (I21 uses MusicBrainz too). One call per mix or station, kept with it.
+- The screen shows one kind of information at a time and rotates through whatever kinds are built (the listener's
+  wish, 2026-11-02): the mix's or station's information; its history (a mix's edits, a station's events); its
+  context, emotional and cultural (the era, the scene, what the music stands for; written by Claude from the profile,
+  intent and perspective, once per mix or station, perhaps in the same call as the suggestions); and the
+  suggestions. New kinds join the rotation as they come.
 - One suggestion at a time (the listener's wish, 2026-11-02: time to take it in), with its cover, why it fits and
-  "would" or "could fit"; the next one with the next song (3 to 5 minutes, and never in the middle of something).
-- Open: the overlay at the bottom or down one side.
+  "would" or "could fit".
+- Open: the pace. Each panel needs time to be read; perhaps each stays about a minute and the rotation runs through
+  them within a song, a song change starting with the next suggestion. And the overlay at the bottom or down one
+  side.
 - Every suggestion shown is kept (the listener's wish, 2026-11-02), so it doesn't come again and can be reviewed
   later: a "Suggestions" folder in the add-on, newest first, each with "would" or "could fit", why, and the station
   or mix it came from (which can be played again); the listener takes out what isn't for them. One that later turns
