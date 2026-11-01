@@ -4803,11 +4803,13 @@ def show_root() -> None:
     generate_item = xbmcgui.ListItem(label=generate_label, offscreen=True)
     apply_music_metadata(generate_item, generate_label)
     set_item_icon(generate_item, media_icon("generate"))
+    generate_item.setProperty("IsPlayable", "false")
     add_directory_item(
         HANDLE,
         addon_url(action="generate_current_mix"),
         generate_item,
-        isFolder=True,
+        # An action, not a folder: the dialog, the mix and its start happen while Kodi waits for no listing (F49).
+        isFolder=False,
     )
 
     add_playing_entries()
@@ -4868,24 +4870,18 @@ def add_discovery_run_action_item(label: str, action: str) -> None:
     )
 
 
-def add_discovery_action_item(label: str, action: str, is_folder: bool = True, icon: str = "",
-                              fanart: str = "") -> None:
-    # The same URL every time (no nonce): when the screen is redrawn, Kodi finds the focused item by its URL and
-    # keeps the focus on it.
+def add_discovery_action_item(label: str, action: str, icon: str = "", fanart: str = "") -> None:
+    # Actions, not folders, as Radio mode's: Kodi runs them without waiting for a listing, so a screen change while
+    # they work can't leave the add-on calling into a folder request Kodi has given up (F8, F14, F49). The same URL
+    # every time (no nonce): when the screen is redrawn, Kodi finds the focused item by its URL and keeps the focus.
     item = xbmcgui.ListItem(label=label, offscreen=True)
     apply_music_metadata(item, label)
     if icon:
         set_item_icon(item, media_icon(icon))
     if fanart:  # every entry: skins show the focused entry's
         item.setArt({"fanart": fanart})
-    if not is_folder:
-        item.setProperty("IsPlayable", "false")
-    add_directory_item(
-        HANDLE,
-        addon_url(action=action),
-        item,
-        isFolder=is_folder,
-    )
+    item.setProperty("IsPlayable", "false")
+    add_directory_item(HANDLE, addon_url(action=action), item, isFolder=False)
 
 
 def add_saved_mixes_folder(fanart: str = "") -> None:
@@ -4924,13 +4920,12 @@ def show_mix_mode_menu() -> None:
     if current_mix and current_mix != playing_mix_cache_path():  # a playing one is on the first screen
         add_mix_entry(current_mix, "Current mix", "Mix mode")
     if active:
-        add_discovery_action_item("Create mix from current discovery song", "discovery_mix_current", is_folder=True,
-                                  icon="generate", fanart=fanart)
-        add_discovery_action_item("Skip to next discovery song", "discovery_next", is_folder=True, icon="skip",
+        add_discovery_action_item("Create mix from current discovery song", "discovery_mix_current", icon="generate",
                                   fanart=fanart)
-        add_discovery_action_item("Stop discovery mode", "discovery_stop", is_folder=True, icon="stop", fanart=fanart)
+        add_discovery_action_item("Skip to next discovery song", "discovery_next", icon="skip", fanart=fanart)
+        add_discovery_action_item("Stop discovery mode", "discovery_stop", icon="stop", fanart=fanart)
     else:  # it scans through snippets, like the radio: the same icon
-        add_discovery_action_item("Start discovery mode", "discovery_start", is_folder=True, icon="searching")
+        add_discovery_action_item("Start discovery mode", "discovery_start", icon="searching")
     add_saved_mixes_folder(fanart)
 
     end_directory(HANDLE, cacheToDisc=False)
@@ -5658,10 +5653,11 @@ def show_saved_mixes_by_date(date_key: str) -> None:
     end_directory(HANDLE, cacheToDisc=False)
 
 def generate_current_mix() -> None:
+    """An action (the first screen's "Generate mix from playing audio"): no listing; what goes wrong is notified, and
+    the new mix is shown with Container.Update once it plays."""
     seed = get_current_seed_song()
     if not seed:
         notify("No playing song found.", xbmcgui.NOTIFICATION_WARNING)
-        end_directory(HANDLE, succeeded=True, cacheToDisc=False)
         return
 
     size = get_playlist_size()
@@ -5670,17 +5666,15 @@ def generate_current_mix() -> None:
         tracks = fetch_mix_confirmed(seed, size)
     except MusicIPError as exc:
         message = str(exc)
-        notify(message, xbmcgui.NOTIFICATION_WARNING if "cancelled" in message.lower() else xbmcgui.NOTIFICATION_ERROR)
+        cancelled = "cancelled" in message.lower()
+        notify(message if cancelled else f"Mix failed: {message}",
+               xbmcgui.NOTIFICATION_WARNING if cancelled else xbmcgui.NOTIFICATION_ERROR)
         log_mixing(message, xbmc.LOGERROR)
-        add_error_item(f"Mix failed: {message}")
-        end_directory(HANDLE, succeeded=True, cacheToDisc=False)
         return
     except Exception as exc:
         message = str(exc)
-        notify(message, xbmcgui.NOTIFICATION_ERROR)
+        notify(f"Mix failed: {message}", xbmcgui.NOTIFICATION_ERROR)
         log_mixing(f"Generate mix from playing audio failed: {message}", xbmc.LOGERROR)
-        add_error_item(f"Mix failed: {message}")
-        end_directory(HANDLE, succeeded=True, cacheToDisc=False)
         return
 
     track_metadata_list = collect_mix_track_metadata(tracks, allow_live_lookup=False)
@@ -5697,10 +5691,8 @@ def generate_current_mix() -> None:
         play_tracks_as_music_playlist(tracks, track_metadata_list)
     except Exception as exc:
         message = str(exc)
-        notify(message, xbmcgui.NOTIFICATION_ERROR)
+        notify(f"Mix playback failed: {message}", xbmcgui.NOTIFICATION_ERROR)
         log_mixing(f"Generate mix playback failed: {message}", xbmc.LOGERROR)
-        add_error_item(f"Mix playback failed: {message}")
-        end_directory(HANDLE, succeeded=True, cacheToDisc=False)
         return
 
     notify("Playing generated mix.")
@@ -5708,7 +5700,6 @@ def generate_current_mix() -> None:
         xbmc.executebuiltin(f"Container.Update({build_saved_browse_url(cache_path)},replace)")
     except Exception as exc:
         log_mixing(f"Generate mix: could not replace container with generated mix: {exc}", xbmc.LOGWARNING)
-        browse_saved_mix(cache_path)
 
 def browse_mix(
     seed: str,
