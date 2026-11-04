@@ -207,6 +207,55 @@ Claude subscription, and the add-on removes `ANTHROPIC_API_KEY` from every call 
 key as an alternative route would give the checks to listeners without a subscription (README, *Prerequisites*);
 the costs per mix would have to be shown (the statistics already count tokens).
 
+#### I37 · Cultural: the scene, not the whole tradition
+
+From the listener, 2026-11-04. Cultural can make a station like an edited radio show of the 70s and 80s, but it is
+at times too broad: station 19 ("Swaggering Seventies Hard Rock", Legs Diamond, "I Think I Got It", 1977; Character
+Close) put late-70s American hard rock next to early Motörhead, whose background is quite another one.
+
+Why, from the station's stated intent: it describes the whole tradition, not the seed's place in it. Every quality
+also fits Motörhead: "American and British hard rock tradition of the 1970s and 80s", "made between about 1975 and
+1986 … analog, guitar-driven, before grunge", "denim-and-leather crowds" (a British phrase, Saxon's), and Fastway,
+Fast Eddie Clarke's band after Motörhead, among the reference artists. Its "Not:" names music the sound engine
+hardly brings (punk and new wave, post-punk, 2000s indie), not the near neighbours that do come. And the rule lets
+in "roots, successors, kindred scenes" as well. So the check has nothing to tell an LA club band on its way to the
+arenas from a London band out of Hawkwind, the biker scene and punk's audience. Candidates:
+
+- The intent names what sets the seed's scene apart from its neighbours: the city or country and its circuit (clubs,
+  labels, radio), the audience and its subculture, the lineage on both sides, the attitude (polish and showmanship,
+  or speed, noise and defiance).
+- "Not:" names the nearest scenes that sound alike, the ones a sound-alike search brings (here NWOBHM, Motörhead's
+  speed and noise, LA glam), rather than far-off kinds.
+- Reference artists only from the seed's own scene, no band that merely shares a member with it.
+- Measure on station 19's songs, as the perspectives were tested (concept_ai_mix_assist.md, *Listening
+  perspectives*): Motörhead should become an outlier, UFO and Montrose should stay.
+
+The same may hold for the other perspectives (an emotional or technical intent can describe the family, not the
+seed); I38 makes the breadth a choice.
+
+#### I38 · How sharp an intent is: three stages
+
+From the listener, 2026-11-04 (after I37). How broad or sharp each perspective judges, in three stages, which may
+be three prompts. Thoughts:
+
+- The stages could be rings around the seed, the same idea for every perspective. Cultural: *sharp* the seed's own
+  scene, place and years and its peers; *clear* the same tradition and era; *broad* the lineage with roots,
+  successors and kindred scenes (today's rule). Technical: the same craft and level, the same family of craft,
+  shared basics. Emotional: the core and its colour, the core in any colour (today), the core in part. Functional
+  and lyrical alike.
+- A stage changes both calls: how specific the stated intent is (I37: what sets the seed apart, "Not:" the near
+  neighbours) and the judging rule. The stated intent is kept with the station (`saved_intent`), so a changed stage
+  states it again.
+- Next to the other controls: "Accept borderline" already widens the verdicts (broad might take borderline, sharp
+  only fits, so the two might become one); Character's openness (Focused to Adventurous) is the profile's breadth,
+  this is the intent's; drift moves the station away from its seed, which works against a sharp intent. Stated in
+  one place, the station's settings, with a favourite keeping its own, as the other station settings do.
+- Supply: a sharp intent passes fewer songs; a station may run dry sooner and spend more AI calls (I32), so a sharp
+  station may need the search to reach further (variety) and the leave-out list of I34 matters more.
+- Names: not Character's (Focused, Close, …). For example Broad, Clear, Sharp; or by what they mean for cultural:
+  Lineage, Tradition, Scene.
+- Test as I37, with the three stages on the same songs, and on a seed from each perspective.
+
 ### Screen
 
 #### I36 · A screen during playback: what plays, and music to discover
