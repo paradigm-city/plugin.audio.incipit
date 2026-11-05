@@ -115,14 +115,6 @@ they happen: `onNotification` AudioLibrary.OnUpdate / OnRemove (and onCleanFinis
 of paths (no walk over every file), removed songs pruned, a low-priority run with prune at startup, and the search
 leaves out stored songs Kodi doesn't list. This also removes the old spellings of paths kept since F45.
 
-#### I10 · A library health check for songs listed twice
-
-From a conversation, 2026-10-31 (F45). A scan of a lower-cased folder made Kodi list about 3,850 songs twice, under
-`D:\` and `d:\`; Kodi's library clean doesn't remove them, because Windows finds the files under both spellings.
-The add-on could find songs whose paths differ only in case, show them, and offer to remove the spelling that is not
-the music source's. Changing Kodi's database needs care: a dry run first, a backup, Kodi's own JSON-RPC where it
-can do it.
-
 #### I11 · A faster search
 
 From the notes of 2026-10-28. With 153,000 songs the matrix (vectors.npy, about 314 MB float32) makes a search take
@@ -309,6 +301,22 @@ mixes until 2026." (Kodi shows it on the add-on's page). The README's version no
 CHANGELOG.md and are partly out of date; a link to the changelog could replace them.
 
 ## Parked
+
+### I10 · A library health check for songs listed twice
+
+From a conversation, 2026-10-31 (F45). A scan of a lower-cased folder made Kodi list about 3,850 songs twice, under
+`D:\` and `d:\`; Kodi's library clean doesn't remove them, because Windows finds the files under both spellings.
+The add-on could find songs whose paths differ only in case, show them, and offer to remove the spelling that is not
+the music source's. Changing Kodi's database needs care: a dry run first, a backup, Kodi's own JSON-RPC where it
+can do it.
+
+Checked on 2026-11-05: no longer a problem here. Kodi's library (read only) lists none of its 155,556 songs under
+two spellings, and all 14,198 folders as `D:\`; the only file listed more than once is a CD image with a cue sheet
+(4 tracks in one `CDImage.ape`), as it should be. Both databases were repaired by hand on 2026-11-04 (backups
+`MyMusic83.db.before-repair.bak` and `sound.db.before-repair.bak`): Kodi lists 155,553 songs instead of 159,370, and
+the sound store has no row left under an old spelling (155,804 rows instead of 174,272). The add-on that lower-cased
+the folders is fixed. Parked: worth building only if it happens again; the search takes a file once whatever its
+spelling (F50).
 
 ### I27 · A relation map of artists
 
