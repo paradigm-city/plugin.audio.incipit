@@ -140,12 +140,6 @@ From the trials of 2026-10-25 and the licence check of 2026-10-27. Self-supervis
 comparison with DCLAP, judged by CPU-only speed on this PC. If DCLAP's AGPL licence ever matters, its CC0 teacher
 (LAION CLAP, HTSAT) is the fallback: free to bundle, but 5 to 6 times slower.
 
-#### I15 · The worker processes watch their parent
-
-From a conversation, 2026-10-31 (F46). When the analysis's main process ends, its workers end by themselves after
-the song in hand (a broken pipe) or at once when idle; tested. An explicit watch of the parent in each worker would
-end them at once. Small gain; not needed so far.
-
 #### I16 · The set-up stops when Kodi closes
 
 From a conversation, 2026-10-31 (F46). The analysis stops when Kodi closes; the set-up (pip and the model download,
@@ -301,6 +295,17 @@ mixes until 2026." (Kodi shows it on the add-on's page). The README's version no
 CHANGELOG.md and are partly out of date; a link to the changelog could replace them.
 
 ## Parked
+
+### I15 · The worker processes watch their parent
+
+From a conversation, 2026-10-31 (F46). When the analysis's main process ends, its workers end by themselves after
+the song in hand (a broken pipe) or at once when idle; tested. An explicit watch of the parent in each worker would
+end them at once. Small gain; not needed so far.
+
+Tested again on 2026-11-05: an analysis of 400 songs into a data folder of its own, its main process (and the
+environment's launcher above it) ended by force after 10 songs, its 4 workers left alone. One worker ended within
+3 s, the other three within 10 s, each after the song in hand; none stayed. Parked: an explicit watch would only
+save those seconds.
 
 ### I10 · A library health check for songs listed twice
 
