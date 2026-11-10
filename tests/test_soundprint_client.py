@@ -133,6 +133,14 @@ class ClientTest(unittest.TestCase):
         self.assertEqual(run.calls[0][0][-1:], ["--in-order"])
         self.assertNotIn("--leave-out", run.calls[0][0])
 
+    def test_an_epoch_stations_years_go_to_the_tool(self):
+        run = FakeRun(json.dumps(answer(NEAR)))
+        client.neighbours(self.data, "U", SEED, 25, runner=run, years=(1975, 1979))
+        self.assertEqual(run.calls[0][0][-2:], ["--years", "1975-1979"])
+        run = FakeRun(json.dumps(answer(NEAR)))
+        client.neighbours(self.data, "U", SEED, 25, runner=run)
+        self.assertNotIn("--years", run.calls[0][0])
+
     def test_a_seed_without_sound_print_is_an_empty_answer(self):
         run = FakeRun(json.dumps(answer([], seed_vector="not a local file")))
         with self.assertRaises(client.SoundprintError) as caught:
@@ -357,6 +365,19 @@ class SoundEngineMixTest(KodiTestCase):
         self.assertIn("variety 0: drawn from the nearest 25 the station hasn't had (2 of its songs left out first)", log)
         main.fetch_mix(SEED, 20)
         self.assertEqual(list(self.neighbours.call_args[1]["leave_out"]), [])  # a mix: nothing left out
+
+    def test_an_epoch_stations_mix_stays_in_its_time(self):
+        self.log_everything()
+        self.neighbours.return_value = answer(NEAR, left_out={"artist": 0, "same_song": 0, "listed": 0,
+                                                              "outside_years": 140000, "years": [1974, 1980]})
+        main.fetch_mix(SEED, 20, {"variety": 0, "rejectsize": 0, "years": (1975, 1979)})
+        self.assertEqual(self.neighbours.call_args[1]["years"], (1975, 1979))
+        log = kodi.log_text()
+        self.assertIn("variety 0, only songs of the years 1975-1979.", log)
+        self.assertIn("within the years 1974-1980 (140,000 song(s) of other years left out first, the window widened "
+                      "to hold enough songs)", log)
+        main.fetch_mix(SEED, 20)
+        self.assertIsNone(self.neighbours.call_args[1]["years"])  # any other mix: every year
 
     def test_characters_scale_takes_the_nearest_songs_in_order(self):
         main.CHARACTER_SCALES.clear()

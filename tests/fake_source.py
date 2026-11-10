@@ -21,7 +21,8 @@ class FakeSource:
         identities left out, sorted) when there were any."""
         return list(self.requests)
 
-    def neighbours(self, data, userdata, seed, count, window=0, variety=0, runner=None, leave_out=(), in_order=False):
+    def neighbours(self, data, userdata, seed, count, window=0, variety=0, runner=None, leave_out=(), in_order=False,
+                   years=None):
         from soundprint import client  # importable once the add-on's folder is on the path (support.py)
 
         def identity(path):  # as soundprint.neighbours.identity
@@ -33,6 +34,8 @@ class FakeSource:
             request["leave_out"] = sorted(listed)
         if in_order:
             request["in_order"] = True
+        if years:
+            request["years"] = tuple(years)
         self.requests.append(request)
         if self.mix_status != 200 or seed in self.failing_seeds:
             raise client.SoundprintError(client.FAILED, "The sound engine failed: server error")
@@ -41,6 +44,8 @@ class FakeSource:
             raise client.SoundprintError(client.NOT_ANALYSED, "The sound engine found no songs (stored; 1000 song(s) "
                                                                "analysed).")
         return {"seed": seed, "seed_vector": "stored", "seed_details": ["", ""], "analysed": 1000,
-                "left_out": {"artist": 0, "same_song": 0}, "reach": count, "seconds": 0.1,
+                "left_out": dict({"artist": 0, "same_song": 0}, **({"years": list(years), "outside_years": 500}
+                                                                    if years else {})),
+                "reach": count, "seconds": 0.1,
                 "songs": [{"path": path, "similarity": 0.9, "rank": number, "artist": "", "title": ""}
                           for number, path in enumerate(tracks, start=1)]}

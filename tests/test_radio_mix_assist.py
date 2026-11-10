@@ -31,7 +31,7 @@ class RadioMixAssistTest(RadioBase):
             self.addCleanup(patcher.stop)
 
     @staticmethod
-    def all_first_songs_fit(tracks, count, check=None, settings=None, intent=""):
+    def all_first_songs_fit(tracks, count, check=None, settings=None, intent="", years=None):
         return {"chosen": tracks[1:][:count], "not_fitting": [], "intent": "dark metal", "reference": REFERENCE,
                 "name": "", "checked": True}
 
@@ -317,6 +317,32 @@ class RadioMixAssistTest(RadioBase):
         self.assertEqual(self.files(), before + candidates[::2])
         self.assertEqual(kodi.playlist_files(), self.files())
         self.assertEqual(radio["reference"], {"energy": 6, "sounding_year": 1984})
+
+    def test_an_epoch_station_searches_within_its_time(self):
+        kodi.settings["mix_assist_station_perspective"] = "6"  # Epoch
+        self.log_everything()
+        self.start_check.side_effect = lambda *args, **kwargs: dict(
+            self.all_first_songs_fit(*args, **kwargs), intent="Years: 1976–1978. Punk, disco and the sequencer.")
+        with mock.patch.object(main, "song_first_year", return_value=1977):
+            self.start()
+            self.assertEqual(self.source.mix_requests()[0]["years"], (1975, 1979))  # the picked song's year +-2
+            radio = self.started_station(started=True)
+            self.finish_check()
+        self.assertEqual(self.start_check.call_args[1]["years"], (1975, 1979))
+        self.assertEqual(radio["intent"], "Years: 1976–1978. Punk, disco and the sequencer.")
+        self.assertEqual(self.source.mix_requests()[-1]["years"], (1976, 1978))  # the span the intent states
+        self.assertEqual(self.refill_check.call_args[1]["years"], (1976, 1978))
+        self.assertIn("Epoch station, its songs from the years 1976-1978 (as its intent states).", kodi.log_text())
+
+    def test_other_stations_search_every_year(self):
+        self.started_station()
+        self.finish_check()
+        self.assertFalse(any("years" in request for request in self.source.mix_requests()))
+        self.assertIsNone(self.refill_check.call_args[1]["years"])
+        self.assertIsNone(main.station_years("D:\\a.mp3", {"perspective": 3}, "Years: 1976–1978."))
+        with mock.patch.object(main, "song_first_year", return_value=0):
+            self.assertIsNone(main.station_years("D:\\a.mp3", {"perspective": 6}))  # no year: any time
+            self.assertEqual(main.station_years("D:\\a.mp3", {"perspective": 6}, "Seattle, 1990-1994"), (1990, 1994))
 
     def test_staying_close_judges_against_the_picked_song(self):
         kodi.settings["mix_assist_radio_drift"] = "0"
