@@ -1487,8 +1487,10 @@ def start_radio_start_check(state: dict, plugin) -> None:
         if saved_intent:
             log_radio(f"Radio mode: the favourite's saved description of the picked song is judged against: "
                       f"{saved_intent!r}")
+        years = plugin.station_years(seed, settings, saved_intent)  # an Epoch station's time
         start_radio_check(state, "start", lambda check: plugin.check_radio_start(
-            tracks, plugin.station_batch_size(state), check=check, settings=settings, intent=saved_intent), seed=seed)
+            tracks, plugin.station_batch_size(state), check=check, settings=settings, intent=saved_intent,
+            years=years), seed=seed)
 
 
 def playing_song_seconds_left() -> float:
@@ -1760,6 +1762,9 @@ def refill_radio_queue(state: dict, checked: bool = False) -> int:
     seed_entries = refill_seed_entries(state, checked)[offset:offset + RADIO_REFILL_SEEDS]
     # The sound engine leaves the station's songs out before it chooses: the nearest songs the station hasn't had.
     leave_out = seen_set | rejected_songs(state, plugin)
+    # An Epoch station's time: the span its intent states, else the picked song's year +-2.
+    years = plugin.station_years(str(state.get("seed") or ""), settings,
+                                 str(state.get("intent") or state.get("saved_intent") or ""))
     log_radio(f"Radio mode: refill seeds to try (skipping {offset} earlier choice(s)): "
               f"{[str(entry['file']) for entry in seed_entries]!r}; {len(seen_set)} song(s) seen this session, "
               f"{len(leave_out) - len(seen_set)} more turned down; the mixes leave them out.")
@@ -1767,7 +1772,7 @@ def refill_radio_queue(state: dict, checked: bool = False) -> int:
         seed = str(entry["file"])
         try:
             request_size = RADIO_CHECK_SIZE if checked else size
-            tracks = plugin.fetch_mix(seed, request_size, plugin.radio_mix_parameters(request_size, settings),
+            tracks = plugin.fetch_mix(seed, request_size, plugin.radio_mix_parameters(request_size, settings, years),
                                       leave_out=leave_out)
         except Exception as exc:
             if isinstance(exc, plugin.MusicIPError) and "empty mix" in str(exc):
@@ -1826,7 +1831,8 @@ def refill_radio_queue(state: dict, checked: bool = False) -> int:
         start_radio_check(
             state, "refill",
             lambda check: plugin.check_radio_refill(reference_song, candidates, batch, reference, neighbours,
-                                                    check=check, settings=settings, more_seeds=more_seeds, seen=seen),
+                                                    check=check, settings=settings, more_seeds=more_seeds, seen=seen,
+                                                    years=years),
             fallback=fallback, seed=used_seed)
         return 0
 

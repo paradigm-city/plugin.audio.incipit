@@ -68,6 +68,8 @@ def arguments(argv=None) -> argparse.Namespace:
                                                              "reaching further out, spread from near to far")
     near.add_argument("--in-order", action="store_true", help="the nearest songs, nearest first (no random choice)")
     near.add_argument("--leave-out", help="a file with one path per line: songs to leave out (a station's songs)")
+    near.add_argument("--years", help="only songs of these years, as 1975-1979 (an Epoch station's time; widened "
+                                      "while it holds too few songs)")
     commands.add_parser("failures")
     args = parser.parse_args(argv)
     args.data = args.data or os.path.join(args.userdata, "addon_data", ADDON_ID, "soundprint")
@@ -143,8 +145,8 @@ def analyse(args) -> int:
 def neighbours(args) -> int:
     import time
 
-    from soundprint import songs
-    from soundprint.neighbours import nearest, reach
+    from soundprint import songs, years
+    from soundprint.neighbours import file_key, nearest, reach
     from soundprint.store import Store
 
     started = time.perf_counter()
@@ -153,17 +155,20 @@ def neighbours(args) -> int:
     except FileNotFoundError:
         database = ""
     leave_out = songs.from_list(args.leave_out) if args.leave_out else []
+    span = years.parse_window(args.years) if args.years else None
+    song_years = years.cached_years(database, args.data, file_key) if span and database else None
     details = songs.Details(database)
     store = Store(args.data)
     try:
         found, source, left_out = nearest(store, args.seed, args.count, args.model if os.path.isdir(args.model) else "",
                                           details=details, window=args.artist_window, variety=args.variety,
-                                          leave_out=leave_out, in_order=args.in_order)
+                                          leave_out=leave_out, in_order=args.in_order, years=song_years, span=span)
         analysed = store.counts()["analysed"]
         print(json.dumps({"seed": args.seed, "seed_vector": source, "seed_details": list(details(args.seed)),
                           "library": database, "analysed": analysed, "left_out": left_out,
                           "reach": args.count if args.in_order else
-                          reach(args.count, args.variety, analysed - left_out["listed"]),
+                          reach(args.count, args.variety,
+                                analysed - left_out["listed"] - left_out.get("outside_years", 0)),
                           "seconds": round(time.perf_counter() - started, 2),
                           "songs": [{"path": path, "similarity": round(similarity, 4), "rank": rank,
                                      "artist": details(path)[0], "title": details(path)[1]}

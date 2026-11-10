@@ -2476,17 +2476,19 @@ def fetch_sound_mix(seed_song: str, size: int, params: dict, progress=None, leav
     """The sound engine's mix for a seed: the songs nearest to it by sound, each song once, with the mix's variety
     and its rule for artists (no artist repeat within the reject size), none of leave_out (a station's songs)."""
     window, variety = int(params.get("rejectsize") or 0), int(params.get("variety") or 0)
+    years = tuple(params["years"]) if params.get("years") else None
     leave_out = list(leave_out)
     if progress:
         progress(15, "Looking for songs that sound alike")
     log_mixing(f"Sound engine mix request: seed {seed_song!r}, size {size}, "
                + (f"no artist repeat within {window} song(s)" if window else "artists may repeat")
                + f", variety {variety}"
+               + (f", only songs of the years {years[0]}-{years[1]}" if years else "")
                + (f", leaving out {len(leave_out)} song(s) the station has had." if leave_out else "."))
     started = time.time()
     try:
         answer = soundprint.neighbours(soundprint_data(), kodi_userdata(), seed_song, size, window, variety,
-                                       leave_out=leave_out)
+                                       leave_out=leave_out, years=years)
     except soundprint.SoundprintError as exc:
         log_mixing(f"Sound engine mix for {seed_song!r} failed ({exc.kind}) after {time.time() - started:.1f} s: "
                    f"{exc}", xbmc.LOGWARNING if exc.kind == soundprint.NOT_ANALYSED else xbmc.LOGERROR)
@@ -2505,6 +2507,10 @@ def fetch_sound_mix(seed_song: str, size: int, params: dict, progress=None, leav
                + f"variety {variety}: drawn from the nearest {reach:,}"
                + (f" the station hasn't had ({left_out.get('listed', 0):,} of its songs left out first)" if leave_out
                   else "")
+               + (f", within the years {left_out['years'][0]}-{left_out['years'][1]} "
+                  f"({left_out.get('outside_years', 0):,} song(s) of other years left out first"
+                  + (", the window widened to hold enough songs" if list(left_out["years"]) != list(years) else "")
+                  + ")" if years and left_out.get("years") else "")
                + ", the nearer the likelier; "
                + f"left out on the way: {left_out.get('artist', 0)} for an artist played too recently, "
                f"{left_out.get('same_song', 0)} the same song again) with {len(songs)} song(s) for {seed_song!r} "
@@ -5222,7 +5228,9 @@ def describe_station_start(params: dict, favourite: dict | None, assisted: bool,
 def open_radio_station(seed: str, favourite: dict | None, progress) -> bool:
     batch = get_radio_batch_size()
     size = batch if mix_assist_for_radio() else get_playlist_size()
-    params = radio_mix_parameters(size, favourite_settings(favourite))
+    settings = favourite_settings(favourite)
+    years = station_years(seed, settings, favourite_intent(favourite))
+    params = radio_mix_parameters(size, settings, years)
     try:
         tracks = fetch_mix(seed, size, params, progress=progress)
     except Exception as exc:
@@ -8232,10 +8240,38 @@ RADIO_CHECK_LISTS = 3
 # I34).
 
 
-def radio_mix_parameters(size: int, settings: dict | None = None) -> dict:
-    """The parameters of a station's mixes: its variety and artist rule (a favourite's own, else Radio's)."""
-    return {"size": max(1, int(size)), "variety": max(0, min(9, station_setting_index(settings, "variety"))),
-            "rejectsize": max(0, min(20, station_setting_index(settings, "rejectsize")))}
+def radio_mix_parameters(size: int, settings: dict | None = None, years: tuple | None = None) -> dict:
+    """The parameters of a station's mixes: its variety and artist rule (a favourite's own, else Radio's); years: an
+    Epoch station's time (station_years), the songs of other years left out."""
+    params = {"size": max(1, int(size)), "variety": max(0, min(9, station_setting_index(settings, "variety"))),
+              "rejectsize": max(0, min(20, station_setting_index(settings, "rejectsize")))}
+    if years:
+        params["years"] = (int(years[0]), int(years[1]))
+    return params
+
+
+def song_first_year(path: str) -> int:
+    """A song's year as AI Mix Assist sees it (F51): its own, else the latest its compilation allows; 0 unknown."""
+    try:
+        item = mix_assist_library.resolve([path], execute_jsonrpc, {})[0]["item"]
+    except Exception:
+        return 0
+    return int(item.get("year") or item.get("compilation_year") or 0)
+
+
+def station_years(seed: str, settings: dict | None = None, intent: str = "") -> tuple | None:
+    """The time an Epoch station's songs come from (concept_epoch.md): the span its intent states ("Years:
+    1976-1979."), else the picked song's year +-2; None for the other perspectives or without a year."""
+    if perspective_key(station_setting_index(settings, "perspective")) != "epoch" or not seed:
+        return None
+    seed_year = song_first_year(seed)
+    span = mix_assist_checks.epoch_span(intent, seed_year)
+    stated = mix_assist_checks.epoch_span(intent) is not None  # without a seed year: only a span the intent states
+    log_radio(f"Radio mode: Epoch station, its songs from the years {span[0]}-{span[1]} "
+              + ("(as its intent states)." if stated else f"(the picked song's year {seed_year} +-"
+                 f"{mix_assist_checks.EPOCH_FALLBACK_YEARS}, until the intent states its time).")
+              if span else "Radio mode: Epoch station, but the picked song has no year: songs of any time.")
+    return span
 
 
 def radio_check_batches(settings: dict | None = None) -> int:
@@ -8243,10 +8279,12 @@ def radio_check_batches(settings: dict | None = None) -> int:
     return RADIO_CHECK_BATCHES[2 if index == CHECK_OFF else max(0, min(len(RADIO_CHECK_BATCHES) - 1, index))]
 
 
-def radio_more_candidates(seeds: list[str], seen, settings: dict | None = None, picked: str = ""):
+def radio_more_candidates(seeds: list[str], seen, settings: dict | None = None, picked: str = "",
+                          years: tuple | None = None):
     """more() for a Radio check: the next candidate list, from the songs chosen so far (the newest first), then from
     seeds, without the station's songs (seen: identities; the sound engine leaves them out before it chooses);
-    [] when the lists are used up. A station that stays close asks about its picked song first, once more."""
+    [] when the lists are used up. A station that stays close asks about its picked song first, once more. years:
+    an Epoch station's time."""
     used, seen = set(), set(seen)
     lists = {"left": RADIO_CHECK_LISTS - 1}
     again = [picked] if picked and get_radio_drift_half_life(settings) == 0 else []
@@ -8259,8 +8297,8 @@ def radio_more_candidates(seeds: list[str], seen, settings: dict | None = None, 
                 return []
             used.add(normalize_track_identity(seed))
             try:
-                mix = fetch_mix(seed, mix_assist.MUSICIP_MAX_MIX, radio_mix_parameters(mix_assist.MUSICIP_MAX_MIX, settings),
-                                leave_out=seen)
+                mix = fetch_mix(seed, mix_assist.MUSICIP_MAX_MIX,
+                                radio_mix_parameters(mix_assist.MUSICIP_MAX_MIX, settings, years), leave_out=seen)
             except MusicIPError as exc:
                 log_radio(f"Radio mode: the mix for {seed!r} failed: {exc}", xbmc.LOGWARNING)
                 continue
@@ -8274,15 +8312,16 @@ def radio_more_candidates(seeds: list[str], seen, settings: dict | None = None, 
 
 
 def check_radio_start(tracks: list[str], count: int, check=None, settings: dict | None = None,
-                      intent: str = "") -> dict:
+                      intent: str = "", years: tuple | None = None) -> dict:
     """A new station's first check: "More like this" for the picked song (tracks[0]). The candidates are its first
     songs (tracks[1:], a plain mix), then the largest mix for it, then (if too few fit) the
     mixes for the songs that fit; up to count songs that fit are chosen, in that order. As check_radio_refill,
     plus the station's name (from the same AI call). intent: a favourite's saved description of the picked song,
-    judged against instead of asking the AI again (it has its name too)."""
+    judged against instead of asking the AI again (it has its name too). years: an Epoch station's time."""
     seed = tracks[0]
     try:
-        mix = fetch_mix(seed, mix_assist.MUSICIP_MAX_MIX, radio_mix_parameters(mix_assist.MUSICIP_MAX_MIX, settings),
+        mix = fetch_mix(seed, mix_assist.MUSICIP_MAX_MIX,
+                        radio_mix_parameters(mix_assist.MUSICIP_MAX_MIX, settings, years),
                         leave_out=[normalize_track_identity(track) for track in tracks])
     except MusicIPError as exc:
         log_radio(f"Radio mode: the mix for the start check failed: {exc}", xbmc.LOGWARNING)
@@ -8294,12 +8333,12 @@ def check_radio_start(tracks: list[str], count: int, check=None, settings: dict 
             known.add(identity)
             candidates.append(track)
     return check_radio_refill(seed, candidates, count, None, [seed], check=check, settings=settings, name=not intent,
-                              seen=[normalize_track_identity(track) for track in tracks], intent=intent)
+                              seen=[normalize_track_identity(track) for track in tracks], intent=intent, years=years)
 
 
 def check_radio_refill(reference_song: str, candidates: list[str], count: int, reference: dict | None,
                        neighbours: list[str], check=None, settings: dict | None = None, name: bool = False,
-                       more_seeds: list[str] = (), seen=(), intent: str = "") -> dict:
+                       more_seeds: list[str] = (), seen=(), intent: str = "", years: tuple | None = None) -> dict:
     """Choose a refill's songs from the candidates (in the mix's order): both signals must say they fit. Examines
     more the stricter the station (radio_check_batches); when the candidates run out first, further lists
     (radio_more_candidates: from the songs chosen, then more_seeds; without the station's songs, seen). Adds
@@ -8332,7 +8371,8 @@ def check_radio_refill(reference_song: str, candidates: list[str], count: int, r
             name=name,
             max_batches=radio_check_batches(settings),
             more=radio_more_candidates(list(more_seeds), seen, settings,
-                                       picked=reference_song if get_radio_drift_half_life(settings) == 0 else ""),
+                                       picked=reference_song if get_radio_drift_half_life(settings) == 0 else "",
+                                       years=years),
             perspective=perspective,
             intent=intent,
         )

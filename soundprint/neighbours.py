@@ -4,6 +4,7 @@ A seed that isn't in the store yet (a new song) is analysed on the spot when the
 
 Songs listed by the caller (a station's played, queued and turned-down songs) are left out before anything is chosen,
 so a station's next mix comes from the nearest songs it hasn't had yet; ranks stay those of the whole order by sound.
+In the same way a span of years (an Epoch station's time, soundprint.years) leaves out the songs of other times.
 
 For a mix, three rules on top of the order by sound (all optional):
 - no artist repeat within `window` songs, as MusicIP's reject size: the seed is the mix's first song, and a song
@@ -43,6 +44,7 @@ import numpy as np
 from mixassist.cache import artist_key
 from soundprint import DEFAULT_SNIPPETS, analysis_version
 from soundprint.store import Store
+from soundprint.years import MIN_SONGS, Years, within
 
 Lookup = Callable[[str], Tuple[str, str]]  # path -> (artist, title)
 LOOSEST_POWER = 0.7  # the draw weight's power at variety 9
@@ -103,12 +105,15 @@ def draw_power(variety: int) -> float:
 
 def nearest(store: Store, seed: str, count: int, model_folder: str = "", snippets: int = DEFAULT_SNIPPETS,
             details: Optional[Lookup] = None, window: int = 0, variety: int = 0,
-            rng: Optional[random.Random] = None, leave_out: Iterable[str] = (), in_order: bool = False
+            rng: Optional[random.Random] = None, leave_out: Iterable[str] = (), in_order: bool = False,
+            years: Optional[Years] = None, span: Optional[Tuple[int, int]] = None, min_songs: int = MIN_SONGS
             ) -> Tuple[List[Tuple[str, float, int]], str, dict]:
     """Up to count (path, similarity, rank) triples in the mix's order, the seed itself left out (rank 1 is the
     nearest song); where the seed's vector came from; and how many songs each rule left out ("artist",
     "same_song"), and how many of the songs in leave_out (paths) the store has ("listed"). in_order: the nearest
-    songs, nearest first, without a draw."""
+    songs, nearest first, without a draw. span (with years, by file key): only songs of those years (widened while
+    it holds fewer than min_songs, soundprint.years.within); "outside_years" counts the songs left out for it, "years" is the
+    window used."""
     left_out = {"artist": 0, "same_song": 0, "listed": 0}
     vector, source = seed_vector(store, seed, model_folder, snippets)
     if vector is None:
@@ -124,6 +129,11 @@ def nearest(store: Store, seed: str, count: int, model_folder: str = "", snippet
     leave = np.array([index for index, key in enumerate(files) if key in listed], dtype=np.int64) \
         if listed else np.empty(0, dtype=np.int64)
     left_out["listed"] = int(len(leave))
+    if span and years is not None:
+        inside, used = within(years, span[0], span[1], keys=set(files), minimum=min_songs)
+        outside = np.array([index for index, key in enumerate(files) if key not in inside], dtype=np.int64)
+        left_out.update(outside_years=int(len(outside)), years=list(used))
+        leave = np.union1d(leave, outside).astype(np.int64)
     # One file under two spellings (F50): it is taken once, in the spelling Kodi knows (the other has no details).
     twins = {key for key, number in Counter(files).items() if number > 1}
     if details is None and not window and in_order and not twins:

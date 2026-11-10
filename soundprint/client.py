@@ -17,7 +17,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from typing import Callable, Dict, Iterable, List, Optional
+from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
 from soundprint.state import (BELOW_NORMAL_PRIORITY_CLASS, environment_python, model_folder, model_present,
                               read_status, request_stop, running)
@@ -95,15 +95,19 @@ def last_line(text: str) -> str:
 
 
 def neighbours(data: str, userdata: str, seed: str, count: int, window: int = 0, variety: int = 0,
-               runner: Callable = subprocess.run, leave_out: Iterable[str] = (), in_order: bool = False) -> dict:
+               runner: Callable = subprocess.run, leave_out: Iterable[str] = (), in_order: bool = False,
+               years: Optional[Tuple[int, int]] = None) -> dict:
     """The tool's answer (see soundprint.__main__.neighbours): songs nearest to seed, with similarity, artist and
     title, no artist repeated within window songs, none of leave_out (paths: a station's songs, passed in a file);
-    in_order: the nearest, nearest first, without a random choice. Raises SoundprintError when there are none."""
+    in_order: the nearest, nearest first, without a random choice; years (first, last): only songs of that time.
+    Raises SoundprintError when there are none."""
     reason = not_ready(data)
     if reason:
         raise SoundprintError(NOT_SET_UP, reason)
     cmd = command(environment_python(data), data, userdata, "neighbours", seed, "--count", str(count),
                   "--artist-window", str(window), "--variety", str(variety)) + (["--in-order"] if in_order else [])
+    if years:
+        cmd += ["--years", f"{int(years[0])}-{int(years[1])}"]
     listed = [path for path in leave_out if path]
     handle, leave_file = tempfile.mkstemp(prefix="leave-out-", suffix=".txt", dir=data) if listed else (None, "")
     try:
