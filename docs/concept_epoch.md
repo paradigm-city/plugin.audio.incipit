@@ -229,6 +229,36 @@ by their sound prints and treating uncertain songs as borderline. Built the same
   the Papas and The Garden Club from compilations of today, next to Thunderclap Newman, The Association, Small Faces,
   Procol Harum and Jefferson Airplane: the sixties live on such compilations here.
 
+## Compilations dated song by song, and the sound's hint (the listener, 2026-11-10)
+
+The listener takes the original dates of compilation songs from MusicBrainz through Picard by hand, and keeps a
+"period" tag of their own for renaming (where it is there, the song dates are probably right; it may stand for the
+compilation's year, which is no standard tag). And meant the sound print as a hint at a song's time and style, to be
+tolerant: the many edited compilations in the library (from Usenet and such) should be of use.
+
+- **Song by song.** Kodi keeps each song's own date (31,669 compilation songs differ from their album's date), but
+  dates such an album by one of its songs: "Welcome To Rock Heaven Vol. 32" is 1978 in Kodi, with Dream Theater's
+  "Pull Me Under" (1992) and Black Sabbath's "Black Sabbath" (1970) inside, each rightly dated. So it was the years'
+  reading that was wrong, not the compilation. A compilation whose songs carry different dates (325 compilations,
+  36,474 songs) is now taken song by song, and the same song elsewhere takes the date too. Dated songs: 116,267
+  (82,954 before); with neither year nor latest: 8,255 (35,974). A compilation with one date for all (2,793, 34,275
+  songs) is still dated by its release, and trusted or not as before.
+- **The sound's hint.** Measured on 3,000 dated songs, each against its 20 nearest dated songs by other artists: the
+  median of their years misses by 5 years (52% within 5 years; 82% where the neighbours agree within 4 years, a tenth
+  of the songs), pulled towards the library's middle (the sixties guessed 16 years late, the 2020s 11 early). Too
+  rough for a date, but a hint: for 1975–1979 (5% of the songs), "a fifth of the neighbours within the window ±2"
+  keeps 77% of the songs of those years and passes 27% of all, three times the chance. An undated song is now
+  uncertain for a window only if its sound hints at it so; still at most a quarter of a mix, and still at most
+  borderline for the AI if it can't date it. The neighbours' years are kept with the years (50 s the first time on
+  this PC, then only for new songs). Uncertain songs for 1975–1979: 12,186 (38,814 before).
+- **On the real library**, variety 5: The Left Banke (1966–1969, now without widening: 1,411 certain songs) took
+  The Collectors, Alan Gary, Sylvesters Team, Peter Fonda and Warm Sounds from compilations as uncertain, all of the
+  time; Legs Diamond took Rio's "Highschool Rock" and Dust Choir (wrong, for the AI); Soundgarden took Slik Toxik
+  and Alleycat Smile, and New Device (wrong).
+- **The period tag** isn't in Kodi's database (Kodi keeps no such tags), so using it means reading the files' tags.
+  Seen on a few files: "period" (2024 on "Welcome To Rock Heaven Vol. 103", with the songs dated 1975 and on), and on
+  "AOR Treasures" a TKEY (ID3's musical key) of "1986-1988". Open: whether to read it, and what it should mean.
+
 ## The listener's answers (2026-11-10)
 
 1. The window depends on the seed's time and how distinct its sound is: some sounds lasted a short while (baroque
