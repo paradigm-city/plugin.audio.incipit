@@ -9,6 +9,7 @@ Two prompts from the pilot:
 
 from __future__ import annotations
 
+import re
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from mixassist.rating import Ask
@@ -65,7 +66,7 @@ in the field "character".
 # Listening perspectives: from which point of view the seed's intent is stated and the tracks are judged. "mixed" is
 # the prompt above (C of 2026-10-24) and stays as it is; the others share its frame and differ in what the intent
 # describes and what a track must share to fit.
-PERSPECTIVES = ("mixed", "technical", "emotional", "cultural", "functional", "lyrical")
+PERSPECTIVES = ("mixed", "technical", "emotional", "cultural", "functional", "lyrical", "epoch")
 DEFAULT_PERSPECTIVE = "mixed"
 
 SEED_INTENT_HEAD = """You judge whether the tracks of a music mix serve the listener's intent.
@@ -162,7 +163,49 @@ and the tone; for an instrumental seed, if the track tells a similar story witho
 different genre, era or sound if its words fit. If you don't know a track's words exactly, judge by what you know of
 the song and its artist's writing, and by what its title, its description and its tone suggest; not knowing the
 words is no reason for borderline."""),
+    # Epoch (concept_epoch.md, 2026-11-10): time, where Cultural is place and lineage. The intent begins with the
+    # years the seed's time lasted ("Years: 1976–1979."), which epoch_span reads back for the search's time window.
+    "epoch": (
+        "the view of a chronicler of music: the time the music came out in, and what was in the air",
+        """First, state that intent (field "character") as a chronicler of music places the seed in its time. Begin with
+"Years:" and the years that time lasted for the seed's sound, as "Years: 1976–1979." Judge the span by the sound and
+its moment: a short-lived sound lasted a year or two, a lasting one up to a decade; when in doubt, two years either
+side of the seed's year. Take the seed's own first release, not a reissue or a compilation; a band whose sound
+changed over time belongs to another time with each sound. Then one sentence on that time: what was in the air
+across music, the mood of the time and what music was reacting to. Then give 5 to 8 qualities of that time that a
+fitting track should share: the mood and spirit of the time; the sounds, instruments and studio techniques that were
+new or everywhere then; what music turned against or towards; the world it answered (social, political,
+technological). Name music from several genres and countries as reference points, never only the seed's own kind.
+End with "Not:" and 2 or 3 kinds of music that sound like the seed but belong to another time, including later music
+that only borrows the time's surface.""",
+        """Then judge every other track against that intent. A track fits if it came out within those years and shares the
+spirit of the time, in any genre, scene or country; or if it came out later and takes up that time with a strong,
+deliberate reference that carries its spirit, not only its sound. A track from another time that only sounds alike
+is an outlier, and so is later music that borrows the time's surface out of nostalgia. Judge a track's year by its
+first release: the year shown may be a later album's, and "compilation of" gives only the latest it can be."""),
 }
+
+EPOCH_FALLBACK_YEARS = 2  # either side of the seed's year, when the intent gives no usable span
+
+
+YEAR = r"(1[89]\d\d|20\d\d)"
+STATED_YEARS = re.compile(r"Years:\s*" + YEAR + r"(?:\s*(?:–|-|—|to)\s*" + YEAR + r")?", re.IGNORECASE)
+WRITTEN_YEARS = re.compile(r"\b" + YEAR + r"\s*(?:–|-|—|to)\s*" + YEAR + r"\b")  # a listener's own "1977-1979"
+MAX_EPOCH_YEARS = 30
+
+
+def epoch_span(intent: str, seed_year: int = 0) -> Optional[Tuple[int, int]]:
+    """The years an Epoch intent states ("Years: 1976–1979.", or a span in the listener's own words); else the seed's
+    year ±2; None without either."""
+    for pattern in (STATED_YEARS, WRITTEN_YEARS):
+        match = pattern.search(intent or "")
+        if match:
+            first, last = sorted((int(match.group(1)), int(match.group(2) or match.group(1))))
+            if last - first <= MAX_EPOCH_YEARS:
+                return first, last
+    if seed_year:
+        return seed_year - EPOCH_FALLBACK_YEARS, seed_year + EPOCH_FALLBACK_YEARS
+    return None
 
 
 def seed_intent_prompt(perspective: str = DEFAULT_PERSPECTIVE) -> str:

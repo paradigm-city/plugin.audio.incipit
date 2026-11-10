@@ -7826,9 +7826,9 @@ def mix_checks_off(meta: dict) -> bool:
 # Listening perspectives: from which point of view the AI states what a mix or station is about and judges its
 # tracks (mixassist.checks.PERSPECTIVES, in this order). Settings "Mix perspective" and "Station perspective"; a mix
 # or a favourite station can have its own.
-PERSPECTIVE_LABELS = ("Mixed", "Technical", "Emotional", "Cultural", "Functional", "Lyrical")
+PERSPECTIVE_LABELS = ("Mixed", "Technical", "Emotional", "Cultural", "Functional", "Lyrical", "Epoch")
 PERSPECTIVE_HINTS = ("intention and qualities", "how it is made", "what the artist expresses", "where it comes from",
-                     "what it is for", "what the words say")
+                     "what it is for", "what the words say", "what was in the air when it came out")
 
 
 def perspective_index(index) -> int:

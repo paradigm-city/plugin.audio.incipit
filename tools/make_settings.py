@@ -10,12 +10,13 @@ root = pathlib.Path(sys.argv[1])
 WITH_AI = "--with-ai" in sys.argv
 
 OPENNESS = ["Focused", "Close", "Balanced", "Open", "Adventurous"]
-PERSPECTIVES = ["Mixed", "Technical", "Emotional", "Cultural", "Functional", "Lyrical"]  # main.PERSPECTIVE_LABELS
+PERSPECTIVES = ["Mixed", "Technical", "Emotional", "Cultural", "Functional", "Lyrical", "Epoch"]  # main.PERSPECTIVE_LABELS
 PERSPECTIVE_HELP = ("Mixed: the music's intention and its qualities together, the tested default. Technical: how it "
                     "is made (harmony, rhythm, form, musicianship), as a musician hears it. Emotional: the emotion "
                     "the artist sets out to express, and how seriously it is meant. Cultural: where it comes from (scene, era, tradition). Functional: what "
                     "it is for (a party, a drive, focus, falling asleep). Lyrical: what the words are about; for "
-                    "instrumental music, the story it suggests.")
+                    "instrumental music, the story it suggests. Epoch: what was in the air when it came out, across "
+                    "genres (the years around its first release).")
 
 GENERAL = ("general", 30100, "General", [
     ("MusicIP server", [

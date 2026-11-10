@@ -117,7 +117,7 @@ msgid "Perspective"
 msgstr ""
 
 msgctxt "#30414"
-msgid "From which point of view the AI works out what a mix is about and judges its tracks. Mixed: the music's intention and its qualities together, the tested default. Technical: how it is made (harmony, rhythm, form, musicianship), as a musician hears it. Emotional: the emotion the artist sets out to express, and how seriously it is meant. Cultural: where it comes from (scene, era, tradition). Functional: what it is for (a party, a drive, focus, falling asleep). Lyrical: what the words are about; for instrumental music, the story it suggests. Off: no AI judgement. A mix can have its own, in its \"Checks...\" menu."
+msgid "From which point of view the AI works out what a mix is about and judges its tracks. Mixed: the music's intention and its qualities together, the tested default. Technical: how it is made (harmony, rhythm, form, musicianship), as a musician hears it. Emotional: the emotion the artist sets out to express, and how seriously it is meant. Cultural: where it comes from (scene, era, tradition). Functional: what it is for (a party, a drive, focus, falling asleep). Lyrical: what the words are about; for instrumental music, the story it suggests. Epoch: what was in the air when it came out, across genres (the years around its first release). Off: no AI judgement. A mix can have its own, in its \"Checks...\" menu."
 msgstr ""
 
 msgctxt "#30415"
@@ -178,6 +178,10 @@ msgstr ""
 
 msgctxt "#30429"
 msgid "Deletes the statistics counted so far (after asking). Statistics are kept for a year."
+msgstr ""
+
+msgctxt "#30430"
+msgid "Epoch"
 msgstr ""
 
 msgctxt "#30431"
@@ -273,7 +277,7 @@ msgid "Perspective"
 msgstr ""
 
 msgctxt "#30617"
-msgid "From which point of view the AI works out what a station is about and chooses its songs. Mixed: the music's intention and its qualities together, the tested default. Technical: how it is made (harmony, rhythm, form, musicianship), as a musician hears it. Emotional: the emotion the artist sets out to express, and how seriously it is meant. Cultural: where it comes from (scene, era, tradition). Functional: what it is for (a party, a drive, focus, falling asleep). Lyrical: what the words are about; for instrumental music, the story it suggests. Off: no AI judgement. A favourite station can have its own."
+msgid "From which point of view the AI works out what a station is about and chooses its songs. Mixed: the music's intention and its qualities together, the tested default. Technical: how it is made (harmony, rhythm, form, musicianship), as a musician hears it. Emotional: the emotion the artist sets out to express, and how seriously it is meant. Cultural: where it comes from (scene, era, tradition). Functional: what it is for (a party, a drive, focus, falling asleep). Lyrical: what the words are about; for instrumental music, the story it suggests. Epoch: what was in the air when it came out, across genres (the years around its first release). Off: no AI judgement. A favourite station can have its own."
 msgstr ""
 
 msgctxt "#30618"
