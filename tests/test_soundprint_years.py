@@ -34,8 +34,9 @@ ALBUMS = [  # id, title, artist, compilation, original date, release date
     (6, "Rock Heaven Vol. 32", "Various Artists", 1, "1978", "1978"),  # a series of today, dated 1978 by its tags
     (7, "Out of the Shadows", "Volbeat", 0, "", "2005"),
     (8, "Images and Words", "Dream Theater", 0, "", "1992"),
+    (9, "Rock Heaven Vol. 103", "Various Artists", 1, "1975", "1975"),  # dated song by song: Kodi takes the first
 ]
-SONGS = [  # id, album, file, artist, title
+SONGS = [  # id, album, file, artist, title, the song's own date
     (1, 1, "aja.mp3", "Steely Dan", "Aja"),
     (2, 2, "love.mp3", "Donna Summer", "Hot Stuff"),  # also on her own album of 1979
     (3, 2, "feel.mp3", "Donna Summer", "I Feel Love"),  # only on compilations: 2003 and 1995
@@ -47,6 +48,10 @@ SONGS = [  # id, album, file, artist, title
     (9, 6, "heaven3.mp3", "Rich Kids", "Ghosts of Princes"),
     (10, 7, "volbeat.mp3", "Volbeat", "Fallen"),
     (11, 8, "under.mp3", "Dream Theater", "Pull Me Under"),
+    (12, 9, "sabbath.mp3", "Black Sabbath", "Don't Start (Too Late)", "1975"),
+    (13, 9, "flock.mp3", "A Flock of Seagulls", "I Ran", "1982-04-01"),
+    (14, 9, "nodate.mp3", "The Unknowns", "Untitled", ""),
+    (15, 5, "iran2.mp3", "A Flock of Seagulls", "I Ran"),  # on a compilation dated by its release
 ]
 
 
@@ -56,8 +61,8 @@ def kodi_database(folder):
     connection.executescript(SCHEMA)
     connection.execute("INSERT INTO path VALUES (1, 'D:\\music\\')")
     connection.executemany("INSERT INTO album VALUES (?, ?, ?, ?, ?, ?)", ALBUMS)
-    connection.executemany("INSERT INTO song VALUES (?, 1, ?, ?, ?, ?, '', '')",
-                           [(song, album, name, artist, title) for song, album, name, artist, title in SONGS])
+    connection.executemany("INSERT INTO song VALUES (?, 1, ?, ?, ?, ?, ?, ?)",
+                           [entry[:5] + (entry[5:] or ("",)) * 2 for entry in SONGS])
     connection.commit()
     connection.close()
     return path
@@ -82,6 +87,13 @@ class SongYearsTest(unittest.TestCase):
         self.assertEqual(found["D:\\music\\feel2.mp3"], (0, 1995))
         self.assertEqual(found["D:\\music\\anarchy.mp3"], (0, 1978))
 
+    def test_a_compilation_dated_song_by_song_gives_each_song_its_date(self):
+        found = years.song_years(self.database)
+        self.assertEqual(found["D:\\music\\sabbath.mp3"], (1975, 0))
+        self.assertEqual(found["D:\\music\\flock.mp3"], (1982, 0))  # not Kodi's 1975 for the album
+        self.assertEqual(found["D:\\music\\iran2.mp3"], (1982, 0))  # the same song elsewhere takes it too
+        self.assertEqual(found["D:\\music\\nodate.mp3"], (0, 0))  # its compilation's date bounds nothing
+
     def test_a_compilation_dated_before_its_songs_bounds_nothing(self):
         found = years.song_years(self.database)
         self.assertEqual(found["D:\\music\\heaven1.mp3"], (0, 0))  # Volbeat's first album: 2005
@@ -96,13 +108,16 @@ class SongYearsTest(unittest.TestCase):
         self.assertEqual(sorted(certain), ["D:\\music\\aja.mp3", "D:\\music\\hot.mp3", "D:\\music\\love.mp3"])
         self.assertEqual(sorted(uncertain), ["D:\\music\\anarchy.mp3",  # a compilation of 1978: then or before
                                              "D:\\music\\feel.mp3", "D:\\music\\feel2.mp3",  # of 1995: maybe
-                                             "D:\\music\\heaven1.mp3", "D:\\music\\heaven3.mp3"])  # no date to go by
+                                             "D:\\music\\heaven1.mp3", "D:\\music\\heaven3.mp3",  # no date to go by
+                                             "D:\\music\\nodate.mp3"])
         self.assertEqual(used, (1976, 1979))
         certain, uncertain, used = years.within(found, 1990, 1990, minimum=2)
         self.assertEqual((sorted(certain), used), (["D:\\music\\heaven2.mp3", "D:\\music\\under.mp3"], (1988, 1992)))
         self.assertNotIn("D:\\music\\anarchy.mp3", uncertain)  # a compilation of 1978 holds no song of 1988
-        certain, _, used = years.within(found, 1990, 1990, minimum=3)
-        self.assertEqual((len(certain), used), (2, (1980, 2000)))  # widened at most 10 years, with what it has
+        certain, _, used = years.within(found, 1990, 1990, minimum=4)
+        self.assertEqual((len(certain), used), (4, (1982, 1998)))  # the two "I Ran" of 1982 bring it to 4
+        certain, _, used = years.within(found, 1990, 1990, minimum=5)
+        self.assertEqual((len(certain), used), (4, (1980, 2000)))  # widened at most 10 years, with what it has
 
     def test_a_song_sounding_as_a_dated_one_by_the_same_artist_is_that_recording(self):
         vectors = (["a", "b", "c", "d"], np.stack([unit(1, 0), unit(1, 0.02), unit(1, 0), unit(1, 0.15)]))
@@ -113,6 +128,23 @@ class SongYearsTest(unittest.TestCase):
         self.assertEqual(found["b"], (1981, 0))  # "One of the Kind", the same recording as "One of a Kind"
         self.assertEqual(found["c"], (0, 2003))  # the same sound by another artist: not the same recording
         self.assertEqual(found["d"], (0, 0))  # another song of theirs: near, but not the same
+
+    def test_an_undated_songs_sound_hints_at_its_time(self):
+        vectors = (["d1", "d2", "d3", "u1", "u2"],
+                   np.stack([unit(1, 0), unit(1, 0.1), unit(0, 1), unit(1, 0.05), unit(0.1, 1)]))
+        found = {"d1": (1977, 0), "d2": (1978, 0), "d3": (2015, 0), "u1": (0, 0), "u2": (0, 2020)}
+        artists = {"d1": "a", "d2": "b", "d3": "c", "u1": "a", "u2": "d"}
+        with unittest.mock.patch.object(years, "ERA_NEIGHBOURS", 2):
+            hints = years.era_hints(found, artists, vectors, lambda path: path)
+        self.assertEqual(list(hints["u1"]), [1978, 2015])  # its own artist's song left out
+        self.assertEqual(list(hints["u2"]), [2015, 1978])
+        self.assertEqual(years.era_share(hints["u1"], 1976, 1979), 0.5)
+        with unittest.mock.patch.object(years, "ERA_NEIGHBOURS", 1):
+            hints = years.era_hints(found, artists, vectors, lambda path: path)
+        _certain, maybe, _ = years.within(found, 1976, 1979, minimum=1, hints=hints)
+        self.assertEqual(maybe, {"u1"})  # u2 sounds like 2015 more than like 1977
+        self.assertEqual(years.era_hints(found, artists, vectors, lambda path: path, known={"u1": "kept"})["u1"],
+                         "kept")  # made before: kept
 
     def test_kept_until_the_database_or_the_sound_prints_change(self):
         first = years.cached_years(self.database, self.folder)
