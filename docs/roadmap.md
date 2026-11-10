@@ -242,6 +242,18 @@ be three prompts. Thoughts:
   Lineage, Tradition, Scene.
 - Test as I37, with the three stages on the same songs, and on a seed from each perspective.
 
+#### I39 · Epoch: a perspective in time
+
+From the listener, 2026-11-10: music that came out when the seed came out, reflecting the mood of its time, across
+genres and countries, with later bands that refer to that time strongly. The concept is in
+[concept_epoch.md](concept_epoch.md), with the listener's answers of the same day. In short: Epoch is time, Cultural
+is place and lineage (so Cultural can drop "time", which is I37); the songs must come from a time window applied
+before the sound engine's search, as I34 leaves out a station's songs, with variety as the reach across genres; the
+window is the span the AI states for the seed's sound (short for a short-lived sound, a decade for grunge), ±2 years
+when in doubt; a song's year needs F51 first (half the library is on compilations, dated by the compilation); the
+profile stays whole (sounding alike can be a strong relation); later songs with a reference get no limit until
+testing asks for one; a band's changed sound is another epoch, so the seed's own year counts.
+
 ### Screen
 
 #### I36 · A screen during playback: what plays, and music to discover
