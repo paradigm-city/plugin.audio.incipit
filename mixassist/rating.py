@@ -14,7 +14,8 @@ from mixassist.dimensions import ALL_KEYS, ERA_KEY, SCALE_KEYS, build_system_pro
 ALBUMS_PER_REQUEST = 20
 TRACKS_PER_REQUEST = 25
 ALBUM_FIELDS = ("id", "artist", "album", "year", "genres", "tracks")
-TRACK_FIELDS = ("id", "artist", "title", "album", "year", "genres")
+TRACK_FIELDS = ("id", "artist", "title", "album", "year", "compilation_year", "genres")
+OPTIONAL_FIELDS = ("compilation_year",)  # left out of an item's line when empty
 
 # ask(system_prompt, schema, message) -> structured output; normally claude.ask with the CLI bound.
 Ask = Callable[[str, dict, str], dict]
@@ -24,8 +25,11 @@ def user_message(kind: str, items: Sequence[dict]) -> str:
     if kind == "album":
         intro, fields = "Rate each of these albums as a whole.", ALBUM_FIELDS
     else:
-        intro, fields = "Rate each of these tracks. They are single songs taken from compilations.", TRACK_FIELDS
-    lines = [json.dumps({field: item.get(field, "") for field in fields}, ensure_ascii=False) for item in items]
+        intro, fields = ("Rate each of these tracks. They are single songs taken from compilations. Where a song's own "
+                         "year isn't known, its year is empty and \"compilation_year\" gives the compilation's: the "
+                         "song came out then or earlier."), TRACK_FIELDS
+    lines = [json.dumps({field: (item.get(field) or "") if field == "year" else item.get(field, "") for field in fields
+                         if field not in OPTIONAL_FIELDS or item.get(field)}, ensure_ascii=False) for item in items]
     return intro + "\n\n" + "\n".join(lines)
 
 

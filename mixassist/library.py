@@ -2,6 +2,12 @@
 
 A normal album is one unit (all its tracks share the rating); a track from a compilation is its own unit.
 Tracks Kodi does not know fall back to the mix's recorded metadata or to the file name.
+
+A song's year (F51): Kodi's year of an album is its original release (Kodi takes the original date where the tags
+have one), but a compilation's year is the compilation's, often decades after the song. So a compilation track takes
+its year from the same song (artist and title) on the artist's own album in the library, the earliest one; without
+one, its year is left open and the earliest compilation that has it is given instead ("compilation_year": the song
+is from then or earlier).
 """
 
 from __future__ import annotations
@@ -9,14 +15,20 @@ from __future__ import annotations
 import ntpath
 import os
 import re
-from typing import Callable, Dict, List, Optional, Sequence
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
-from mixassist.cache import album_key, is_compilation, track_key
+from mixassist import trace
+from mixassist.cache import album_key, artist_key, is_compilation, track_key
 
 JsonRpc = Callable[[str, dict], dict]
 
 SONG_PROPERTIES = ["title", "displayartist", "album", "albumid", "year", "genre", "file", "musicbrainztrackid", "track"]
 ALBUM_PROPERTIES = ["title", "displayartist", "year", "genre", "musicbrainzreleasegroupid", "compilation"]
+COPY_PROPERTIES = ["title", "displayartist", "albumid", "year"]
+# A song's years once looked up, kept for the process (a station's refills meet the same songs again; a look-up
+# takes about 0.2 s): (artist key, title) -> (own album's year, earliest copy's year).
+KNOWN_YEARS: Dict[tuple, Tuple[int, int]] = {}
+MAX_KNOWN_YEARS = 20000
 MAX_TRACK_TITLES = 15
 
 
@@ -52,6 +64,47 @@ class Library:
     def __init__(self, jsonrpc: JsonRpc):
         self.jsonrpc = jsonrpc
         self.albums: Dict[int, dict] = {}
+        self.album_facts: Dict[int, dict] = {}
+
+    def facts(self, album_id: int) -> dict:
+        """An album's artist, year and compilation flag, without its songs."""
+        if album_id in self.albums:
+            return self.albums[album_id]
+        if album_id not in self.album_facts:
+            try:
+                facts = self.jsonrpc("AudioLibrary.GetAlbumDetails", {
+                    "albumid": album_id, "properties": ["displayartist", "year", "compilation"]}).get("albumdetails")
+            except Exception:
+                facts = None
+            self.album_facts[album_id] = facts or {}
+        return self.album_facts[album_id]
+
+    def song_years(self, artist: str, title: str) -> Tuple[int, int]:
+        """(own, earliest) for a song: the earliest year of it on the artist's own album (0 if none), and the earliest
+        year of any copy in the library (0 if none has one)."""
+        wanted = (artist_key(artist), (title or "").strip().casefold())
+        if wanted in KNOWN_YEARS:
+            return KNOWN_YEARS[wanted]
+        own = earliest = 0
+        if artist and title:
+            try:
+                copies = self.jsonrpc("AudioLibrary.GetSongs", {"properties": COPY_PROPERTIES, "filter": {"and": [
+                    {"field": "title", "operator": "is", "value": title},
+                    {"field": "artist", "operator": "is", "value": artist}]}}).get("songs") or []
+            except Exception:
+                copies = []
+            for copy in copies:
+                year = int(copy.get("year") or 0)
+                if year <= 0 or artist_key(copy.get("displayartist", "")) != wanted[0]:
+                    continue
+                earliest = min(earliest or year, year)
+                album = self.facts(int(copy.get("albumid") or 0)) if copy.get("albumid") else {}
+                if album and not album.get("compilation") and artist_key(album.get("displayartist", "")) == wanted[0]:
+                    own = min(own or year, year)
+        if len(KNOWN_YEARS) >= MAX_KNOWN_YEARS:
+            KNOWN_YEARS.clear()
+        KNOWN_YEARS[wanted] = (own, earliest)
+        return own, earliest
 
     def song(self, path: str) -> Optional[dict]:
         _, filename = split_path(path)
@@ -82,20 +135,44 @@ class Library:
         return album
 
 
-def unit_for_song(song: dict, album: dict) -> dict:
-    """The rating unit of a library song: its album, or the track itself on a compilation."""
+YearsOf = Callable[[str, str], Tuple[int, int]]  # (artist, title) -> (own album's year, earliest copy's year)
+
+
+def track_year(song: dict, year: int, years_of: Optional[YearsOf]) -> dict:
+    """A compilation track's year fields: {"year": the song's own} when the artist's own album gives it, else
+    {"year": 0, "compilation_year": the earliest compilation's}."""
+    if years_of is None:
+        return {"year": year}
+    artist, title = song.get("displayartist", ""), song.get("title", "")
+    own, earliest = years_of(artist, title)
+    if own:
+        fields = {"year": own}
+    else:
+        fields = {"year": 0, "compilation_year": min(earliest or year, year or earliest)}
+    if trace.active():
+        found = (f"{own} from the artist's own album" if own else
+                 f"open, on a compilation of {fields['compilation_year']}" if fields["compilation_year"] else "unknown")
+        trace.say(f"Year of {artist} - {title}: {found} (this compilation: {year or 'no year'}).")
+    return fields
+
+
+def unit_for_song(song: dict, album: dict, years_of: Optional[YearsOf] = None) -> dict:
+    """The rating unit of a library song: its album, or the track itself on a compilation (with its own year where
+    the library has it, years_of)."""
     artists = {song_entry.get("displayartist") for song_entry in album["songs"] if song_entry.get("displayartist")}
     compilation = is_compilation(album.get("compilation"), album.get("displayartist", ""), len(artists))
     genres = first_text(song.get("genre")) or first_text(album.get("genre"))
     year = int(song.get("year") or album.get("year") or 0)
     if compilation:
+        item = {"artist": song.get("displayartist", ""), "title": song.get("title", ""),
+                "album": album.get("title", ""), "genres": genres}
+        item.update(track_year(song, year, years_of))
         return {
             "kind": "track",
             "key": track_key(song.get("displayartist", ""), song.get("title", ""), song.get("musicbrainztrackid", "")),
             "label": f"{song.get('displayartist', '')} - {song.get('title', '')}",
             "artist": song.get("displayartist", ""),
-            "item": {"artist": song.get("displayartist", ""), "title": song.get("title", ""),
-                     "album": album.get("title", ""), "year": year, "genres": genres},
+            "item": item,
         }
     titles: List[str] = []
     for entry in album["songs"]:
@@ -140,7 +217,7 @@ def resolve(paths: Sequence[str], jsonrpc: JsonRpc, metadata: Optional[Dict[str,
     for path in paths:
         song = library.song(path)
         if song and song.get("albumid"):
-            unit = unit_for_song(song, library.album(int(song["albumid"])))
+            unit = unit_for_song(song, library.album(int(song["albumid"])), library.song_years)
         else:
             unit = unit_for_unknown(path, metadata.get(path.replace("\\", "/").lower()))
         unit["path"] = path
