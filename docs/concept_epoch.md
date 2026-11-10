@@ -203,7 +203,31 @@ The trial scripts are kept outside the repository (scratchpad `epoch_try.py`, `d
   Kraftwerk's live "Radioaktivität" of 2005 counts as 2005 (a live album is an own album).
 - **Not yet:** Epoch for mixes (a mix's perspective can be Epoch, but its search has no window); later songs with a
   reference (by the ratings' sounding year: left to testing, the listener's answer 2); MusicBrainz's dates for the
-  songs with neither year nor latest; the AI's lines use their own compilation years, untrusted ones too (F52).
+  songs with neither year nor latest; the AI's lines use their own compilation years, untrusted ones too (F52;
+  both since done, see *Uncertain years*).
+
+## Uncertain years (the listener, 2026-11-10)
+
+After listening ("I like the result"), the listener agreed on the compilation problem and suggested catching songs
+by their sound prints and treating uncertain songs as borderline. Built the same day:
+
+- **Matched by sound.** An undated song whose sound print is all but the same as a dated song's by the same artist
+  (0.993 or nearer) is that recording and takes its year. Measured on 400 undated songs, each against the nearest
+  dated one: the same recordings lay at 0.9939 to 0.9997 (KaS Product "One of a Kind" and "One of the Kind"; The
+  Danse Society "2000 Light Years" and "2,000 Light Years"), two songs of one band at 0.9912 (Nickelback) and below,
+  and other artists of the same style up to 0.992, hence the same artist as a condition. It dates 237 more songs
+  (82,954 in all): few, as most undated songs exist only once in the library. 0.4 s on top of the years.
+- **Uncertain, not left out.** A song without a year that may lie in the window (its trusted compilation's date is in
+  the window or later, or there is none) is uncertain. The search takes such songs, up to a quarter of a mix; the
+  window widens by its certain songs only. Epoch's rule tells the AI that a track it can't date (its year unknown or
+  only a compilation's, and the song unknown to it) is at most borderline, so only stations that accept borderline
+  (Adventurous, or "Accept borderline") take it, and the AI still takes the ones it knows (Sex Pistols on a
+  compilation of 1999). The AI's lines now say "year unknown" where no compilation's date can be trusted (F52).
+- **On the real library**, variety 5: Legs Diamond, 1975–1979, took 5 uncertain songs of 20 (966 more passed over):
+  Winger's demo, Kenny Wayne Shepherd (wrong, for the AI to turn down) next to Boston, Magazine, Cheap Trick, Bowie.
+  The Left Banke "Pedestal", 1966–1969 (widened to 1965–1970: too few certain songs), took The Mojo Men, The Mamas &
+  the Papas and The Garden Club from compilations of today, next to Thunderclap Newman, The Association, Small Faces,
+  Procol Harum and Jefferson Airplane: the sixties live on such compilations here.
 
 ## The listener's answers (2026-11-10)
 

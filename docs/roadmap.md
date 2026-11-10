@@ -258,7 +258,8 @@ Built on 2026-11-10 (`feature/epoch-intent`): F51 (a compilation song's own year
 ("Years: …" at the start of its intent, `checks.epoch_span`), and the time window in Radio's search
 (`soundprint/years.py`, `main.station_years`), with compilations whose dates can't be trusted left out. Still open:
 listening; Epoch for mixes' searches; later songs with a reference; MusicBrainz's dates for songs the library can't
-date; F52; then I37.
+date; then I37. The listener liked the first station (2026-11-10); uncertain years are now taken as borderline,
+recordings matched by sound, and F52 is fixed.
 
 ### Screen
 
