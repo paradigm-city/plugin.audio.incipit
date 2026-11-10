@@ -42,6 +42,12 @@ Not fixed. The planned fix is the library sync: remove a song's sound print when
 
 ## Resolved
 
+### F53 · The sound engine's years took a compilation dated song by song for one date
+
+Found on 2026-11-10 by the listener's remark that compilation songs carry original dates from MusicBrainz, set through Picard. The years for Epoch's window (`soundprint/years.py`, first built the same day) took a song's album date before the song's own, so every song on a compilation dated song by song got the one date Kodi gives such an album (one of its songs'): "Welcome To Rock Heaven Vol. 32" made Dream Theater's "Pull Me Under" (1992) and A Flock of Seagulls' "I Ran" (1982) songs of 1978. The trust check (more than a third of late songs) then threw these compilations out as wrongly dated, so their songs had no year at all. 31,669 compilation songs in this library carry a date of their own that differs from the album's.
+
+Fixed in 6682197 (2026-11-10): a compilation whose songs carry different dates is taken song by song (325 compilations, 36,474 songs), and the same song elsewhere takes the date too; dated songs went from 82,954 to 116,267.
+
 ### F52 · The AI's "compilation of" can come from a compilation dated wrongly
 
 Found on 2026-11-10 while building Epoch's time window (concept_epoch.md, *The window built*). Some compilations are dated decades before their songs by their tags ("Welcome To Rock Heaven Vol. 32", a series of today, is dated 1978 and holds Dream Theater and Volbeat). The sound engine's years leave such compilations out (`soundprint.years.trusted_compilations`), but the AI's lines (F51, `mixassist.library.Library.song_years`) take the earliest compilation that holds a song, trusted or not, and say "compilation of 1978": the AI is told the song came out in 1978 or earlier. It knows Volbeat and Dream Theater, but not every band on such a series.
