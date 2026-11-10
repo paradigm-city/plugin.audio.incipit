@@ -3,6 +3,7 @@ instead of MusicIP, the settings' buttons, and the service's analysis of new son
 
 import json
 import os
+import pickle
 import sqlite3
 import subprocess
 import sys
@@ -15,7 +16,7 @@ from unittest import mock
 from fake_kodi import kodi
 from support import KodiTestCase, SourceTestCase, main, service
 
-from soundprint import client, state
+from soundprint import client, state, years
 
 SEED = "D:\\music\\Kraftwerk\\Radio-Aktivitat (1975)\\04 Radioaktivitat.mp3"
 NEAR = ["D:\\music\\Cluster\\Zuckerzeit (1974)\\01 Hollywood.mp3", "D:\\music\\Neu!\\Neu! (1972)\\01 Hallogallo.mp3"]
@@ -376,8 +377,26 @@ class SoundEngineMixTest(KodiTestCase):
         self.assertIn("variety 0, only songs of the years 1975-1979.", log)
         self.assertIn("within the years 1974-1980 (140,000 song(s) of other years left out first, the window widened "
                       "to hold enough songs)", log)
+        self.neighbours.return_value = answer(NEAR, left_out={"artist": 0, "same_song": 0, "listed": 0,
+                                                              "outside_years": 9, "years": [1975, 1979],
+                                                              "uncertain": 5, "uncertain_passed": 12})
+        main.fetch_mix(SEED, 20, {"variety": 0, "rejectsize": 0, "years": (1975, 1979)})
+        self.assertIn("0 the same song again, 12 of uncertain year beyond a quarter of the mix (5 taken))",
+                      kodi.log_text())
         main.fetch_mix(SEED, 20)
         self.assertIsNone(self.neighbours.call_args[1]["years"])  # any other mix: every year
+
+    def test_the_ais_lines_take_the_sound_engines_years(self):
+        self.assertIsNone(main.sound_engine_year(SEED))  # no years kept yet
+        folder = main.soundprint_data()
+        os.makedirs(folder, exist_ok=True)
+        with open(os.path.join(folder, "years.pickle"), "wb") as handle:
+            pickle.dump({"marker": None, "years": {years.path_key(SEED): (0, 1978)}}, handle)
+        self.assertEqual(main.sound_engine_year(SEED), (0, 1978))
+        self.assertIsNone(main.sound_engine_year(NEAR[0]))
+        with mock.patch.object(main.mix_assist_library, "resolve", return_value=[]) as resolve:
+            main.resolve_units([SEED])
+        self.assertIs(resolve.call_args[1]["known_years"], main.sound_engine_year)
 
     def test_characters_scale_takes_the_nearest_songs_in_order(self):
         main.CHARACTER_SCALES.clear()

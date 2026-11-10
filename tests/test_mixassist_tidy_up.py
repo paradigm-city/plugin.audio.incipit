@@ -105,6 +105,18 @@ class LibraryTest(unittest.TestCase):
         library.resolve(["D:\\m\\VA\\Hits\\05 Fire Walk.mp3", "D:\\m\\VA\\Hits\\06 Fire Walk.mp3"], self.jsonrpc)
         self.assertEqual(sum(1 for call in self.jsonrpc.calls if "and" in call), 1)
 
+    def test_the_sound_engines_years_come_first(self):
+        self.add_copy(3, "wilfried", 1977, False)
+        known = {"D:\\m\\VA\\Hits\\05 Fire Walk.mp3": (0, 0), "d:/M/Blue/09 A Case of You.mp3": (1999, 0)}
+        units = library.resolve(["D:\\m\\VA\\Hits\\05 Fire Walk.mp3", "d:/M/Blue/09 A Case of You.mp3"],
+                                self.jsonrpc, known_years=known.get)
+        self.assertEqual((units[0]["item"]["year"], units[0]["item"]["compilation_year"]), (0, 0))  # F52: untrusted
+        self.assertEqual(checks.year_text(units[0]["item"]), "year unknown")
+        self.assertEqual(units[1]["item"]["year"], 1971)  # an album keeps Kodi's year
+        self.assertFalse(any("and" in call for call in self.jsonrpc.calls))  # nothing looked up
+        units = library.resolve(["D:\\m\\VA\\Hits\\05 Fire Walk.mp3"], self.jsonrpc, known_years=lambda path: None)
+        self.assertEqual(units[0]["item"]["year"], 1977)  # the sound engine doesn't know it: looked up
+
     def test_normal_albums_keep_their_year(self):
         unit = library.resolve(["d:/M/Blue/09 A Case of You.mp3"], self.jsonrpc)[0]
         self.assertEqual(unit["item"]["year"], 1971)
@@ -300,6 +312,8 @@ class PerspectiveTest(unittest.TestCase):
         self.assertIn("within those years", judging)
         self.assertIn("strong, deliberate reference", judging)
         self.assertIn('"compilation of" gives only the latest it can be', judging)
+        self.assertIn("A track whose time you can't tell", judging)
+        self.assertIn("is at most borderline", judging)
 
     def test_the_span_comes_from_the_intent_else_two_years_around_the_seed(self):
         self.assertEqual(checks.epoch_span("Years: 1976–1979. Punk, disco and the sequencer.", 1977), (1976, 1979))

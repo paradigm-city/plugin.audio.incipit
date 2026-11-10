@@ -7,6 +7,7 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+import unittest.mock
 
 from fake_kodi import ADDON_DIR
 
@@ -86,25 +87,37 @@ class SongYearsTest(unittest.TestCase):
         self.assertEqual(found["D:\\music\\heaven1.mp3"], (0, 0))  # Volbeat's first album: 2005
         self.assertEqual(found["D:\\music\\heaven2.mp3"], (1992, 0))  # on Dream Theater's own album
         self.assertEqual(found["D:\\music\\heaven3.mp3"], (0, 0))  # the only song of its time: its date isn't trusted
-        inside, _ = years.within(found, 1975, 1979, minimum=1)
-        self.assertFalse({"D:\\music\\heaven1.mp3", "D:\\music\\heaven3.mp3"} & inside)
+        certain, _uncertain, _ = years.within(found, 1975, 1979, minimum=1)
+        self.assertFalse({"D:\\music\\heaven1.mp3", "D:\\music\\heaven3.mp3"} & certain)
 
-    def test_within_a_span_and_widened_while_too_few(self):
+    def test_certain_and_uncertain_within_a_span_widened_while_too_few(self):
         found = years.song_years(self.database)
-        inside, used = years.within(found, 1976, 1979, minimum=1)
-        self.assertEqual(sorted(inside), ["D:\\music\\aja.mp3", "D:\\music\\anarchy.mp3", "D:\\music\\hot.mp3",
-                                          "D:\\music\\love.mp3"])  # the 1978 compilation: made in those years
+        certain, uncertain, used = years.within(found, 1976, 1979, minimum=1)
+        self.assertEqual(sorted(certain), ["D:\\music\\aja.mp3", "D:\\music\\hot.mp3", "D:\\music\\love.mp3"])
+        self.assertEqual(sorted(uncertain), ["D:\\music\\anarchy.mp3",  # a compilation of 1978: then or before
+                                             "D:\\music\\feel.mp3", "D:\\music\\feel2.mp3",  # of 1995: maybe
+                                             "D:\\music\\heaven1.mp3", "D:\\music\\heaven3.mp3"])  # no date to go by
         self.assertEqual(used, (1976, 1979))
-        inside, used = years.within(found, 1990, 1990, minimum=2)
-        self.assertEqual((sorted(inside), used), (["D:\\music\\heaven2.mp3", "D:\\music\\under.mp3"], (1988, 1992)))
-        inside, used = years.within(found, 1990, 1990, minimum=4)
-        self.assertEqual((len(inside), used), (4, (1985, 1995)))  # with the two "compilation of 1995"
-        inside, used = years.within(found, 1960, 1960, minimum=1)
-        self.assertEqual((inside, used), (set(), (1950, 1970)))  # widened at most 10 years: nothing there
+        certain, uncertain, used = years.within(found, 1990, 1990, minimum=2)
+        self.assertEqual((sorted(certain), used), (["D:\\music\\heaven2.mp3", "D:\\music\\under.mp3"], (1988, 1992)))
+        self.assertNotIn("D:\\music\\anarchy.mp3", uncertain)  # a compilation of 1978 holds no song of 1988
+        certain, _, used = years.within(found, 1990, 1990, minimum=3)
+        self.assertEqual((len(certain), used), (2, (1980, 2000)))  # widened at most 10 years, with what it has
 
-    def test_kept_until_the_database_changes(self):
+    def test_a_song_sounding_as_a_dated_one_by_the_same_artist_is_that_recording(self):
+        vectors = (["a", "b", "c", "d"], np.stack([unit(1, 0), unit(1, 0.02), unit(1, 0), unit(1, 0.15)]))
+        found = {"a": (1981, 0), "b": (0, 0), "c": (0, 2003), "d": (0, 0)}
+        dated = years.same_recordings(found, [("a", "kas product"), ("b", "kas product"), ("c", "another band"),
+                                              ("d", "kas product")], vectors, lambda path: path)
+        self.assertEqual(dated, 1)
+        self.assertEqual(found["b"], (1981, 0))  # "One of the Kind", the same recording as "One of a Kind"
+        self.assertEqual(found["c"], (0, 2003))  # the same sound by another artist: not the same recording
+        self.assertEqual(found["d"], (0, 0))  # another song of theirs: near, but not the same
+
+    def test_kept_until_the_database_or_the_sound_prints_change(self):
         first = years.cached_years(self.database, self.folder)
         self.assertTrue(os.path.isfile(os.path.join(self.folder, years.CACHE_FILE)))
+        self.assertEqual(years.load(self.folder), first)
         connection = sqlite3.connect(self.database)
         connection.execute("UPDATE album SET strOrigReleaseDate = '1976' WHERE idAlbum = 1")
         connection.commit()
@@ -112,12 +125,22 @@ class SongYearsTest(unittest.TestCase):
         os.utime(self.database, ns=(1, 1))  # a different time stamp: the database changed
         second = years.cached_years(self.database, self.folder)
         self.assertEqual((first["D:\\music\\aja.mp3"], second["D:\\music\\aja.mp3"]), ((1977, 0), (1976, 0)))
+        heaven = "D:\\music\\heaven3.mp3"
+        vectors = ([heaven, "D:\\music\\other.mp3"], np.stack([unit(1, 0), unit(0, 1)]))
+        self.assertEqual(years.cached_years(self.database, self.folder, vectors=vectors)[heaven], (0, 0))
+        self.assertIsNone(years.load(tempfile.mkdtemp()))
 
     def test_spans_from_the_command_line(self):
         self.assertEqual(years.parse_window("1975-1979"), (1975, 1979))
         self.assertEqual(years.parse_window("1977"), (1977, 1977))
         with self.assertRaises(ValueError):
             years.parse_window("")
+
+    def test_paths_compared_as_the_sound_engine_does(self):
+        with unittest.mock.patch.object(years.os, "name", "nt"):
+            self.assertEqual(years.path_key(" D:\\Music\\A.mp3"), "d:/music/a.mp3")
+        self.assertEqual(neighbours.file_key("D:\\Music\\A.mp3"),
+                         years.path_key("D:\\Music\\A.mp3") if os.name == "nt" else "D:/Music/A.mp3")
 
 
 class SearchWithinYearsTest(unittest.TestCase):
@@ -137,20 +160,28 @@ class SearchWithinYearsTest(unittest.TestCase):
         found, _, left_out = neighbours.nearest(self.store, "seed", 5, in_order=True, years=self.years,
                                                 span=(1975, 1979), min_songs=1)
         self.assertEqual([(path, rank) for path, _, rank in found], [("close", 2), ("middle", 3)])  # ranks of all
-        self.assertEqual((left_out["outside_years"], left_out["years"]), (2, [1975, 1979]))
+        self.assertEqual((left_out["outside_years"], left_out["years"]), (1, [1975, 1979]))  # "later"
+        self.assertEqual((left_out["uncertain"], left_out["uncertain_passed"]), (1, 1))  # a quarter of 5: one
         found, _, _ = neighbours.nearest(self.store, "seed", 5, rng=random.Random(3), years=self.years,
                                          span=(1975, 1979), variety=9, min_songs=1)
-        self.assertEqual(sorted(path for path, _, _ in found), ["close", "middle"])
+        self.assertEqual(len(found), 2)
+        self.assertIn("close", [path for path, _, _ in found])
 
-    def test_a_window_with_too_few_songs_widens(self):
+    def test_uncertain_songs_up_to_a_quarter_of_the_mix(self):
+        found, _, left_out = neighbours.nearest(self.store, "seed", 8, in_order=True, years=self.years,
+                                                span=(1975, 1979), min_songs=1)
+        self.assertEqual([path for path, _, _ in found], ["close", "middle", "far"])  # 2 of 8
+        self.assertEqual((left_out["uncertain"], left_out["uncertain_passed"]), (2, 0))
+
+    def test_a_window_with_too_few_certain_songs_widens(self):
         self.years["later"] = (1984, 0)
         found, _, left_out = neighbours.nearest(self.store, "seed", 5, in_order=True, years=self.years,
-                                                span=(1975, 1979), min_songs=4)
+                                                span=(1975, 1979), min_songs=3)
         self.assertEqual([path for path, _, _ in found], ["later", "close", "middle"])
-        self.assertEqual(left_out["years"], [1970, 1984])  # 1984 brings the fourth song, the seed counted
+        self.assertEqual(left_out["years"], [1970, 1984])  # 1984 brings the third certain song, the seed counted
         self.years["later"] = (1994, 0)  # further than 10 years: the window stops there, with what it has
         found, _, left_out = neighbours.nearest(self.store, "seed", 5, in_order=True, years=self.years,
-                                                span=(1975, 1979), min_songs=4)
+                                                span=(1975, 1979), min_songs=3)
         self.assertEqual(([path for path, _, _ in found], left_out["years"]), (["close", "middle"], [1965, 1989]))
 
     def test_without_a_span_every_year(self):
