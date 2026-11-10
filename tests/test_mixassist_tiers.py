@@ -126,7 +126,7 @@ class TierSettingsTest(KodiTestCase):
         for setting in ("mix_assist_mix_strictness", "mix_assist_station_strictness"):
             self.assertEqual(self.options(setting), ["-1", "0", "1", "2", "3", "4"])
         for setting in ("mix_assist_mix_perspective", "mix_assist_station_perspective"):
-            self.assertEqual(self.options(setting), ["-1", "0", "1", "2", "3", "4", "5"])
+            self.assertEqual(self.options(setting), ["-1", "0", "1", "2", "3", "4", "5", "6"])
         kodi.settings.update(mix_assist_mix_strictness="-1", mix_assist_mix_perspective="-1")
         self.assertEqual(main.get_mix_assist_strictness(), (None, False))
         self.assertIsNone(main.perspective_key(main.default_mix_perspective()))

@@ -278,10 +278,11 @@ class PerspectiveTest(unittest.TestCase):
             self.assertIs(checks.intent_prompt(perspective), checks.INTENT_PROMPT)
 
     def test_every_perspective_has_its_own_prompts(self):
-        self.assertEqual(checks.PERSPECTIVES, ("mixed", "technical", "emotional", "cultural", "functional", "lyrical"))
+        self.assertEqual(checks.PERSPECTIVES, ("mixed", "technical", "emotional", "cultural", "functional", "lyrical",
+                                               "epoch"))
         seed_prompts = [checks.seed_intent_prompt(p) for p in checks.PERSPECTIVES]
         intent_prompts = [checks.intent_prompt(p) for p in checks.PERSPECTIVES]
-        self.assertEqual(len(set(seed_prompts + intent_prompts)), 12)
+        self.assertEqual(len(set(seed_prompts + intent_prompts)), 14)
         for perspective in checks.PERSPECTIVES[1:]:
             with self.subTest(perspective=perspective):
                 prompt = checks.seed_intent_prompt(perspective)
@@ -290,6 +291,24 @@ class PerspectiveTest(unittest.TestCase):
                 self.assertIn('End with "Not:"', prompt)
                 self.assertIn("Give the seed itself the verdict fits.", prompt)
                 self.assertIn(checks.PERSPECTIVE_TEXTS[perspective][0], checks.intent_prompt(perspective))
+
+    def test_epoch_states_its_years_and_judges_by_first_release(self):
+        prompt = checks.seed_intent_prompt("epoch")
+        self.assertIn('Begin with "Years:"', " ".join(prompt.split()))
+        self.assertIn("several genres and countries", " ".join(prompt.split()))
+        judging = " ".join(checks.intent_prompt("epoch").split())
+        self.assertIn("within those years", judging)
+        self.assertIn("strong, deliberate reference", judging)
+        self.assertIn('"compilation of" gives only the latest it can be', judging)
+
+    def test_the_span_comes_from_the_intent_else_two_years_around_the_seed(self):
+        self.assertEqual(checks.epoch_span("Years: 1976–1979. Punk, disco and the sequencer.", 1977), (1976, 1979))
+        self.assertEqual(checks.epoch_span("Years: 1967. The summer of psychedelia.", 1967), (1967, 1967))
+        self.assertEqual(checks.epoch_span("years: 1990 to 1997", 1991), (1990, 1997))
+        self.assertEqual(checks.epoch_span("Seattle's sound, 1994-1990 and after", 1992), (1990, 1994))  # own words
+        self.assertEqual(checks.epoch_span("Disco at its peak", 1978), (1976, 1980))
+        self.assertEqual(checks.epoch_span("Years: 1950–2020.", 1983), (1981, 1985))  # no time is that long
+        self.assertIsNone(checks.epoch_span("", 0))
 
     def test_a_prompt_tells_its_purpose_and_perspective(self):
         for perspective in checks.PERSPECTIVES:
