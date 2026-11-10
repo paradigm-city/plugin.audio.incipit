@@ -17,7 +17,7 @@ Intent (an AI's judgement of what the song is about).
 |---|---|---|---|
 | **Source** | The sound engine: the songs nearest to the seed by sound, from sound prints made on this computer | **Variety** 0 to 9; **no artist repeat within N** songs | no (it is the source) |
 | **Character** | Each song's 8-value profile against the seed's | **Tolerance**: Focused, Close, Balanced, Open, Adventurous | yes |
-| **Intent** | The AI states what the seed is about and judges each song | **Perspective**: Mixed, Technical, Emotional, Cultural, Functional, Lyrical; **Accept borderline** | yes |
+| **Intent** | The AI states what the seed is about and judges each song | **Perspective**: Mixed, Technical, Emotional, Cultural, Functional, Lyrical, Epoch; **Accept borderline** | yes |
 
 A new song must pass every check that is on. A track leaves a mix (tidy-up) only when every check that is on turns
 it down. With both checks off the mix is the source's as it is, and nothing is asked of the AI.
@@ -71,7 +71,7 @@ profile.
 The AI (Claude, through the Claude Code CLI) first states what the seed is about, from the **perspective** chosen,
 then judges every candidate: fits, borderline or outlier, with a reason. Perspectives: Mixed (the music's intention
 and qualities together), Technical (how it is made), Emotional (what the artist expresses), Cultural (where it
-comes from), Functional (what it is for), Lyrical (what the words say). **Accept borderline** also takes songs that
+comes from), Functional (what it is for), Lyrical (what the words say), Epoch (what was in the air when it came out). **Accept borderline** also takes songs that
 share part of what the seed is about. Music the rating didn't know is marked "little known" in the prompts and is
 not turned down for an intent guessed from its names (F38). The same call names a mix or station in two to four
 words ("Name mixes", "Name stations").

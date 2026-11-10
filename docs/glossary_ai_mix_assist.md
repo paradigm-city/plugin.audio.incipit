@@ -11,7 +11,7 @@
 | **Character** | the profile check, the vector signal | Each song's 8-value profile against the seed's |
 | **Tolerance** | openness, strictness | How far a profile may be off: Focused, Close, Balanced, Open, Adventurous, or Off |
 | **Intent** | the AI check, the holistic signal | The AI's judgement of what the seed is about, from a perspective |
-| **Perspective** | | Mixed, Technical, Emotional, Cultural, Functional, Lyrical, or Off |
+| **Perspective** | | Mixed, Technical, Emotional, Cultural, Functional, Lyrical, Epoch, or Off |
 | **Accept borderline** | part of the level Adventurous | Intent also takes songs it calls borderline |
 | **Fixed scale** | | Character's typical misfit from the seed's nearest rated songs by sound (F40) |
 | **Variety** | MusicIP's variety | How far into the order by sound a mix reaches, 0 to 9 |

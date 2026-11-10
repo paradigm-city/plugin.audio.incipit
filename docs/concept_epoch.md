@@ -43,9 +43,11 @@ rule), a first draft:
 
 - **View:** the view of a chronicler of music: the moment the music came out, and what was in the air.
 - **Intent:** one sentence on the moment: the seed's years (its first release, not a reissue or a compilation) and
-  what was in the air across music then. In two fields of their own, the years that time lasted for the seed's
-  sound (`from_year`, `to_year`): a couple of years for a short-lived sound (baroque pop), a decade for a long one
-  (grunge). Then 5 to 8 qualities of that moment a fitting track should share: the
+  what was in the air across music then. It begins with the years that time lasted for the seed's sound, as
+  "Years: 1976–1979.": a couple of years for a short-lived sound (baroque pop), a decade for a long one (grunge).
+  Written into the intent rather than a field of its own, the span is kept wherever the intent is (a station's, a
+  favourite's, a mix's), the listener sees it in the information, and a listener's own words can give one too
+  (`checks.epoch_span` reads "Years: …" or any "1977–1979"). Then 5 to 8 qualities of that moment a fitting track should share: the
   years; the mood and spirit of the time; the sounds and studio techniques that were new or everywhere then (the
   first drum machines, gated reverb, the sampler, Auto-Tune); what music turned against or towards; the world it
   answered (social, political, technological). Reference points from several genres and countries, never only the
@@ -129,8 +131,8 @@ may make refills scarcer for small years; the window widening keeps it fed.
 1. F51 first: a song's original year (own album, then a marked compilation year) in what the AI sees and in the
    ratings. Helps Cultural today. Done 2026-11-10 (F51): the own album's year, else "compilation of …";
    MusicBrainz for songs the library has only on compilations is still to come.
-2. The perspective: the prompt texts, the span fields in Epoch's schema (kept with the station's intent), "Epoch" in
-   the Mix and Station perspective settings, the favourite station keeping it, the statistics' counts.
+2. The perspective: the prompt texts, the span at the start of the intent, "Epoch" in the Mix and Station perspective
+   settings, the favourite station keeping it, the statistics' counts.
 3. The time window in the sound engine's search (the station passes the years; songs outside them are left out like
    I34's): ±2 years for the first songs, the AI's span from then on; and the later songs by sounding year.
 4. Test as the perspectives were (concept_ai_mix_assist.md, *Listening perspectives*): seeds of 1966, 1977 (station
@@ -138,6 +140,35 @@ may make refills scarcer for small years; the window widening keeps it fed.
    a short-lived sound, long for grunge), count genres, countries and years per refill, and how often Claude takes a
    later song; the listener's ears decide whether the profile or later songs need a rule.
 5. Then I37: Cultural without time.
+
+## First trial of the prompt (2026-11-10)
+
+Built: the prompt (`checks.PERSPECTIVE_TEXTS["epoch"]`), `checks.epoch_span`, "Epoch" as the seventh choice of the
+perspective settings. Tried with one seed-intent call per set on songs of this library (lines as the add-on writes
+them, with F51's years; Kodi's database read directly, as Kodi was closed), the songs chosen by hand: the seed, its
+time in other genres, its own kind from other times, later bands that refer to it.
+
+| Seed | Span stated | Fit from other genres | Its own kind from another time | Later bands |
+|---|---|---|---|---|
+| Legs Diamond "I Think I Got It" (1977) | 1975–1979 | Sex Pistols, Donna Summer "I Feel Love", Kraftwerk, Television, Ramones, Steely Dan "Aja"; and Motörhead (1979), Judas Priest, UFO | Montrose 1973 and AC/DC 1981 borderline; Fleetwood Mac's 1968 blues and Def Leppard's "Hysteria" outliers | Black Star Riders borderline ("Thin Lizzy successor"); The Winery Dogs, Wolfmother, Rival Sons outliers |
+| Soundgarden "Outshined" (1991) | 1989–1994 | Portishead "Glory Box"; Massive Attack's 1995 dub borderline | Black Sabbath 1983 and Neil Young 1979 outliers; Foo Fighters 1997, Blur "Song 2", Radiohead 1995 borderline | Royal Blood outlier |
+| Kraftwerk "Vitamin" (2003) | 2001–2005 | Ladytron, Röyksopp, Boards of Canada, Goldfrapp | Kraftwerk's own "The Model", The Human League 1979, Yazoo 1982 outliers; LCD Soundsystem 2007 borderline | Marsheaux, Aurolab (synthwave) outliers |
+| The Left Banke "Pedestal" (1968) | 1966–1969 | Hendrix "All Along the Watchtower", The Velvet Underground "Venus in Furs", The Doors | The Zombies 1965 and The Beach Boys 1971 borderline | (none in the set) |
+
+- The spans follow the sound, not a fixed width: four or five years each here; none was the decade grunge might
+  have been given (its core, 1989–1994, rather).
+- Across genres as intended: a hard-rock seed takes punk, disco, Kraftwerk and Steely Dan of its years.
+- The first release counts, not the line's year: Sex Pistols on a "compilation of 1999" fit as 1976, Motörhead on
+  "No Remorse, 1984" as 1979, Mudhoney on a 2024 compilation as 1988. The listener's answer 4 holds: Kraftwerk's own
+  1978 is another time for "Vitamin".
+- Songs just outside the span are borderline, so Adventurous (which takes borderline) widens the window a little.
+- Later bands: none fit; only Black Star Riders came close. Whether that is right, or "strong reference" is read too
+  strictly, is for listening (the listener's answer 2).
+- A song known only from a compilation that the AI can't date (Thomas Fehlmann, "compilation of 2017") is
+  borderline: MusicBrainz's dates would help.
+- Motörhead fits Epoch with the 1977 seed, as it should (the same years); keeping it apart is Cultural's job (I37).
+
+The trial scripts are kept outside the repository (scratchpad `epoch_try.py`, `db_rpc.py`).
 
 ## The listener's answers (2026-11-10)
 
