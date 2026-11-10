@@ -40,13 +40,13 @@ Found on 2026-10-28 while planning how to keep the sound prints in step with Kod
 
 Not fixed. The planned fix is the library sync: remove a song's sound print when Kodi removes the song, prune at startup, and leave out stored songs that Kodi doesn't list when searching.
 
+## Resolved
+
 ### F51 · The AI sees a compilation's year as the song's year
 
 Found on 2026-11-10 while working out the Epoch perspective (concept_epoch.md). The checks show the AI each track as "artist – title (album, year)" (`mixassist.checks.track_line`), and the year is Kodi's, which for a song on a compilation is the compilation's release year, not the song's. In this library 73,393 of 155,819 songs are on compilations, most of them dated in the 2000s to 2020s; of the 6,440 that can be matched by artist and title to the artist's own album, 3,125 carry a compilation year more than 3 years later than the album's. The rating takes the same year (`mixassist.library`, `mixassist.rating`). The AI knows the year of a well-known song anyway, but for a little-known one the wrong year can mislead whatever judges time: Cultural's era, the rating's sounding year, and Epoch, which would depend on it. Effect on verdicts not measured.
 
-Not fixed. Planned with Epoch: a song's original year from the artist's own album where the library has it, else from MusicBrainz (the recording's first release), and a compilation's year marked as such ("on a compilation of 2015") when nothing better is known.
-
-## Resolved
+Fixed in 1d4caa8 (2026-11-10): a compilation track takes its year from the same song (artist and title) on the artist's own album in Kodi's library, the earliest one (`mixassist.library.Library.song_years`); without one, its year is left open and the AI is told the earliest compilation that has it, as "compilation of 1994" in the checks' lines (`checks.year_text`, explained in `TRACK_LINES_NOTE`) and as `compilation_year` in the rating's (the song came out then or earlier). Normal albums need nothing: Kodi's year of an album is already its original release (checked on Blood, Sweat & Tears, released 1969, original 1968: Kodi says 1968). A look-up takes about 0.2 s and is kept for the process (`KNOWN_YEARS`). On 40 random compilation songs of the real library: 4 got their own album's year (new musik "Living by Numbers" 1980, Fields of the Nephilim "Laura II" 1987), 35 a compilation's year, often an era's own compilation (1966, 1980, 1981, 1983, 1985), 1 nothing. Limits: an own album without its original date counts by its release (Meat Loaf "Bat Out of Hell" 2003); songs the library has only on compilations wait for MusicBrainz (concept_epoch.md). Ratings made before keep their values.
 
 ### F49 · Kodi crashed when "Generate mix from playing audio" started its mix
 

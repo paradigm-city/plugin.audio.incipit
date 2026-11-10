@@ -127,7 +127,8 @@ may make refills scarcer for small years; the window widening keeps it fed.
 ## Building it, in steps
 
 1. F51 first: a song's original year (own album, then a marked compilation year) in what the AI sees and in the
-   ratings. Helps Cultural today.
+   ratings. Helps Cultural today. Done 2026-11-10 (F51): the own album's year, else "compilation of …";
+   MusicBrainz for songs the library has only on compilations is still to come.
 2. The perspective: the prompt texts, the span fields in Epoch's schema (kept with the station's intent), "Epoch" in
    the Mix and Station perspective settings, the favourite station keeping it, the statistics' counts.
 3. The time window in the sound engine's search (the station passes the years; songs outside them are left out like
