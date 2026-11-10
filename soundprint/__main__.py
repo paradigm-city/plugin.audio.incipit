@@ -159,11 +159,14 @@ def neighbours(args) -> int:
     details = songs.Details(database)
     store = Store(args.data)
     try:
-        # undated songs are matched by sound to dated ones of the same artist (soundprint.years.same_recordings)
-        song_years = years.cached_years(database, args.data, file_key, store.matrix()) if span and database else None
+        # undated songs are matched by sound to dated ones of the same artist (soundprint.years.same_recordings), and
+        # their sound hints at their time (era_hints)
+        song_years, hints = (years.cached(database, args.data, file_key, store.matrix()) if span and database
+                             else (None, None))
         found, source, left_out = nearest(store, args.seed, args.count, args.model if os.path.isdir(args.model) else "",
                                           details=details, window=args.artist_window, variety=args.variety,
-                                          leave_out=leave_out, in_order=args.in_order, years=song_years, span=span)
+                                          leave_out=leave_out, in_order=args.in_order, years=song_years, span=span,
+                                          hints=hints)
         analysed = store.counts()["analysed"]
         print(json.dumps({"seed": args.seed, "seed_vector": source, "seed_details": list(details(args.seed)),
                           "library": database, "analysed": analysed, "left_out": left_out,

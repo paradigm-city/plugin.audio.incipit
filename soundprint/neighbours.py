@@ -44,7 +44,7 @@ import numpy as np
 from mixassist.cache import artist_key
 from soundprint import DEFAULT_SNIPPETS, analysis_version
 from soundprint.store import Store
-from soundprint.years import MIN_SONGS, UNCERTAIN_SHARE, Years, within
+from soundprint.years import MIN_SONGS, UNCERTAIN_SHARE, Hints, Years, within
 
 Lookup = Callable[[str], Tuple[str, str]]  # path -> (artist, title)
 LOOSEST_POWER = 0.7  # the draw weight's power at variety 9
@@ -106,15 +106,17 @@ def draw_power(variety: int) -> float:
 def nearest(store: Store, seed: str, count: int, model_folder: str = "", snippets: int = DEFAULT_SNIPPETS,
             details: Optional[Lookup] = None, window: int = 0, variety: int = 0,
             rng: Optional[random.Random] = None, leave_out: Iterable[str] = (), in_order: bool = False,
-            years: Optional[Years] = None, span: Optional[Tuple[int, int]] = None, min_songs: int = MIN_SONGS
+            years: Optional[Years] = None, span: Optional[Tuple[int, int]] = None, min_songs: int = MIN_SONGS,
+            hints: Optional[Hints] = None
             ) -> Tuple[List[Tuple[str, float, int]], str, dict]:
     """Up to count (path, similarity, rank) triples in the mix's order, the seed itself left out (rank 1 is the
     nearest song); where the seed's vector came from; and how many songs each rule left out ("artist",
     "same_song"), and how many of the songs in leave_out (paths) the store has ("listed"). in_order: the nearest
     songs, nearest first, without a draw. span (with years, by file key): only songs of those years (widened while
     it holds fewer than min_songs, soundprint.years.within), and songs whose year is uncertain up to UNCERTAIN_SHARE
-    of the mix; "outside_years" counts the songs left out for it, "years" is the window used, "uncertain" how many
-    uncertain songs the mix has and "uncertain_passed" how many more it passed over."""
+    of the mix (with hints, only those whose sound hints at the window); "outside_years" counts the songs left out
+    for it, "years" is the window used, "uncertain" how many uncertain songs the mix has and "uncertain_passed" how
+    many more it passed over."""
     left_out = {"artist": 0, "same_song": 0, "listed": 0}
     vector, source = seed_vector(store, seed, model_folder, snippets)
     if vector is None:
@@ -132,7 +134,7 @@ def nearest(store: Store, seed: str, count: int, model_folder: str = "", snippet
     left_out["listed"] = int(len(leave))
     unsure: set = set()  # the songs whose year is uncertain, up to a share of the mix
     if span and years is not None:
-        inside, unsure, used = within(years, span[0], span[1], keys=set(files), minimum=min_songs)
+        inside, unsure, used = within(years, span[0], span[1], keys=set(files), minimum=min_songs, hints=hints)
         outside = np.array([index for index, key in enumerate(files) if key not in inside and key not in unsure],
                            dtype=np.int64)
         left_out.update(outside_years=int(len(outside)), years=list(used), uncertain=0, uncertain_passed=0)
