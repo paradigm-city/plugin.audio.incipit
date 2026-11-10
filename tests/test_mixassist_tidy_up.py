@@ -27,12 +27,18 @@ class FakeJsonRpc:
 
     def __init__(self, songs, albums):
         self.songs, self.albums = songs, albums
+        self.calls = []
 
     def __call__(self, method, params):
         if method == "AudioLibrary.GetSongs":
             wanted = params["filter"]
+            self.calls.append(wanted)
             if "albumid" in wanted:
                 return {"songs": [s for s in self.songs if s["albumid"] == wanted["albumid"]]}
+            if "and" in wanted:  # the same song elsewhere: title and artist
+                rules = {rule["field"]: rule["value"] for rule in wanted["and"]}
+                return {"songs": [s for s in self.songs
+                                  if s["title"] == rules["title"] and s["displayartist"] == rules["artist"]]}
             name = wanted["value"].lower()
             return {"songs": [s for s in self.songs if s["file"].replace("\\", "/").split("/")[-1].lower() == name]}
         if method == "AudioLibrary.GetAlbumDetails":
@@ -42,6 +48,7 @@ class FakeJsonRpc:
 
 class LibraryTest(unittest.TestCase):
     def setUp(self):
+        library.KNOWN_YEARS.clear()
         songs = [
             {"file": "D:\\m\\Blue\\09 A Case of You.mp3", "title": "A Case of You", "displayartist": "Joni Mitchell",
              "albumid": 1, "year": 1971, "genre": ["Folk"], "musicbrainztrackid": "rec-1", "track": 9},
@@ -69,7 +76,39 @@ class LibraryTest(unittest.TestCase):
         unit = library.resolve(["D:\\m\\VA\\Hits\\05 Fire Walk.mp3"], self.jsonrpc)[0]
         self.assertEqual((unit["kind"], unit["key"]), ("track", cache.track_key("wilfried", "fire walk")))
         self.assertEqual(unit["item"]["album"], "Austrian Funk Nuggets")
-        self.assertEqual(unit["item"]["year"], 1979)
+        self.assertEqual((unit["item"]["year"], unit["item"]["compilation_year"]), (0, 1979))  # F51: no own album
+
+    def add_copy(self, album_id, album_artist, year, compilation):
+        """The compilation's song "fire walk" by wilfried once more, on another album."""
+        self.jsonrpc.albums[album_id] = {"albumid": album_id, "title": f"Album {album_id}",
+                                         "displayartist": album_artist, "year": year, "genre": [],
+                                         "musicbrainzreleasegroupid": "", "compilation": compilation}
+        self.jsonrpc.songs.append({"file": f"D:\\m\\{album_id}\\01 Fire Walk.mp3", "title": "fire walk",
+                                   "displayartist": "wilfried", "albumid": album_id, "year": year, "genre": [],
+                                   "musicbrainztrackid": "", "track": 1})
+
+    def test_a_compilation_track_takes_its_year_from_the_artists_own_album(self):
+        self.add_copy(3, "wilfried", 1977, False)
+        self.add_copy(4, "wilfried", 1983, False)  # a later album of his has it too: the earliest counts
+        unit = library.resolve(["D:\\m\\VA\\Hits\\05 Fire Walk.mp3"], self.jsonrpc)[0]
+        self.assertEqual(unit["item"]["year"], 1977)
+        self.assertNotIn("compilation_year", unit["item"])
+
+    def test_without_an_own_album_the_earliest_compilation_is_given(self):
+        self.add_copy(3, "Various Artists", 1976, True)
+        self.add_copy(4, "Various Artists", 1999, True)
+        unit = library.resolve(["D:\\m\\VA\\Hits\\05 Fire Walk.mp3"], self.jsonrpc)[0]
+        self.assertEqual((unit["item"]["year"], unit["item"]["compilation_year"]), (0, 1976))
+
+    def test_a_song_is_looked_up_once(self):
+        self.jsonrpc.songs.append(dict(self.jsonrpc.songs[2], file="D:\\m\\VA\\Hits\\06 Fire Walk.mp3"))
+        library.resolve(["D:\\m\\VA\\Hits\\05 Fire Walk.mp3", "D:\\m\\VA\\Hits\\06 Fire Walk.mp3"], self.jsonrpc)
+        self.assertEqual(sum(1 for call in self.jsonrpc.calls if "and" in call), 1)
+
+    def test_normal_albums_keep_their_year(self):
+        unit = library.resolve(["d:/M/Blue/09 A Case of You.mp3"], self.jsonrpc)[0]
+        self.assertEqual(unit["item"]["year"], 1971)
+        self.assertFalse(any("and" in call for call in self.jsonrpc.calls))
 
     def test_unknown_tracks_fall_back_to_recorded_metadata_or_the_file_name(self):
         recorded = {"d:/m/x/reducers - airways.mp3": {"artist": ["Reducers"], "title": "Airways", "year": 1980}}
@@ -92,6 +131,14 @@ class RatingTest(unittest.TestCase):
         groups = rating.batches(units)
         self.assertEqual([(kind, len(group)) for kind, group in groups], [("album", 20), ("album", 20), ("album", 5),
                                                                           ("track", 1)])
+
+    def test_a_compilation_track_without_its_own_year_is_rated_with_the_compilations(self):
+        message = rating.user_message("track", [
+            {"id": "u0", "artist": "a", "title": "t", "album": "Box", "year": 0, "compilation_year": 1994, "genres": ""},
+            {"id": "u1", "artist": "b", "title": "s", "album": "Box", "year": 1977, "genres": ""}])
+        self.assertIn('"year": "", "compilation_year": 1994', message)
+        self.assertIn('"year": 1977, "genres"', message)
+        self.assertIn("then or earlier", message)
 
     def test_parse_ratings_clamps_and_drops_incomplete_entries(self):
         payload = {"ratings": [dict(vector(energy=14, sounding_year=1850, familiarity=7), id="u0"),
@@ -180,6 +227,12 @@ class ChecksTest(unittest.TestCase):
         self.assertIn("2. Known – k (A, 1990) — warm", seen["message"])
         self.assertNotIn("little known", seen["message"].split("Tracks:")[0])
         self.assertIn('marked "(little known)"', seen["system"])
+
+    def test_a_compilations_year_is_shown_as_such(self):
+        unit = self.unit("Donna Summer", "I Feel Love")
+        unit["item"].update(album="Disco Box", year=0, compilation_year=1994)
+        self.assertEqual(checks.track_line(1, unit, None), "1. Donna Summer – I Feel Love (Disco Box, compilation of 1994) — ")
+        self.assertIn('"compilation of"', checks.intent_prompt("cultural"))
 
 
 class NameTest(unittest.TestCase):
