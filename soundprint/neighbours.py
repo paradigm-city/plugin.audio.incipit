@@ -44,7 +44,7 @@ import numpy as np
 from mixassist.cache import artist_key
 from soundprint import DEFAULT_SNIPPETS, analysis_version
 from soundprint.store import Store
-from soundprint.years import MIN_SONGS, Years, within
+from soundprint.years import MIN_SONGS, UNCERTAIN_SHARE, Years, within
 
 Lookup = Callable[[str], Tuple[str, str]]  # path -> (artist, title)
 LOOSEST_POWER = 0.7  # the draw weight's power at variety 9
@@ -112,8 +112,9 @@ def nearest(store: Store, seed: str, count: int, model_folder: str = "", snippet
     nearest song); where the seed's vector came from; and how many songs each rule left out ("artist",
     "same_song"), and how many of the songs in leave_out (paths) the store has ("listed"). in_order: the nearest
     songs, nearest first, without a draw. span (with years, by file key): only songs of those years (widened while
-    it holds fewer than min_songs, soundprint.years.within); "outside_years" counts the songs left out for it, "years" is the
-    window used."""
+    it holds fewer than min_songs, soundprint.years.within), and songs whose year is uncertain up to UNCERTAIN_SHARE
+    of the mix; "outside_years" counts the songs left out for it, "years" is the window used, "uncertain" how many
+    uncertain songs the mix has and "uncertain_passed" how many more it passed over."""
     left_out = {"artist": 0, "same_song": 0, "listed": 0}
     vector, source = seed_vector(store, seed, model_folder, snippets)
     if vector is None:
@@ -129,14 +130,17 @@ def nearest(store: Store, seed: str, count: int, model_folder: str = "", snippet
     leave = np.array([index for index, key in enumerate(files) if key in listed], dtype=np.int64) \
         if listed else np.empty(0, dtype=np.int64)
     left_out["listed"] = int(len(leave))
+    unsure: set = set()  # the songs whose year is uncertain, up to a share of the mix
     if span and years is not None:
-        inside, used = within(years, span[0], span[1], keys=set(files), minimum=min_songs)
-        outside = np.array([index for index, key in enumerate(files) if key not in inside], dtype=np.int64)
-        left_out.update(outside_years=int(len(outside)), years=list(used))
+        inside, unsure, used = within(years, span[0], span[1], keys=set(files), minimum=min_songs)
+        outside = np.array([index for index, key in enumerate(files) if key not in inside and key not in unsure],
+                           dtype=np.int64)
+        left_out.update(outside_years=int(len(outside)), years=list(used), uncertain=0, uncertain_passed=0)
         leave = np.union1d(leave, outside).astype(np.int64)
+    most_unsure = max(1, int(count * UNCERTAIN_SHARE))
     # One file under two spellings (F50): it is taken once, in the spelling Kodi knows (the other has no details).
     twins = {key for key, number in Counter(files).items() if number > 1}
-    if details is None and not window and in_order and not twins:
+    if details is None and not window and in_order and not twins and not unsure:
         take = min(len(paths), count + 1 + len(leave))
         order = np.argpartition(-similarity, take - 1)[:take]
         order = order[np.argsort(-similarity[order])]
@@ -172,6 +176,11 @@ def nearest(store: Store, seed: str, count: int, model_folder: str = "", snippet
         if window and name and name in recent[-window:]:
             left_out["artist"] += 1
             continue
+        if files[index] in unsure:
+            if left_out["uncertain"] >= most_unsure:
+                left_out["uncertain_passed"] += 1
+                continue
+            left_out["uncertain"] += 1
         if title:
             seen_songs.add(key)
         taken.add(files[index])

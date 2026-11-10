@@ -156,10 +156,11 @@ def neighbours(args) -> int:
         database = ""
     leave_out = songs.from_list(args.leave_out) if args.leave_out else []
     span = years.parse_window(args.years) if args.years else None
-    song_years = years.cached_years(database, args.data, file_key) if span and database else None
     details = songs.Details(database)
     store = Store(args.data)
     try:
+        # undated songs are matched by sound to dated ones of the same artist (soundprint.years.same_recordings)
+        song_years = years.cached_years(database, args.data, file_key, store.matrix()) if span and database else None
         found, source, left_out = nearest(store, args.seed, args.count, args.model if os.path.isdir(args.model) else "",
                                           details=details, window=args.artist_window, variety=args.variety,
                                           leave_out=leave_out, in_order=args.in_order, years=song_years, span=span)

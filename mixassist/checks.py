@@ -18,7 +18,7 @@ VERDICTS = ("fits", "borderline", "outlier")
 
 TRACK_LINES_NOTE = """Each line gives the position, artist, title, album and year, and a short description where available.
 For a song from a compilation whose own year isn't known, the line says "compilation of" and the compilation's year
-instead: the song came out then or earlier. The descriptions come from an earlier rating. A line marked "(little known)" is music the rating didn't know: its
+instead: the song came out then or earlier; "year unknown" when no compilation's date can be trusted. The descriptions come from an earlier rating. A line marked "(little known)" is music the rating didn't know: its
 description was guessed from the names, the album and the genre, and may be wrong. Judge such a track by what the
 guess can show (genre, era, sound). Don't call it borderline or outlier only because the guess suggests another
 intent (pop appeal, nostalgia, pastiche, a use): that can't be told from the names. Turn it down only if what is
@@ -182,7 +182,9 @@ that only borrows the time's surface.""",
 spirit of the time, in any genre, scene or country; or if it came out later and takes up that time with a strong,
 deliberate reference that carries its spirit, not only its sound. A track from another time that only sounds alike
 is an outlier, and so is later music that borrows the time's surface out of nostalgia. Judge a track's year by its
-first release: the year shown may be a later album's, and "compilation of" gives only the latest it can be."""),
+first release: the year shown may be a later album's, and "compilation of" gives only the latest it can be. A track
+whose time you can't tell (its year is unknown or only a compilation's, and you don't know the song) is at most
+borderline."""),
 }
 
 EPOCH_FALLBACK_YEARS = 2  # either side of the seed's year, when the intent gives no usable span
@@ -279,10 +281,13 @@ def parse_name(payload: Optional[dict]) -> str:
 
 
 def year_text(item: dict) -> str:
-    """The song's year, or "compilation of 1994" when only a compilation's year is known (F51)."""
+    """The song's year, "compilation of 1994" when only a compilation's year is known (F51), "year unknown" for a
+    compilation track without either (F52)."""
     if item.get("year"):
         return str(item["year"])
-    return f"compilation of {item['compilation_year']}" if item.get("compilation_year") else ""
+    if item.get("compilation_year"):
+        return f"compilation of {item['compilation_year']}"
+    return "year unknown" if "compilation_year" in item else ""
 
 
 def track_line(number: int, unit: dict, entry: Optional[dict]) -> str:

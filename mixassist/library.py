@@ -138,12 +138,24 @@ class Library:
 YearsOf = Callable[[str, str], Tuple[int, int]]  # (artist, title) -> (own album's year, earliest copy's year)
 
 
-def track_year(song: dict, year: int, years_of: Optional[YearsOf]) -> dict:
+KnownYears = Callable[[str], Optional[Tuple[int, int]]]  # path -> the sound engine's (year, latest), None unknown
+
+
+def track_year(song: dict, year: int, years_of: Optional[YearsOf], known: Optional[Tuple[int, int]] = None) -> dict:
     """A compilation track's year fields: {"year": the song's own} when the artist's own album gives it, else
-    {"year": 0, "compilation_year": the earliest compilation's}."""
+    {"year": 0, "compilation_year": the earliest compilation's} (0: no compilation to go by). known: the sound
+    engine's (year, latest) for the song (soundprint.years: only trusted compilations, recordings matched by sound),
+    taken instead of looking it up (F52)."""
+    artist, title = song.get("displayartist", ""), song.get("title", "")
+    if known is not None:
+        fields = {"year": known[0]} if known[0] else {"year": 0, "compilation_year": known[1]}
+        if trace.active():
+            trace.say(f"Year of {artist} - {title}: " + (f"{known[0]}" if known[0] else
+                      f"open, on a compilation of {known[1]}" if known[1] else "unknown")
+                      + f", from the sound engine's years (this compilation: {year or 'no year'}).")
+        return fields
     if years_of is None:
         return {"year": year}
-    artist, title = song.get("displayartist", ""), song.get("title", "")
     own, earliest = years_of(artist, title)
     if own:
         fields = {"year": own}
@@ -156,9 +168,10 @@ def track_year(song: dict, year: int, years_of: Optional[YearsOf]) -> dict:
     return fields
 
 
-def unit_for_song(song: dict, album: dict, years_of: Optional[YearsOf] = None) -> dict:
+def unit_for_song(song: dict, album: dict, years_of: Optional[YearsOf] = None,
+                  known: Optional[Tuple[int, int]] = None) -> dict:
     """The rating unit of a library song: its album, or the track itself on a compilation (with its own year where
-    the library has it, years_of)."""
+    the library has it: known, the sound engine's, else years_of)."""
     artists = {song_entry.get("displayartist") for song_entry in album["songs"] if song_entry.get("displayartist")}
     compilation = is_compilation(album.get("compilation"), album.get("displayartist", ""), len(artists))
     genres = first_text(song.get("genre")) or first_text(album.get("genre"))
@@ -166,7 +179,7 @@ def unit_for_song(song: dict, album: dict, years_of: Optional[YearsOf] = None) -
     if compilation:
         item = {"artist": song.get("displayartist", ""), "title": song.get("title", ""),
                 "album": album.get("title", ""), "genres": genres}
-        item.update(track_year(song, year, years_of))
+        item.update(track_year(song, year, years_of, known))
         return {
             "kind": "track",
             "key": track_key(song.get("displayartist", ""), song.get("title", ""), song.get("musicbrainztrackid", "")),
@@ -209,15 +222,18 @@ def unit_for_unknown(path: str, metadata: Optional[dict] = None) -> dict:
     }
 
 
-def resolve(paths: Sequence[str], jsonrpc: JsonRpc, metadata: Optional[Dict[str, dict]] = None) -> List[dict]:
-    """One unit per path, in order; each carries its path."""
+def resolve(paths: Sequence[str], jsonrpc: JsonRpc, metadata: Optional[Dict[str, dict]] = None,
+            known_years: Optional[KnownYears] = None) -> List[dict]:
+    """One unit per path, in order; each carries its path. known_years: the sound engine's years of songs, used for
+    compilation tracks where it knows them (F52)."""
     library = Library(jsonrpc)
     metadata = metadata or {}
     units = []
     for path in paths:
         song = library.song(path)
         if song and song.get("albumid"):
-            unit = unit_for_song(song, library.album(int(song["albumid"])), library.song_years)
+            unit = unit_for_song(song, library.album(int(song["albumid"])), library.song_years,
+                                 known_years(path) if known_years else None)
         else:
             unit = unit_for_unknown(path, metadata.get(path.replace("\\", "/").lower()))
         unit["path"] = path

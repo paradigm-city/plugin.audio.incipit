@@ -37,6 +37,7 @@ from mixassist import library as mix_assist_library
 from mixassist import trace as mix_assist_trace
 from mixassist import usage as mix_assist_usage
 from soundprint import client as soundprint
+from soundprint import years as soundprint_years
 
 import logs
 from logs import ADDON_ID, log_ai, log_checks, log_discovery, log_general, log_mixing, log_radio
@@ -377,6 +378,28 @@ def get_radio_offset_percent() -> int:
 # until 2026-10-29; its code is kept dormant in musicip_dormant.py. ----------------------------------------------
 def soundprint_data() -> str:
     return soundprint.data_folder(get_profile_dir())
+
+
+SOUND_ENGINE_YEARS = {"stamp": None, "years": None}
+
+
+def sound_engine_year(path: str):
+    """The sound engine's (year, latest) for a song (soundprint.years, kept by its searches within a time: only
+    trusted compilations, recordings matched by sound), None when it doesn't know the song or keeps no years yet."""
+    try:
+        stamp = os.stat(os.path.join(soundprint_data(), soundprint_years.CACHE_FILE)).st_mtime_ns
+    except OSError:
+        return None
+    if SOUND_ENGINE_YEARS["stamp"] != stamp:
+        SOUND_ENGINE_YEARS.update(stamp=stamp, years=soundprint_years.load(soundprint_data()))
+    years = SOUND_ENGINE_YEARS["years"]
+    return years.get(soundprint_years.path_key(path)) if years else None
+
+
+def resolve_units(paths, recorded=None) -> list[dict]:
+    """AI Mix Assist's units for songs, a compilation track's year from the sound engine's years where it has them
+    (F52), else looked up in Kodi's library."""
+    return mix_assist_library.resolve(paths, execute_jsonrpc, recorded or {}, known_years=sound_engine_year)
 
 
 def kodi_userdata() -> str:
@@ -2513,7 +2536,10 @@ def fetch_sound_mix(seed_song: str, size: int, params: dict, progress=None, leav
                   + ")" if years and left_out.get("years") else "")
                + ", the nearer the likelier; "
                + f"left out on the way: {left_out.get('artist', 0)} for an artist played too recently, "
-               f"{left_out.get('same_song', 0)} the same song again) with {len(songs)} song(s) for {seed_song!r} "
+               f"{left_out.get('same_song', 0)} the same song again"
+               + (f", {left_out.get('uncertain_passed', 0)} of uncertain year beyond a quarter of the mix "
+                  f"({left_out.get('uncertain', 0)} taken)" if years and "uncertain" in left_out else "")
+               + f") with {len(songs)} song(s) for {seed_song!r} "
                f"({artist} - {title}):"
                + "".join(f"\n  {number}. {song['path']} (similarity {song['similarity']:.3f}"
                          + (f", rank {int(song['rank']):,}" if song.get("rank") else "")
@@ -7526,7 +7552,7 @@ def character_reference(seed: str, store, recorded: dict | None = None) -> list[
         answer = soundprint.neighbours(soundprint_data(), kodi_userdata(), seed, CHARACTER_SCALE_SONGS, 0, 0,
                                        in_order=True)
         paths = [song["path"] for song in answer["songs"]]
-        units = mix_assist_library.resolve([seed] + paths, execute_jsonrpc, recorded or {})
+        units = resolve_units([seed] + paths, recorded)
     except Exception as exc:
         log_ai(f"Character's fixed scale for {seed!r}: none ({exc}); the tracks' own scale is used.")
         return []
@@ -7599,7 +7625,7 @@ def compute_mix_assist_plan(tracks: list[str], meta: dict, progress=None, find_r
     try:
         return mix_assist.tidy_up(
             tracks, store, ask,
-            resolve=lambda paths: mix_assist_library.resolve(paths, execute_jsonrpc, recorded),
+            resolve=lambda paths: resolve_units(paths, recorded),
             fetch_mix=fetch_mix,
             intent=str(section.get("listener_intent") or ""),
             strictness=strictness,
@@ -7775,7 +7801,7 @@ def check_more_like_this(cache_path: str, tracks: list[str], selected: int, cand
         try:
             return mix_assist.choose_additions(
                 tracks[selected], candidates, count, store, ask,
-                resolve=lambda paths: mix_assist_library.resolve(paths, execute_jsonrpc, recorded),
+                resolve=lambda paths: resolve_units(paths, recorded),
                 before=tracks[max(0, selected + 1 - window):selected + 1], after=tracks[selected + 1:selected + 1 + window],
                 strictness=strictness,
                 artist_window=window,
@@ -8253,7 +8279,7 @@ def radio_mix_parameters(size: int, settings: dict | None = None, years: tuple |
 def song_first_year(path: str) -> int:
     """A song's year as AI Mix Assist sees it (F51): its own, else the latest its compilation allows; 0 unknown."""
     try:
-        item = mix_assist_library.resolve([path], execute_jsonrpc, {})[0]["item"]
+        item = resolve_units([path])[0]["item"]
     except Exception:
         return 0
     return int(item.get("year") or item.get("compilation_year") or 0)
@@ -8359,7 +8385,7 @@ def check_radio_refill(reference_song: str, candidates: list[str], count: int, r
                      else "artists may repeat."))
         result = mix_assist.choose_additions(
             reference_song, candidates, count, store, mix_assist_ask(),
-            resolve=lambda paths: mix_assist_library.resolve(paths, execute_jsonrpc, {}),
+            resolve=lambda paths: resolve_units(paths),
             before=neighbours[len(neighbours) - window:] if window else [],
             scale_entries=character_reference(reference_song, store) if strictness is not None else (),
             strictness=strictness,
