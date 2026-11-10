@@ -254,6 +254,12 @@ when in doubt; a song's year needs F51 first (half the library is on compilation
 profile stays whole (sounding alike can be a strong relation); later songs with a reference get no limit until
 testing asks for one; a band's changed sound is another epoch, so the seed's own year counts.
 
+Built on 2026-11-10 (`feature/epoch-intent`): F51 (a compilation song's own year for the AI), the perspective
+("Years: …" at the start of its intent, `checks.epoch_span`), and the time window in Radio's search
+(`soundprint/years.py`, `main.station_years`), with compilations whose dates can't be trusted left out. Still open:
+listening; Epoch for mixes' searches; later songs with a reference; MusicBrainz's dates for songs the library can't
+date; F52; then I37.
+
 ### Screen
 
 #### I36 · A screen during playback: what plays, and music to discover

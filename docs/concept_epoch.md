@@ -132,9 +132,10 @@ may make refills scarcer for small years; the window widening keeps it fed.
    ratings. Helps Cultural today. Done 2026-11-10 (F51): the own album's year, else "compilation of …";
    MusicBrainz for songs the library has only on compilations is still to come.
 2. The perspective: the prompt texts, the span at the start of the intent, "Epoch" in the Mix and Station perspective
-   settings, the favourite station keeping it, the statistics' counts.
+   settings, the favourite station keeping it, the statistics' counts. Done 2026-11-10.
 3. The time window in the sound engine's search (the station passes the years; songs outside them are left out like
-   I34's): ±2 years for the first songs, the AI's span from then on; and the later songs by sounding year.
+   I34's): ±2 years for the first songs, the AI's span from then on; and the later songs by sounding year. Done
+   2026-11-10 for Radio, without the later songs (see *The window built* below).
 4. Test as the perspectives were (concept_ai_mix_assist.md, *Listening perspectives*): seeds of 1966, 1977 (station
    19's Legs Diamond), 1983, a grunge seed and 2003 (Kraftwerk "Vitamin"); check the spans the AI states (short for
    a short-lived sound, long for grunge), count genres, countries and years per refill, and how often Claude takes a
@@ -169,6 +170,40 @@ time in other genres, its own kind from other times, later bands that refer to i
 - Motörhead fits Epoch with the 1977 seed, as it should (the same years); keeping it apart is Cultural's job (I37).
 
 The trial scripts are kept outside the repository (scratchpad `epoch_try.py`, `db_rpc.py`).
+
+## The window built (2026-11-10)
+
+- **Every song's year** (`soundprint/years.py`), from Kodi's music database read-only, as the sound engine already
+  reads it for artists and titles; 2.6 s for 155,816 songs, kept in the data folder (`years.pickle`) until the
+  database changes. A normal album's song: the album's original date. A compilation's song: the same song on the
+  artist's own album (the earliest), else no year but the earliest compilation that holds it as the latest it can
+  be. In this library: 82,717 songs with a year, 37,125 with only a latest, 35,974 with neither (left out of any
+  window).
+- **Not every compilation's date can be trusted.** The first try let Dream Theater, Volbeat, Alter Bridge and U2
+  into 1975–1979: "Welcome To Rock Heaven" (a series of today) is dated 1975 or 1978 by its tags, as are "Golden
+  Age – Vintage Synth Pop" (1,351 songs) and "NWOBHM Metal Rarities". A compilation is trusted when no more than a
+  third of its songs by artists the library knows came later (the song on the artist's own album, or the artist's
+  first album, more than two years after the compilation's date). A fifth was too strict: K-Tel's 1975 collections
+  failed it, because the library has ABBA only as "Gold" (1993) and Nazareth from 1978 on. 3,022 of 3,243 dated
+  compilations are trusted.
+- **The search** (`--years 1975-1979`) leaves out songs of other years before choosing, as it leaves out a
+  station's songs (I34); the order by sound stays, so variety is the reach across genres. A window that holds fewer
+  than 1,000 analysed songs widens a year on each side at a time, at most ten: ±2 around 1966 hold 1,013 songs only
+  as 1964–1968. In this library 1975–1979 holds 5,039 songs, 1989–1994 13,479, 2001–2005 15,698.
+- **The station** (`main.station_years`): Epoch as its perspective (Intent), the span its intent states, else the
+  picked song's year ±2 (its first songs and the start check's lists, before the intent is stated); the same for a
+  favourite with its saved intent. It applies without Claude too: a station from a song's years alone. The window
+  stays at the picked song's time while the station drifts. Logged in Radio's and Mixing's areas.
+- **On the real library**, Legs Diamond "I Think I Got It" within 1975–1979: at variety 2 Boston, KISS, AC/DC,
+  Foghat, Status Quo, Rainbow, Journey, and Joy Division, Magazine, Simple Minds; at 7 also City Boy, The Reducers,
+  Foreigner, T. Rex, Led Zeppelin, Animals And Men. Without the window: Avenged Sevenfold, Metallica, Rammstein,
+  Godsmack. Soundgarden "Outshined" within 1989–1994: Mother Love Bone, Rollins Band, Corrosion of Conformity, but
+  also the glam metal of the same years (FireHouse, Lynch Mob), which the checks judge. Kraftwerk "Vitamin" within
+  2001–2005: mostly downtempo and lounge (F34's neighbours) with Der Plan, The Human League's 2001 "Release";
+  Kraftwerk's live "Radioaktivität" of 2005 counts as 2005 (a live album is an own album).
+- **Not yet:** Epoch for mixes (a mix's perspective can be Epoch, but its search has no window); later songs with a
+  reference (by the ratings' sounding year: left to testing, the listener's answer 2); MusicBrainz's dates for the
+  songs with neither year nor latest; the AI's lines use their own compilation years, untrusted ones too (F52).
 
 ## The listener's answers (2026-11-10)
 

@@ -40,6 +40,12 @@ Found on 2026-10-28 while planning how to keep the sound prints in step with Kod
 
 Not fixed. The planned fix is the library sync: remove a song's sound print when Kodi removes the song, prune at startup, and leave out stored songs that Kodi doesn't list when searching.
 
+### F52 · The AI's "compilation of" can come from a compilation dated wrongly
+
+Found on 2026-11-10 while building Epoch's time window (concept_epoch.md, *The window built*). Some compilations are dated decades before their songs by their tags ("Welcome To Rock Heaven Vol. 32", a series of today, is dated 1978 and holds Dream Theater and Volbeat). The sound engine's years leave such compilations out (`soundprint.years.trusted_compilations`), but the AI's lines (F51, `mixassist.library.Library.song_years`) take the earliest compilation that holds a song, trusted or not, and say "compilation of 1978": the AI is told the song came out in 1978 or earlier. It knows Volbeat and Dream Theater, but not every band on such a series.
+
+Not fixed. Possible fix: the AI's lines take the sound engine's years (one rule for both), which also saves the look-up per compilation song.
+
 ## Resolved
 
 ### F51 · The AI sees a compilation's year as the song's year
