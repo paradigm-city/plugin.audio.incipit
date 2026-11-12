@@ -392,11 +392,8 @@ def discovery_state_path() -> str:
 
 
 def get_discovery_excerpt_seconds() -> int:
-    try:
-        value = int(ADDON.getSetting("discovery_excerpt_seconds") or 20)
-    except Exception:
-        value = 20
-    return max(5, min(60, value))
+    """The plugin's: one of its EXCERPT_STEPS."""
+    return load_plugin_module().get_discovery_excerpt_seconds()
 
 
 def get_discovery_offset_percent() -> int:
@@ -3194,6 +3191,30 @@ def migrate_intent_borderline() -> dict:
     return turned_on
 
 
+EXCERPT_SETTINGS = ("discovery_excerpt_seconds", "radio_excerpt_seconds")
+
+
+def migrate_excerpt_steps() -> dict:
+    """An excerpt length set before the lengths became steps (5 to 60 seconds, 2026-11-12) becomes the nearest step,
+    so the settings show what plays (20 becomes 21). Returns {setting: new value}."""
+    plugin = load_plugin_module()
+    stored = stored_settings()
+    changed = {}
+    for setting in EXCERPT_SETTINGS:
+        value, is_default = stored.get(setting, ("", True))
+        if is_default or not value.strip():
+            continue
+        step = plugin.excerpt_step(value.strip())
+        if value.strip() != str(step):
+            ADDON.setSetting(setting, str(step))
+            changed[setting] = str(step)
+    if changed:
+        log_general("Excerpt lengths moved to the nearest step: "
+                    + ", ".join(f"{setting} {stored[setting][0]!r} -> {step}" for setting, step in changed.items())
+                    + ".", always=True)
+    return changed
+
+
 def announce_sound_engine_readiness() -> str:
     """At the start: when the sound engine can't make mixes yet, say so and where to set it up. Returns why ("" when
     it is ready)."""
@@ -3228,6 +3249,7 @@ def main() -> None:
     migrated = logs.migrate_old_switches()
     migrate_radio_settings()
     migrate_intent_borderline()
+    migrate_excerpt_steps()
     ensure_musicip_keymap_installed()
 
     log_general(

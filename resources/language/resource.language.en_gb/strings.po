@@ -329,7 +329,7 @@ msgid "Scan stations"
 msgstr ""
 
 msgctxt "#30630"
-msgid "How many seconds of each song \"Scan stations\" plays. Discovery mode has its own."
+msgid "How many seconds of each song \"Scan stations\" plays, from 2 for browsing quickly to 55 for taking your time; each step about half as long again. Discovery mode has its own."
 msgstr ""
 
 msgctxt "#30631"
@@ -345,15 +345,47 @@ msgid "Discovery mode"
 msgstr ""
 
 msgctxt "#30501"
-msgid "Excerpt length (seconds)"
+msgid "Excerpt length"
 msgstr ""
 
 msgctxt "#30502"
-msgid "How many seconds of each song Discovery mode plays. Radio's \"Scan stations\" has its own."
+msgid "How many seconds of each song Discovery mode plays, from 2 for browsing quickly to 55 for taking your time; each step about half as long again. Radio's \"Scan stations\" has its own."
 msgstr ""
 
 msgctxt "#30503"
 msgid "Start offset into song (%)"
+msgstr ""
+
+msgctxt "#30505"
+msgid "2 seconds"
+msgstr ""
+
+msgctxt "#30506"
+msgid "3 seconds"
+msgstr ""
+
+msgctxt "#30507"
+msgid "5 seconds"
+msgstr ""
+
+msgctxt "#30508"
+msgid "8 seconds"
+msgstr ""
+
+msgctxt "#30509"
+msgid "13 seconds"
+msgstr ""
+
+msgctxt "#30510"
+msgid "21 seconds"
+msgstr ""
+
+msgctxt "#30511"
+msgid "34 seconds"
+msgstr ""
+
+msgctxt "#30512"
+msgid "55 seconds"
 msgstr ""
 
 msgctxt "#30504"
