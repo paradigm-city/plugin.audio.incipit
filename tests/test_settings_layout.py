@@ -72,13 +72,33 @@ class RadioValuesTest(KodiTestCase):
 
 class TuningSnippetsTest(RadioTestCase):
     def test_scan_stations_plays_radios_snippets_discovery_its_own(self):
-        kodi.settings.update(discovery_excerpt_seconds="40", discovery_offset_percent="10", radio_excerpt_seconds="8",
+        kodi.settings.update(discovery_excerpt_seconds="34", discovery_offset_percent="10", radio_excerpt_seconds="8",
                              radio_offset_percent="50")
         self.turn_on()
         discovery = main.get_discovery_state()
         self.assertEqual((discovery["owner"], discovery["excerpt_seconds"], discovery["offset_percent"]),
                          ("radio", 8, 50))
-        self.assertEqual((main.get_discovery_excerpt_seconds(), main.get_discovery_offset_percent()), (40, 10))
+        self.assertEqual((main.get_discovery_excerpt_seconds(), main.get_discovery_offset_percent()), (34, 10))
+
+
+class ExcerptStepsTest(KodiTestCase):
+    def test_excerpts_take_fibonacci_steps_from_2_seconds(self):
+        self.assertEqual(main.EXCERPT_STEPS, (2, 3, 5, 8, 13, 21, 34, 55))
+        root = ElementTree.parse(os.path.join(ADDON_DIR, "resources", "settings.xml")).getroot()
+        for setting in ("discovery_excerpt_seconds", "radio_excerpt_seconds"):
+            node = next(node for node in root.iter("setting") if node.get("id") == setting)
+            self.assertEqual([int(option.text) for option in node.iter("option")], list(main.EXCERPT_STEPS))
+            self.assertEqual(node.findtext("default"), "21")
+        for value, step in (("20", 21), ("60", 55), ("1", 2), ("4", 5), ("10", 8), ("11", 13), ("x", 21)):
+            with self.subTest(value=value):
+                self.assertEqual(main.excerpt_step(value), step)  # a tie (4: 3 or 5) takes the longer
+
+    def test_an_older_excerpt_length_moves_to_the_nearest_step(self):
+        MigrationTest.stored(self, discovery_excerpt_seconds=("20", False), radio_excerpt_seconds=("8", False))
+        kodi.settings.update(discovery_excerpt_seconds="20", radio_excerpt_seconds="8")
+        self.assertEqual(service.migrate_excerpt_steps(), {"discovery_excerpt_seconds": "21"})
+        self.assertEqual(kodi.settings["discovery_excerpt_seconds"], "21")
+        self.assertIn("discovery_excerpt_seconds '20' -> 21", kodi.log_text())
 
 
 class MigrationTest(KodiTestCase):
@@ -101,7 +121,7 @@ class MigrationTest(KodiTestCase):
         self.assertEqual(copied, {"radio_variety": "9", "radio_reject_size": "6", "radio_excerpt_seconds": "15",
                                   "radio_offset_percent": "25"})
         self.assertEqual((main.get_radio_variety(), main.get_radio_reject_size(), main.get_radio_excerpt_seconds(),
-                          main.get_radio_offset_percent()), (9, 6, 15, 25))
+                          main.get_radio_offset_percent()), (9, 6, 13, 25))  # 15 is read as the nearest step
         self.assertIn("Radio's own settings: radio_variety = '9' (from mix_variety)", kodi.log_text())
         kodi.settings["radio_variety"] = "2"
         self.assertEqual(service.migrate_radio_settings(), {})  # only once
