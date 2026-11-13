@@ -4,6 +4,7 @@ within a span of years, and how the add-on asks for it."""
 import os
 import random
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -136,8 +137,9 @@ class SongYearsTest(unittest.TestCase):
         artists = {"d1": "a", "d2": "b", "d3": "c", "u1": "a", "u2": "d"}
         with unittest.mock.patch.object(years, "ERA_NEIGHBOURS", 2):
             hints = years.era_hints(found, artists, vectors, lambda path: path)
-        self.assertEqual(list(hints["u1"]), [1978, 2015])  # its own artist's song left out
-        self.assertEqual(list(hints["u2"]), [2015, 1978])
+        self.assertEqual(hints["u1"], (1978, 2015))  # its own artist's song left out
+        self.assertEqual(hints["u2"], (2015, 1978))
+        self.assertTrue(all(type(year) is int for year in hints["u1"]))  # no numpy in the cache (F54)
         self.assertEqual(years.era_share(hints["u1"], 1976, 1979), 0.5)
         with unittest.mock.patch.object(years, "ERA_NEIGHBOURS", 1):
             hints = years.era_hints(found, artists, vectors, lambda path: path)
@@ -161,6 +163,21 @@ class SongYearsTest(unittest.TestCase):
         vectors = ([heaven, "D:\\music\\other.mp3"], np.stack([unit(1, 0), unit(0, 1)]))
         self.assertEqual(years.cached_years(self.database, self.folder, vectors=vectors)[heaven], (0, 0))
         self.assertIsNone(years.load(tempfile.mkdtemp()))
+
+    def test_kodis_python_reads_the_kept_years_without_numpy(self):
+        """F54: the cache held the hints as numpy arrays; Kodi's Python, which has no numpy, failed to read it, and
+        every AI check failed with "No module named 'numpy'"."""
+        vectors = (["D:\\music\\heaven3.mp3", "D:\\music\\aja.mp3"], np.stack([unit(1, 0), unit(1, 0.1)]))
+        _years, hints = years.cached(self.database, self.folder, vectors=vectors)
+        self.assertEqual(hints["D:\\music\\heaven3.mp3"], (1977,))
+        cache = os.path.join(self.folder, years.CACHE_FILE)
+        without_numpy = ("import pickle, sys; sys.modules['numpy'] = None; "
+                         f"kept = pickle.load(open({cache!r}, 'rb')); print(len(kept['years']), kept['hints'])")
+        done = subprocess.run([sys.executable, "-I", "-c", without_numpy], capture_output=True, text=True)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertIn("(1977,)", done.stdout)
+        with unittest.mock.patch.object(years.pickle, "load", side_effect=ModuleNotFoundError("No module named 'numpy'")):
+            self.assertIsNone(years.load(self.folder))  # a cache it can't read: no years, not a failure
 
     def test_spans_from_the_command_line(self):
         self.assertEqual(years.parse_window("1975-1979"), (1975, 1979))

@@ -33,7 +33,7 @@ from mixassist.cache import artist_key, is_compilation
 Years = Dict[str, Tuple[int, int]]  # file key -> (year, latest): (1977, 0), or (0, 1994) for "compilation of 1994"
 Vectors = Tuple[Sequence[str], object]  # (paths, their sound prints: a numpy matrix, one normalised row each)
 CACHE_FILE = "years.pickle"
-CACHE_VERSION = 4
+CACHE_VERSION = 5  # 5: the hints as plain tuples (F54)
 MIN_SONGS = 1000  # a window is widened until it holds this many certain songs
 MAX_WIDEN = 10  # years on each side at most
 UNCERTAIN_SHARE = 0.25  # of a mix, at most, songs whose year is uncertain
@@ -173,7 +173,9 @@ def same_recordings(years: Years, songs: List[Tuple[str, str]], vectors: Vectors
     return found
 
 
-Hints = Dict[str, object]  # file key -> the years of the nearest dated songs by sound (a numpy int16 array)
+# file key -> the years of the nearest dated songs by sound: plain ints, as everything kept in the cache, which Kodi's
+# own Python reads too (main.sound_engine_year), where there is no numpy (F54)
+Hints = Dict[str, Tuple[int, ...]]
 ERA_NEIGHBOURS = 20  # dated songs by other artists, nearest by sound, that hint at an undated song's time
 ERA_SHARE = 0.2  # of them within the window (widened by ERA_TOLERANCE), and the undated song may be of that time
 ERA_TOLERANCE = 2
@@ -209,7 +211,7 @@ def era_hints(years: Years, artists: Dict[str, str], vectors: Vectors, file_key,
             columns = columns[np.argsort(-values[columns])]
             artist = artists.get(keys[row], "")
             others = [column for column in columns if not artist or dated_artists[column] != artist]
-            hints[keys[row]] = dated_years[others[:ERA_NEIGHBOURS]]
+            hints[keys[row]] = tuple(int(year) for year in dated_years[others[:ERA_NEIGHBOURS]])
     return hints
 
 
@@ -265,11 +267,12 @@ def song_artists(database: str, file_key=lambda path: path) -> Dict[str, str]:
 
 
 def load(folder: str) -> Optional[Years]:
-    """The years last kept in folder, however old; None without."""
+    """The years last kept in folder, however old; None without, or when they can't be read here (a cache of an older
+    version may hold numpy's arrays, which Kodi's Python can't load: F54)."""
     try:
         with open(os.path.join(folder, CACHE_FILE), "rb") as handle:
             return pickle.load(handle)["years"]
-    except (OSError, EOFError, pickle.UnpicklingError, AttributeError, KeyError, TypeError, ValueError):
+    except Exception:
         return None
 
 
