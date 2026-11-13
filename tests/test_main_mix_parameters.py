@@ -13,7 +13,7 @@ class SettingsTest(KodiTestCase):
         self.assertEqual(main.get_playlist_size(), 20)
         self.assertEqual(main.get_mix_variety(), 0)
         self.assertEqual(main.get_mix_reject_size(), 0)
-        self.assertEqual(main.get_discovery_excerpt_seconds(), 20)
+        self.assertEqual(main.get_discovery_excerpt_seconds(), 21)
         self.assertEqual(main.get_discovery_offset_percent(), 33)
 
     def test_empty_or_invalid_values_fall_back(self):
@@ -26,8 +26,8 @@ class SettingsTest(KodiTestCase):
             ("playlist_size", "0", main.get_playlist_size, 1),
             ("mix_variety", "12", main.get_mix_variety, 9),
             ("mix_reject_size", "50", main.get_mix_reject_size, 20),
-            ("discovery_excerpt_seconds", "1", main.get_discovery_excerpt_seconds, 5),
-            ("discovery_excerpt_seconds", "600", main.get_discovery_excerpt_seconds, 60),
+            ("discovery_excerpt_seconds", "1", main.get_discovery_excerpt_seconds, 2),
+            ("discovery_excerpt_seconds", "600", main.get_discovery_excerpt_seconds, 55),
             ("discovery_offset_percent", "95", main.get_discovery_offset_percent, 90),
         ]
         for setting, value, getter, expected in cases:

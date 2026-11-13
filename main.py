@@ -366,8 +366,23 @@ def radio_naming_enabled() -> bool:
     return get_setting_bool("radio_name_stations", True)
 
 
+# Excerpt lengths of Discovery mode and "Scan stations", in seconds: Fibonacci numbers from 2, so the listener can
+# browse very quickly or take their time to decide (the listener, 2026-11-12). Until then 5 to 60 in steps of 1.
+EXCERPT_STEPS = (2, 3, 5, 8, 13, 21, 34, 55)
+DEFAULT_EXCERPT_SECONDS = 21
+
+
+def excerpt_step(value) -> int:
+    """The nearest excerpt length of EXCERPT_STEPS (an older setting's 20 becomes 21, 60 becomes 55; a tie the longer)."""
+    try:
+        seconds = int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_EXCERPT_SECONDS
+    return min(EXCERPT_STEPS, key=lambda step: (abs(step - seconds), -step))
+
+
 def get_radio_excerpt_seconds() -> int:
-    return max(5, min(60, get_setting_int("radio_excerpt_seconds", 20)))
+    return excerpt_step(get_setting_int("radio_excerpt_seconds", 21))
 
 
 def get_radio_offset_percent() -> int:
@@ -779,7 +794,7 @@ def start_discovery_playlist_direct(state: dict) -> dict:
 
 
 def get_discovery_excerpt_seconds() -> int:
-    return max(5, min(60, get_setting_int("discovery_excerpt_seconds", 20)))
+    return excerpt_step(get_setting_int("discovery_excerpt_seconds", 21))
 
 
 def get_discovery_offset_percent() -> int:

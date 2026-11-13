@@ -83,9 +83,20 @@
             <group id="3" label="30500">
                 <setting id="discovery_excerpt_seconds" type="integer" label="30501" help="30502">
                     <level>0</level>
-                    <default>20</default>
-                    <constraints><minimum>5</minimum><step>1</step><maximum>60</maximum></constraints>
-                    <control type="slider" format="integer"><popup>false</popup></control>
+                    <default>21</default>
+                    <constraints>
+                        <options>
+                            <option label="30505">2</option>
+                            <option label="30506">3</option>
+                            <option label="30507">5</option>
+                            <option label="30508">8</option>
+                            <option label="30509">13</option>
+                            <option label="30510">21</option>
+                            <option label="30511">34</option>
+                            <option label="30512">55</option>
+                        </options>
+                    </constraints>
+                    <control type="spinner" format="string"/>
                 </setting>
                 <setting id="discovery_offset_percent" type="integer" label="30503" help="30504">
                     <level>0</level>
@@ -201,9 +212,20 @@
             <group id="3" label="30629">
                 <setting id="radio_excerpt_seconds" type="integer" label="30501" help="30630">
                     <level>0</level>
-                    <default>20</default>
-                    <constraints><minimum>5</minimum><step>1</step><maximum>60</maximum></constraints>
-                    <control type="slider" format="integer"><popup>false</popup></control>
+                    <default>21</default>
+                    <constraints>
+                        <options>
+                            <option label="30505">2</option>
+                            <option label="30506">3</option>
+                            <option label="30507">5</option>
+                            <option label="30508">8</option>
+                            <option label="30509">13</option>
+                            <option label="30510">21</option>
+                            <option label="30511">34</option>
+                            <option label="30512">55</option>
+                        </options>
+                    </constraints>
+                    <control type="spinner" format="string"/>
                 </setting>
                 <setting id="radio_offset_percent" type="integer" label="30503" help="30504">
                     <level>0</level>

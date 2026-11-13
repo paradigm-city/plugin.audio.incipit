@@ -22,7 +22,7 @@ New songs are appended at the end. Old songs are removed from the top only after
 
 Each discovery song starts at a configured offset, currently based on a percentage of the song duration. The default concept is to start at roughly one third into the song.
 
-Each excerpt plays for the configured excerpt length. When the excerpt length is reached, the service advances to the next playlist item.
+Each excerpt plays for the configured excerpt length. When the excerpt length is reached, the service advances to the next playlist item. The length is chosen in steps of the Fibonacci numbers from 2 seconds (2, 3, 5, 8, 13, 21, 34, 55; default 21), so the listener can browse very quickly or take their time to decide; each step is about half as long again as the one before (2026-11-12; until then 5 to 60 seconds in steps of 1, default 20; a length set before becomes the nearest step). Radio's "Scan stations" has the same steps.
 
 ## Manual skip
 
