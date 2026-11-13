@@ -36,8 +36,9 @@ class LayoutTest(unittest.TestCase):
     def test_the_sound_engine_and_claude_code_are_advanced(self):
         self.assertEqual(categories()["advanced"],
                          ["soundprint_auto_analyse", "soundprint_status", "soundprint_analyse", "soundprint_stop",
-                          "soundprint_setup", "soundprint_base_python", "mix_assist_cli_path", "mix_assist_statistics",
-                          "mix_assist_statistics_reset"])
+                          "soundprint_setup", "soundprint_base_python", "mix_assist_cli_path",
+                          "mix_assist_rating_model", "mix_assist_rating_effort", "mix_assist_check_model",
+                          "mix_assist_check_effort", "mix_assist_statistics", "mix_assist_statistics_reset"])
 
     def test_every_label_has_a_text_and_every_text_is_used(self):
         with open(STRINGS, encoding="utf-8") as handle:

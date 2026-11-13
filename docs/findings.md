@@ -42,6 +42,14 @@ Not fixed. The planned fix is the library sync: remove a song's sound print when
 
 ## Resolved
 
+### F57 · Four tests failed after the AI-requests change
+
+Found on 2026-11-13 after `feature/ai-requests` was merged into `main` (1f3abd8, merge 332ee48): GitHub's test run failed, and the same four tests fail on 1f3abd8 alone, so the merge itself is not the cause. The code works as intended; the tests still expected what came before: the AI log's cost line now ends with the request's fingerprint, the station's start line names a model and effort for ratings and for checks, Settings > Advanced has four new settings (`mix_assist_rating_model`, `mix_assist_rating_effort`, `mix_assist_check_model`, `mix_assist_check_effort`), and these are read by name from `main.AI_PURPOSE_SETTINGS`, which the check for unused settings didn't see.
+
+Fixed (2026-11-13, `fix/ai-requests-tests`): the four tests follow the change; the check for unused settings counts the settings named in `AI_PURPOSE_SETTINGS`.
+
+**Test:** `test_logs.AiLogTest.test_requests_and_answers_go_to_the_log_under_ai`, `test_packaging.SettingsXmlTest.test_every_declared_setting_is_used`, `test_radio_mode.StationStartDescriptionTest.test_with_ai_mix_assist_its_settings`, `test_settings_layout.LayoutTest.test_the_sound_engine_and_claude_code_are_advanced`
+
 ### F56 · A favourite lost its background when it was played again
 
 Found on 2026-11-13 by the listener ("artwork for the radio station is not being generated"). A playing favourite keeps its station's newest collages (`main.keep_favourite_artwork`). A station draws its cover collage from 4 covers but its wide background only from 8, so for its first songs it has a cover and no background; saving that cover deleted all of the favourite's earlier pictures, its background too, and left the favourite pointing at the deleted file. So a favourite played again lost its background until 8 songs with readable covers had played, and the Radio screen showed the playing song's artist image instead. 5 of the 22 favourites pointed at a background that was gone.

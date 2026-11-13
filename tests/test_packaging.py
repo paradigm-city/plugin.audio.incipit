@@ -80,7 +80,9 @@ class SettingsXmlTest(unittest.TestCase):
     def used_setting_ids(self):
         pattern = re.compile(r"""(?:get_setting(?:_bool|_int)?|getSetting)\(\s*["']([a-z_]+)["']""")
         used = {name for source in MODULES for name in pattern.findall(read(source))}
-        return used | set(logs.AREAS.values())  # the switches in Settings > Logging
+        purposes = {name for names in main.AI_PURPOSE_SETTINGS.values() for name in names}  # model and effort,
+        # read by name from this table (main.ai_model, main.ai_effort)
+        return used | set(logs.AREAS.values()) | purposes  # the switches in Settings > Logging
 
     def test_every_setting_used_in_code_is_declared(self):
         used = self.used_setting_ids()
