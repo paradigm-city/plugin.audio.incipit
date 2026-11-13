@@ -257,7 +257,9 @@ tolerant: the many edited compilations in the library (from Usenet and such) sho
   and Alleycat Smile, and New Device (wrong).
 - **The period tag** isn't in Kodi's database (Kodi keeps no such tags), so using it means reading the files' tags.
   Seen on a few files: "period" (2024 on "Welcome To Rock Heaven Vol. 103", with the songs dated 1975 and on), and on
-  "AOR Treasures" a TKEY (ID3's musical key) of "1986-1988". Open: whether to read it, and what it should mean.
+  "AOR Treasures" a TKEY (ID3's musical key) of "1986-1988". The listener (2026-11-12): the period tag is not
+  consistent, it sometimes carries the compilation's release year. So it isn't read: the song-by-song dates and the
+  trust check cover what it would tell, without a pass over the files.
 
 ## The listener's answers (2026-11-10)
 
