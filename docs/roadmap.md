@@ -106,6 +106,16 @@ brings further lists (from the songs that fit) only when that list runs out. Whe
 (0 or 1 of 18), the check could move on to the next list at once, and a check that keeps choosing too little
 could get more batches. Seen with MusicIP's lists; with the sound engine's not so far.
 
+#### I44 · A station's artwork before enough songs have played
+
+From F55 and F56 (2026-11-13). A station's collages come from the songs it has played: the cover collage from 4
+readable covers, the wide background from 8. With one song in five or six without a readable cover, a new station
+gets its first cover after about 5 songs and its background after about 10, so for half an hour or more the Radio
+screen shows the playing song's artist image. A favourite played again replaces its full collage (4 × 4) with the
+new session's first, smaller one (2 × 2). Options: draw the first collages from the queued songs too (the songs to
+come, which the station has chosen), so a new station has artwork from its start; and let a favourite keep its
+fuller pictures until the station's new ones hold as many covers.
+
 ### Sound engine
 
 #### I9 · Sound prints in step with Kodi's library

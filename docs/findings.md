@@ -42,6 +42,22 @@ Not fixed. The planned fix is the library sync: remove a song's sound print when
 
 ## Resolved
 
+### F56 · A favourite lost its background when it was played again
+
+Found on 2026-11-13 by the listener ("artwork for the radio station is not being generated"). A playing favourite keeps its station's newest collages (`main.keep_favourite_artwork`). A station draws its cover collage from 4 covers but its wide background only from 8, so for its first songs it has a cover and no background; saving that cover deleted all of the favourite's earlier pictures, its background too, and left the favourite pointing at the deleted file. So a favourite played again lost its background until 8 songs with readable covers had played, and the Radio screen showed the playing song's artist image instead. 5 of the 22 favourites pointed at a background that was gone.
+
+Fixed (2026-11-13, `fix/station-artwork`): a kind of picture not drawn this time keeps its earlier one. The backgrounds already lost stay lost until each favourite is played long enough again.
+
+**Test:** `test_radio_favourites.FavouriteArtworkTest.test_a_favourite_keeps_its_wide_picture_while_the_station_has_only_a_cover`
+
+### F55 · A station's collage waited for the next song when the playing song's cover wasn't read yet
+
+Found on 2026-11-13 with F56. A station's collages are drawn when its playback history grows, from the covers Kodi can give as files (`main.cover_image_file`: its cached copy; a cover from the internet or embedded in the file is cached only once Kodi has shown it). The playing song's cover is often cached a moment after the song starts, after the service's tick tried. An attempt short of covers was never repeated for the same history, so the collage waited for the next song: on 2026-11-13 a station had 4 readable covers after its fifth song (one song has no cover at all) but got its first collage only after the sixth, 6 minutes later. Nothing was logged about attempts short of covers.
+
+Fixed (2026-11-13, `fix/station-artwork`): an attempt short of covers is repeated every 15 s, at most 4 times per song, and draws again only when more covers can be read; a collage drawn again under the same name is dropped from Kodi's picture cache. The radio log says how many covers of how many songs could be read and how many each collage needs.
+
+**Test:** `test_radio_mode.StationArtworkTest.test_a_cover_read_after_the_song_started_is_taken_in_soon`, `test_a_collage_short_of_covers_is_tried_again_only_a_few_times`, `test_a_collage_drawn_again_with_more_covers_is_not_shown_from_kodis_cache`
+
 ### F54 · Every AI check failed with "No module named 'numpy'"
 
 Seen by the listener on 2026-11-12: a station's "What it is about" stayed at "Not worked out yet". The log: "Radio mode: start check failed after 6 s" and "the checks check failed: No module named 'numpy'". Since F52's fix (54aab28, 2026-11-10) the AI checks read the sound engine's years (`soundprint/years.py`'s cache, `years.pickle`) in Kodi's own Python, where there is no numpy; the era hints added the same day (6682197) were kept in that cache as numpy arrays, so unpickling it failed. `years.load` caught only some errors, and the ImportError broke the units' resolution, so every check failed: a station's start check and refills, a mix's tidy-up. It struck once an Epoch search had made the cache; here the trial runs of 2026-11-10 had made it, so any station failed, whatever its perspective. Not caught by the tests, which run with numpy.

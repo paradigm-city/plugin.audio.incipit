@@ -73,6 +73,22 @@ class FavouriteArtworkTest(RadioBase):
         self.assertEqual(open(favourite["fanart"], "rb").read(), b"newer")
         self.assertFalse(os.path.exists(old))  # its earlier artwork is gone
 
+    def test_a_favourite_keeps_its_wide_picture_while_the_station_has_only_a_cover(self):
+        self.start()
+        main.save_radio_favourites([{"id": "f1", "name": "Night Drive", "seed": self.radio()["seed"]}])
+        main.save_radio_state(dict(self.radio(), favourite_id="f1"))
+        self.assertTrue(main.save_favourite_artwork("f1", *self.collages("earlier")))
+        earlier = main.find_radio_favourite(favourite_id="f1")
+        newer_cover, _fanart = self.collages("newer")  # played again: 4 to 7 covers, a cover but no wide one (F56)
+        with mock.patch.object(main, "make_station_collages", return_value={"cover": newer_cover, "fanart": ""}):
+            self.assertTrue(service.refresh_station_artwork(self.radio()))
+        favourite = main.find_radio_favourite(favourite_id="f1")
+        self.assertEqual(open(favourite["cover"], "rb").read(), b"newer")
+        self.assertFalse(os.path.exists(earlier["cover"]))
+        self.assertEqual(favourite["fanart"], earlier["fanart"])
+        self.assertEqual(open(favourite["fanart"], "rb").read(), b"earlier")  # still there
+        self.assertEqual(main.station_fanart(self.radio()), favourite["fanart"])  # the station's background
+
     def test_removing_a_favourite_removes_its_artwork(self):
         main.save_radio_favourites([{"id": "f1", "name": "Night Drive", "seed": "D:\a.mp3"}])
         main.save_favourite_artwork("f1", *self.collages("x"))
