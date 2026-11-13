@@ -710,6 +710,41 @@ class StationArtworkTest(RadioTestCase):
         radio = self.play_through(1)
         self.assertEqual(self.cover_files.call_count, calls + 1)  # no wide one yet: tried with every song
 
+    def test_a_cover_read_after_the_song_started_is_taken_in_soon(self):
+        self.cover_count = 3  # too few for a collage: the playing song's cover not read by Kodi yet (F55)
+        self.start()
+        radio = self.play_through(3)
+        self.assertEqual(radio["station_cover"], "")
+        calls = self.cover_files.call_count
+        radio = self.tick()
+        self.assertEqual(self.cover_files.call_count, calls)  # not straight away
+        self.cover_count = 4  # Kodi has shown it now
+        radio = self.tick(service.STATION_ARTWORK_RETRY_SECONDS)
+        self.assertTrue(os.path.isfile(radio["station_cover"]))
+        self.assertEqual(radio["station_fanart"], "")  # the wide one needs 8
+
+    def test_a_collage_short_of_covers_is_tried_again_only_a_few_times(self):
+        self.cover_count = 3
+        self.start()
+        self.play_through(3)
+        calls = self.cover_files.call_count
+        for _ in range(service.STATION_ARTWORK_RETRIES + 3):
+            radio = self.tick(service.STATION_ARTWORK_RETRY_SECONDS)
+        self.assertEqual(self.cover_files.call_count, calls + service.STATION_ARTWORK_RETRIES)
+        self.assertEqual(radio["station_cover"], "")
+
+    def test_a_collage_drawn_again_with_more_covers_is_not_shown_from_kodis_cache(self):
+        self.cover_count = 4
+        self.start()
+        radio = self.play_through(3)
+        cover = radio["station_cover"]
+        self.assertTrue(os.path.isfile(cover))
+        self.cover_count = 5
+        with mock.patch.object(main, "forget_cached_image") as forget:
+            radio = self.tick(service.STATION_ARTWORK_RETRY_SECONDS)
+        self.assertEqual(radio["station_cover"], cover)  # the same history: the same file, drawn again
+        self.assertIn(mock.call(cover), forget.call_args_list)
+
     def test_the_most_recent_collage_is_the_background(self):
         self.cover_count = 20
         self.start()
