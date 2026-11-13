@@ -263,7 +263,8 @@ class StationStartDescriptionTest(RadioTestCase):
     def test_with_ai_mix_assist_its_settings(self):
         text = main.describe_station_start(self.params(), None, True)
         self.assertIn("new station | mix: size 6, ", text)
-        self.assertIn(f"checks: on, model {main.mix_assist_claude.DEFAULT_MODEL}, effort ", text)
+        self.assertIn(f"checks: on, {main.ai_choice_text()} |", text)  # the models and efforts set for each purpose
+        self.assertIn(f"ratings {main.mix_assist_claude.DEFAULT_MODEL} at ", text)
         self.assertIn("Character Balanced (setting; limit 1.2) | Intent: borderline rejected", text)
         self.assertIn("drift Drift slowly (setting; half-life 60 songs)", text)
 

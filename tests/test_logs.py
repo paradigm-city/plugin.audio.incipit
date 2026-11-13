@@ -197,7 +197,7 @@ class AiLogTest(KodiTestCase):
         self.assertEqual(text.count("Message:\n1. A - B"), 2)
         self.assertIn('[ai] AI answer ', text)
         self.assertIn('"tracks": []', text)
-        self.assertIn("tokens in 10 (cache read 0, written 0), out 5, API-equivalent cost $0.0100.", text)
+        self.assertIn("tokens in 10 (cache read 0, written 0), out 5, API-equivalent cost $0.0100; fingerprint ", text)
 
     def test_a_failure_is_logged_with_its_kind(self):
         kodi.settings["log_ai"] = "true"
