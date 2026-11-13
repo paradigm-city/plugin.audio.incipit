@@ -221,7 +221,8 @@ def score_candidates(candidate_paths: Sequence[str], units: Sequence[dict], entr
     if perspective is not None:
         if progress:
             progress(f"{label}: asking the AI about {len(candidates)} tracks", 0.75)
-        verdicts = checks.judge(intent, units[0], entries[0], candidates, candidate_entries, ask, perspective)
+        verdicts = checks.judge(intent, units[0], entries[0], candidates, candidate_entries, ask, perspective,
+                                memory=getattr(cache, "verdicts", None))
     scored: Dict[str, dict] = {}
     for number, (unit, entry) in enumerate(zip(candidates, candidate_entries), start=1):
         verdict = verdicts.get(number, {})
@@ -274,12 +275,15 @@ def tidy_up(paths: Sequence[str], cache: RatingCache, ask: Ask, resolve: Resolve
             intent: str = "", strictness: Optional[float] = DEFAULT_STRICTNESS, artist_window: int = ARTIST_WINDOW,
             model: str = "", progress: Optional[Callable[..., None]] = None,
             find_replacements: bool = True, accept_borderline: bool = False,
-            perspective: Optional[str] = checks.DEFAULT_PERSPECTIVE, scale_entries: Sequence[Optional[dict]] = ()) -> dict:
+            perspective: Optional[str] = checks.DEFAULT_PERSPECTIVE, scale_entries: Sequence[Optional[dict]] = (),
+            stated_intent: str = "") -> dict:
     """A plan for the mix: the intent, every track's status, and the replacements to make.
 
     With find_replacements=False only the tracks that don't fit are found ("show only"). With Intent on, the intent
     is stated and the tracks are judged from the listening perspective (checks.PERSPECTIVES); scale_entries: see
-    analyze."""
+    analyze. `intent` is the listener's own words; `stated_intent` what the AI stated before for the same seed from
+    the same perspective (roadmap I7): both are judged against instead of stating the intent again, and the
+    tracks judged against it before keep their verdicts (the rating cache's verdicts, I41)."""
     def step(text: str, fraction: Optional[float] = None) -> None:
         """progress(text) at the start of a step, progress(text, fraction) within it."""
         if progress:
@@ -297,12 +301,17 @@ def tidy_up(paths: Sequence[str], cache: RatingCache, ask: Ask, resolve: Resolve
     if not judging:
         verdicts, intent_source = {}, "listener" if intent else "none"
         trace.say("Intent is off: no AI judgement, the profile alone decides.")
-    elif intent:
+    elif intent or stated_intent:
         step("Working out what this mix is about")
-        judged, name = checks.judge_named(intent, units[0], entries[0], units[1:], entries[1:], ask, perspective)
+        intent_source = "listener" if intent else "ai"
+        intent = intent or stated_intent
+        if intent_source == "ai":
+            trace.say("What the mix is about was stated before for this seed and perspective; it is judged against "
+                      "instead of being stated again.")
+        judged, name = checks.judge_named(intent, units[0], entries[0], units[1:], entries[1:], ask, perspective,
+                                          memory=getattr(cache, "verdicts", None))
         verdicts = {position + 1: verdict for position, verdict in judged.items()}
         verdicts[1] = {"verdict": "fits", "reason": ""}
-        intent_source = "listener"
     else:
         step("Working out what this mix is about")
         intent, verdicts, name = checks.describe(units, entries, ask, perspective)
@@ -534,7 +543,8 @@ def choose_additions(selected: str, candidates: Sequence[str], count: int, cache
             verdicts = {}  # Intent is off: the profile alone decides
         elif result["intent"]:  # a second batch is judged against the intent stated for the first
             step(f"Checking the new tracks: asking the AI about {len(batch)} tracks", 0.1)
-            judged = checks.judge(result["intent"], units[0], entries[0], units[1:], entries[1:], ask, perspective)
+            judged = checks.judge(result["intent"], units[0], entries[0], units[1:], entries[1:], ask, perspective,
+                                  memory=getattr(cache, "verdicts", None))
             verdicts = {number + 1: verdict for number, verdict in judged.items()}
         elif name:
             step(f"Checking the new tracks: asking the AI about {len(batch)} tracks", 0.1)

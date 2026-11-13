@@ -5243,8 +5243,7 @@ def describe_station_start(params: dict, favourite: dict | None, assisted: bool,
     limit, borderline = get_station_strictness(settings)
     drift = max(0, min(2, station_setting_index(settings, "drift")))
     half_life = get_radio_drift_half_life(settings)
-    return (f"{station} | mix: {mix} | checks: on, model {mix_assist_claude.DEFAULT_MODEL}, effort "
-            f"{mix_assist_claude.DEFAULT_EFFORT} | Character {mix_openness_label(openness)} ({source['openness']}; "
+    return (f"{station} | mix: {mix} | checks: on, {ai_choice_text()} | Character {mix_openness_label(openness)} ({source['openness']}; "
             f"limit {limit}) | Intent: borderline {'accepted' if borderline else 'rejected'} | drift {RADIO_DRIFT_LABELS[drift]} "
             f"({source['drift']}; {f'half-life {half_life} songs' if half_life else 'no drift'}) | {batch} songs per "
             f"refill | perspective {perspective_label(station_setting_index(settings, 'perspective'))} "
@@ -6244,16 +6243,25 @@ def ai_statistics_lines(total: dict) -> list[str]:
         lines.append(f"Equivalent API cost: ${total['cost_usd']:.2f} (not billed: the subscription covers it)")
     if total.get("seconds_average") is not None:
         lines.append(f"Time: {total['seconds_average']:.1f} s on average, {total['seconds_longest']:.0f} s the longest")
+    timed = total.get("timed_requests", 0)
+    if timed:
+        lines.append(f"Waiting for Claude's servers: {total.get('api_seconds', 0) / timed:.1f} s on average; "
+                     f"{total.get('turns', 0) / timed:.2f} turns per request")
     return lines
 
 
 def cache_statistics_lines(total: dict) -> list[str]:
     hits, misses = total.get("cache_hits", 0), total.get("cache_misses", 0)
-    if not hits + misses:
-        return ["No lookups."]
-    return [f"Albums looked up: {format_count(hits + misses)}, already rated: {format_count(hits)} "
-            f"({format_share(hits, hits + misses)})",
-            f"Newly rated: {format_count(total.get('rated', 0))}"]
+    reused, asked = total.get("verdict_hits", 0), total.get("verdict_misses", 0)
+    lines = []
+    if hits + misses:
+        lines += [f"Albums looked up: {format_count(hits + misses)}, already rated: {format_count(hits)} "
+                  f"({format_share(hits, hits + misses)})",
+                  f"Newly rated: {format_count(total.get('rated', 0))}"]
+    if reused + asked:
+        lines.append(f"Tracks judged against a known intent: {format_count(reused + asked)}, verdict kept from before: "
+                     f"{format_count(reused)} ({format_share(reused, reused + asked)})")
+    return lines or ["No lookups."]
 
 
 def mix_statistics_lines(total: dict) -> list[str]:
@@ -6315,8 +6323,9 @@ def statistics_tabs(events: list, now: float, charts: bool = True) -> list[dict]
 
     stored = []
     try:
-        store = mix_assist_cache.RatingCache(mix_assist_cache_path())
-        stored = [f"Ratings stored: {format_count(store.count())} albums"]
+        store = mix_assist_store()
+        stored = [f"Ratings stored: {format_count(store.count())} albums (by {ai_model('rating')})",
+                  f"Verdicts stored: {format_count(store.verdicts.count())}"]
         store.close()
     except Exception:
         pass
@@ -7534,6 +7543,36 @@ def mix_assist_cache_path() -> str:
     return os.path.join(get_profile_dir(), "mixassist", "ratings.db")
 
 
+# Which model and effort the AI works with (Settings > Advanced > Claude Code; roadmap I43): the listener weighs
+# quality against speed and the subscription's usage, for ratings and for the checks separately.
+AI_PURPOSE_SETTINGS = {"rating": ("mix_assist_rating_model", "mix_assist_rating_effort"),
+                       "checks": ("mix_assist_check_model", "mix_assist_check_effort")}
+
+
+def ai_model(purpose: str) -> str:
+    models = mix_assist_claude.MODELS
+    return models[max(0, min(len(models) - 1, get_setting_int(AI_PURPOSE_SETTINGS[purpose][0], 0)))]
+
+
+def ai_effort(purpose: str) -> str:
+    efforts = mix_assist_claude.EFFORTS
+    default = efforts.index(mix_assist_claude.DEFAULT_EFFORT)
+    return efforts[max(0, min(len(efforts) - 1, get_setting_int(AI_PURPOSE_SETTINGS[purpose][1], default)))]
+
+
+def ai_choice_text() -> str:
+    """The models and efforts in use, for the log."""
+    return (f"ratings {ai_model('rating')} at {ai_effort('rating')} effort, checks {ai_model('checks')} at "
+            f"{ai_effort('checks')} effort")
+
+
+def mix_assist_store():
+    """The rating cache for the rating model in use (ratings by another model are rated again when needed), with
+    the verdicts of the checks' model and effort in use (roadmap I41)."""
+    return mix_assist_cache.RatingCache(mix_assist_cache_path(), model=ai_model("rating"),
+                                        verdict_tag=f"{ai_model('checks')}/{ai_effort('checks')}")
+
+
 # Character's fixed scale for a seed (F40): its nearest songs by sound that have a rating, so a loose candidate
 # list is measured as a cohesive one would be (mixassist.assist.character_scale). Kept per seed while Kodi runs.
 CHARACTER_SCALE_SONGS = 120
@@ -7577,10 +7616,18 @@ def character_reference(seed: str, store, recorded: dict | None = None) -> list[
 
 
 def mix_assist_ask():
+    """ask(system_prompt, schema, message) through the CLI, with the model and effort chosen for its purpose: the
+    rating prompt gets the ratings' choice, every other prompt (the checks) the checks'."""
     cli = mix_assist_claude.find_cli(get_setting("mix_assist_cli_path", "").strip())
     if not cli:
         raise mix_assist_claude.ClaudeError(mix_assist_claude.NOT_FOUND, "The Claude CLI was not found.")
-    return partial(mix_assist_claude.ask, cli)
+    rating_prompt = mix_assist_dimensions.build_system_prompt()
+    choices = {purpose: (ai_model(purpose), ai_effort(purpose)) for purpose in AI_PURPOSE_SETTINGS}
+
+    def ask(system_prompt: str, schema: dict, message: str) -> dict:
+        model, effort = choices["rating" if system_prompt == rating_prompt else "checks"]
+        return mix_assist_claude.ask(cli, system_prompt, schema, message, model=model, effort=effort)
+    return ask
 
 
 def get_mix_assist_section(meta: dict) -> dict:
@@ -7620,25 +7667,40 @@ def compute_mix_assist_plan(tracks: list[str], meta: dict, progress=None, find_r
     section = get_mix_assist_section(meta)
     recorded = mix_assist_track_metadata(meta)
     ask = mix_assist_ask()
-    store = mix_assist_cache.RatingCache(mix_assist_cache_path())
+    store = mix_assist_store()
     strictness, borderline = mix_strictness_for(meta)
+    perspective = perspective_key(mix_perspective_index(meta))
     try:
         return mix_assist.tidy_up(
             tracks, store, ask,
             resolve=lambda paths: resolve_units(paths, recorded),
             fetch_mix=fetch_mix,
             intent=str(section.get("listener_intent") or ""),
+            stated_intent=stated_mix_intent(section, tracks[0] if tracks else "", perspective),
             strictness=strictness,
             artist_window=mix_reject_size_for(meta),
-            model=mix_assist_claude.DEFAULT_MODEL,
+            model=ai_model("rating"),
             progress=progress,
             find_replacements=find_replacements,
             accept_borderline=borderline,
-            perspective=perspective_key(mix_perspective_index(meta)),
+            perspective=perspective,
             scale_entries=character_reference(tracks[0], store, recorded) if strictness is not None and tracks else (),
         )
     finally:
         store.close()
+
+
+def stated_mix_intent(section: dict, seed: str, perspective: str | None) -> str:
+    """What the AI stated earlier about this mix's seed, when it still applies (roadmap I7 for mixes): stated by the
+    AI (not the listener's words), from the same perspective, for the same seed. "" otherwise: then it is stated
+    anew. Mixes checked before 2026-11-12 don't record their seed and are described once more."""
+    if perspective is None or section.get("intent_source") != "ai" or not str(section.get("intent") or "").strip():
+        return ""
+    if str(section.get("intent_perspective") or "") != perspective or not seed:
+        return ""
+    if normalize_track_identity(str(section.get("intent_seed") or "")) != normalize_track_identity(seed):
+        return ""
+    return str(section["intent"])
 
 
 def record_mix_assist_result(cache_path: str, original: list[str], plan: dict, automatic: bool) -> bool:
@@ -7656,6 +7718,7 @@ def record_mix_assist_result(cache_path: str, original: list[str], plan: dict, a
         "intent": plan["intent"],
         "intent_source": plan["intent_source"],
         "intent_perspective": plan.get("perspective", mix_assist_checks.DEFAULT_PERSPECTIVE),
+        "intent_seed": original[0] if original else "",  # the song the intent was stated from (stated_mix_intent)
         "replaced": [
             {"old": change["old"], "old_label": change["old_label"], "new": change["new"],
              "new_label": change["new_label"], "reason": change["reason"]}
@@ -7795,9 +7858,10 @@ def check_more_like_this(cache_path: str, tracks: list[str], selected: int, cand
     window = mix_reject_size_for(meta)
     try:
         ask = mix_assist_ask()
-        store = mix_assist_cache.RatingCache(mix_assist_cache_path())
+        store = mix_assist_store()
         strictness, borderline = mix_strictness_for(meta)
         recorded = mix_assist_track_metadata(meta)
+        perspective = perspective_key(mix_perspective_index(meta))
         try:
             return mix_assist.choose_additions(
                 tracks[selected], candidates, count, store, ask,
@@ -7805,11 +7869,13 @@ def check_more_like_this(cache_path: str, tracks: list[str], selected: int, cand
                 before=tracks[max(0, selected + 1 - window):selected + 1], after=tracks[selected + 1:selected + 1 + window],
                 strictness=strictness,
                 artist_window=window,
-                model=mix_assist_claude.DEFAULT_MODEL,
+                model=ai_model("rating"),
                 progress=mix_assist_step_reporter(progress, MORE_LIKE_THIS_STEPS, start=60),
                 accept_borderline=borderline,
-                perspective=perspective_key(mix_perspective_index(meta)),
+                perspective=perspective,
                 scale_entries=character_reference(tracks[selected], store, recorded) if strictness is not None else (),
+                # on the mix's seed: what the AI stated about it before (I7), not stated again
+                intent=stated_mix_intent(get_mix_assist_section(meta), tracks[selected], perspective),
             )
         finally:
             store.close()
@@ -8362,18 +8428,31 @@ def check_radio_start(tracks: list[str], count: int, check=None, settings: dict 
                               seen=[normalize_track_identity(track) for track in tracks], intent=intent, years=years)
 
 
+def station_intent_key(perspective: str, song: str) -> str:
+    """Where a station keeps what its checks stated about a song: per perspective and song."""
+    return f"{perspective}|{normalize_track_identity(song)}"
+
+
 def check_radio_refill(reference_song: str, candidates: list[str], count: int, reference: dict | None,
                        neighbours: list[str], check=None, settings: dict | None = None, name: bool = False,
-                       more_seeds: list[str] = (), seen=(), intent: str = "", years: tuple | None = None) -> dict:
+                       more_seeds: list[str] = (), seen=(), intent: str = "", years: tuple | None = None,
+                       intents: dict | None = None) -> dict:
     """Choose a refill's songs from the candidates (in the mix's order): both signals must say they fit. Examines
     more the stricter the station (radio_check_batches); when the candidates run out first, further lists
     (radio_more_candidates: from the songs chosen, then more_seeds; without the station's songs, seen). Adds
-    "reference": the station's profile after this refill (drifted towards the chosen songs)."""
-    store = mix_assist_cache.RatingCache(mix_assist_cache_path())
+    "reference": the station's profile after this refill (drifted towards the chosen songs), and "reference_song"
+    and "perspective" (station_intent_key). intents: what the station's checks stated before, by station_intent_key;
+    a refill from a song the station described before is judged against that description (roadmap I7)."""
+    store = mix_assist_store()
     try:
         window = max(0, min(20, station_setting_index(settings, "rejectsize")))
         strictness, borderline = get_station_strictness(settings)
         perspective = perspective_key(station_setting_index(settings, "perspective"))
+        if not intent and perspective is not None and intents:
+            intent = str(intents.get(station_intent_key(perspective, reference_song)) or "")
+            if intent:
+                log_radio(f"Radio mode: the station described {reference_song!r} before ({perspective} perspective); "
+                          f"the refill is judged against that description: {intent!r}")
         profile = "the station's drifting profile" if reference else "the song's own profile"
         log_radio(f"Radio mode: checking {len(candidates)} candidate(s) for {reference_song!r}: {count} wanted, "
                   f"Character {'off' if strictness is None else f'within {strictness}'}, Intent "
@@ -8390,7 +8469,7 @@ def check_radio_refill(reference_song: str, candidates: list[str], count: int, r
             scale_entries=character_reference(reference_song, store) if strictness is not None else (),
             strictness=strictness,
             artist_window=window,
-            model=mix_assist_claude.DEFAULT_MODEL,
+            model=ai_model("rating"),
             progress=radio_check_progress(check),
             reference=reference,
             accept_borderline=borderline,
@@ -8407,6 +8486,7 @@ def check_radio_refill(reference_song: str, candidates: list[str], count: int, r
     base = reference or result.get("seed_entry")
     result["reference"] = mix_assist.drift_reference(
         base, [result["entries"].get(path) for path in result["chosen"]], get_radio_drift_half_life(settings)) if base else None
+    result["reference_song"], result["perspective"] = reference_song, perspective or ""  # the station keeps the intent
     return result
 
 

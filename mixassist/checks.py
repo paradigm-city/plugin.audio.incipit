@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 from typing import Dict, List, Optional, Sequence, Tuple
 
+from mixassist import trace, usage
 from mixassist.rating import Ask
 
 VERDICTS = ("fits", "borderline", "outlier")
@@ -53,9 +54,20 @@ of at most 12 words, naming what clashes. Give the seed itself the verdict fits.
 NAME_NOTE = """Also give the mix a name (field "name"): 2 to 4 words in title case that capture its character, like
 "Cosmic Analog Journeys" or "Dark Ambitious 80s Metal". No artist or song names, no quotation marks."""
 
+# Roadmap I18 (2026-11-12): judged against the stated intent alone, songs got stricter verdicts than in the call that
+# stated it (Steve Vai and Tigran Hamasyan fitted Machacek there, were borderline here; concept_ai_mix_assist.md,
+# "Later batches judged more strictly"). Reusing a station's or mix's description (I7) makes this check the usual
+# one, so it is told to read the intent the way the call that stated it meant it.
+INTENT_SUMMARY = """The intent describes what the seed is about: read it as a summary of the seed, not as a checklist to tick
+off. Judge a track as you would if you had just stated the intent from the seed yourself: a track fits if it shares
+what the intent is about at its heart. It need not show every quality listed, and one quality that is weaker or
+missing is not enough to turn it down. A rule the intent states (for example its years, or the music named after
+"Not:") holds as written."""
+
 INTENT_PROMPT = """You judge tracks for a music mix against the listener's intent.
 The listener started the mix from a seed track. The intent is given below together with the seed; it is either
 stated earlier from the seed or written by the listener.
+""" + INTENT_SUMMARY + """
 
 Judge every track against that intent only. Verdicts: fits, borderline or outlier. For borderline and outlier
 tracks give a reason of at most 12 words, naming the qualities that clash. Put a one-sentence summary of the intent
@@ -227,6 +239,7 @@ def intent_prompt(perspective: str = DEFAULT_PERSPECTIVE) -> str:
     return f"""You judge tracks for a music mix against the listener's intent, from {view}.
 The listener started the mix from a seed track. The intent is given below together with the seed; it is either
 stated earlier from the seed or written by the listener.
+{INTENT_SUMMARY}
 
 Judge every track against that intent only. {rule}
 Verdicts: fits, borderline or outlier. For borderline and outlier tracks give a reason of at most 12 words, naming
@@ -316,12 +329,50 @@ def state_intent(units: Sequence[dict], entries: Sequence[Optional[dict]], ask: 
     return str((payload or {}).get("character", "")), parse_verdicts(payload, len(units))
 
 
+def judge_against(intent: str, seed: dict, seed_entry: Optional[dict], units: Sequence[dict],
+                  entries: Sequence[Optional[dict]], ask: Ask, perspective: str = DEFAULT_PERSPECTIVE,
+                  with_name: bool = False, memory=None) -> Tuple[Dict[int, dict], str]:
+    """A verdict per track (numbered from 1) against a known intent, and with_name a name from the same call.
+
+    memory (cache.VerdictCache, roadmap I41): tracks judged before against the same intent, seed and track line, by
+    the same model and effort, keep that verdict and leave the request; when every track was judged before, nothing
+    is asked (and there is no new name). The AI sees only the rest, numbered from 1 as usual."""
+    prompt = intent_prompt(perspective)
+    seed_text = track_line(0, seed, seed_entry)[3:]
+    texts = [track_line(0, unit, entry)[3:] for unit, entry in zip(units, entries)]
+    verdicts: Dict[int, dict] = {}
+    keys: List[str] = []
+    if memory is not None and texts:
+        keys = [memory.key(prompt, intent, seed_text, text) for text in texts]
+        known = memory.get_many(keys)
+        for number, key in enumerate(keys, start=1):
+            if key in known:
+                verdicts[number] = known[key]
+        usage.emit("verdict_cache", hits=len(verdicts), misses=len(texts) - len(verdicts))
+        trace.say(f"Verdicts: {len(verdicts)} of {len(texts)} track(s) were judged against this intent before"
+                  + (": " + ", ".join(f"{number} {verdicts[number]['verdict']}" for number in sorted(verdicts))
+                     if verdicts else "")
+                  + (f"; asking the AI about {len(texts) - len(verdicts)}." if len(verdicts) < len(texts)
+                     else "; no request needed."))
+    missing = [number for number in range(1, len(units) + 1) if number not in verdicts]
+    if not missing:
+        return verdicts, ""
+    lines = [f"Intent: {intent}", "", "Seed: " + seed_text, "", "Tracks:"]
+    lines += [f"{index}. {texts[number - 1]}" for index, number in enumerate(missing, start=1)]
+    payload = ask(prompt + ("\n\n" + NAME_NOTE if with_name else ""), schema(with_name=with_name), "\n".join(lines))
+    fresh = parse_verdicts(payload, len(missing))
+    for index, verdict in fresh.items():
+        verdicts[missing[index - 1]] = verdict
+    if memory is not None and fresh:
+        memory.put_many({keys[missing[index - 1] - 1]: verdict for index, verdict in fresh.items()})
+    return verdicts, parse_name(payload) if with_name else ""
+
+
 def judge(intent: str, seed: dict, seed_entry: Optional[dict], units: Sequence[dict],
-          entries: Sequence[Optional[dict]], ask: Ask, perspective: str = DEFAULT_PERSPECTIVE) -> Dict[int, dict]:
-    """A verdict per track (numbered from 1) against a known intent."""
-    lines = [f"Intent: {intent}", "", "Seed: " + track_line(0, seed, seed_entry)[3:], "", "Tracks:"]
-    lines += [track_line(number, unit, entry) for number, (unit, entry) in enumerate(zip(units, entries), start=1)]
-    return parse_verdicts(ask(intent_prompt(perspective), schema(), "\n".join(lines)), len(units))
+          entries: Sequence[Optional[dict]], ask: Ask, perspective: str = DEFAULT_PERSPECTIVE,
+          memory=None) -> Dict[int, dict]:
+    """A verdict per track (numbered from 1) against a known intent (memory: see judge_against)."""
+    return judge_against(intent, seed, seed_entry, units, entries, ask, perspective, memory=memory)[0]
 
 
 def describe(units: Sequence[dict], entries: Sequence[Optional[dict]], ask: Ask,
@@ -334,9 +385,7 @@ def describe(units: Sequence[dict], entries: Sequence[Optional[dict]], ask: Ask,
 
 def judge_named(intent: str, seed: dict, seed_entry: Optional[dict], units: Sequence[dict],
                 entries: Sequence[Optional[dict]], ask: Ask,
-                perspective: str = DEFAULT_PERSPECTIVE) -> Tuple[Dict[int, dict], str]:
-    """As judge, plus a short name for the mix taken from the intent, in the same call."""
-    lines = [f"Intent: {intent}", "", "Seed: " + track_line(0, seed, seed_entry)[3:], "", "Tracks:"]
-    lines += [track_line(number, unit, entry) for number, (unit, entry) in enumerate(zip(units, entries), start=1)]
-    payload = ask(intent_prompt(perspective) + "\n\n" + NAME_NOTE, schema(with_name=True), "\n".join(lines))
-    return parse_verdicts(payload, len(units)), parse_name(payload)
+                perspective: str = DEFAULT_PERSPECTIVE, memory=None) -> Tuple[Dict[int, dict], str]:
+    """As judge, plus a short name for the mix taken from the intent, in the same call ("" when every verdict came
+    from memory and nothing was asked)."""
+    return judge_against(intent, seed, seed_entry, units, entries, ask, perspective, with_name=True, memory=memory)

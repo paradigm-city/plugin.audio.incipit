@@ -1613,6 +1613,30 @@ def remember_rejected(state: dict, plugin, result: dict) -> None:
     state["rejected_with"] = settings
 
 
+RADIO_MAX_INTENTS = 40
+
+
+def station_intents(state: dict) -> dict:
+    """What the station's checks stated about the songs they were seeded from, by main.station_intent_key."""
+    return dict(state["intents"]) if isinstance(state.get("intents"), dict) else {}
+
+
+def remember_station_intent(state: dict, plugin, result: dict) -> None:
+    """Keep what a check stated (or judged against) about its song, so a later refill from the same song is judged
+    against it instead of asking again (roadmap I7): a station that stays close describes its picked song once."""
+    intent, song = str(result.get("intent") or "").strip(), str(result.get("reference_song") or "")
+    perspective = str(result.get("perspective") or "")
+    if not (intent and song and perspective):
+        return
+    intents = station_intents(state)
+    key = plugin.station_intent_key(perspective, song)
+    intents.pop(key, None)  # the newest last; the oldest go first
+    intents[key] = intent
+    while len(intents) > RADIO_MAX_INTENTS:
+        intents.pop(next(iter(intents)))
+    state["intents"] = intents
+
+
 def apply_radio_check(state: dict, plugin, position: int) -> None:
     """Apply a finished check to the station it was made for."""
     if radio_check_running() or RADIO_CHECK.get("result") is None:
@@ -1626,6 +1650,7 @@ def apply_radio_check(state: dict, plugin, position: int) -> None:
         return  # the station changed meanwhile
     if result.get("error") is None:  # what it turned down stays out of the station's later checks
         remember_rejected(state, plugin, result)
+        remember_station_intent(state, plugin, result)
     if superseded:
         log_radio("Radio mode: the check's songs were replaced by unchecked ones meanwhile; only its profile is kept.")
         if result.get("reference"):
@@ -1823,6 +1848,7 @@ def refill_radio_queue(state: dict, checked: bool = False) -> int:
         seeds = [str(entry["file"]) for entry in refill_seed_entries(state, True)]
         more_seeds = seeds[seeds.index(str(used_entry["file"])) + 1:] if str(used_entry["file"]) in seeds else []
         seen = list(seen_set | rejected)
+        intents = station_intents(state)  # a copy: the check runs in another thread
         if len(candidates) < len(new_tracks):
             log_radio(f"Radio mode: {len(new_tracks) - len(candidates)} of the sound engine's suggestions were turned down "
                       f"earlier on this station ({len(rejected)} so far); they aren't checked again.")
@@ -1832,7 +1858,7 @@ def refill_radio_queue(state: dict, checked: bool = False) -> int:
             state, "refill",
             lambda check: plugin.check_radio_refill(reference_song, candidates, batch, reference, neighbours,
                                                     check=check, settings=settings, more_seeds=more_seeds, seen=seen,
-                                                    years=years),
+                                                    years=years, intents=intents),
             fallback=fallback, seed=used_seed)
         return 0
 
