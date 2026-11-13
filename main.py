@@ -7098,6 +7098,12 @@ def pick_spread(items: list[str], count: int) -> list[str]:
     return [items[0]] + [rest[round(i * (len(rest) - 1) / max(1, count - 2))] for i in range(count - 1)]
 
 
+def collage_minimum(kind: str) -> int:
+    """The fewest covers a collage of this kind is drawn with (its smallest grid)."""
+    columns, rows = COLLAGES[kind][1][-1]
+    return columns * rows
+
+
 def draw_collage(covers: list[str], kind: str, path: str) -> bool:
     """A grid of covers (square cells, the first cover top left); False with too few covers or without Pillow."""
     try:
@@ -7170,13 +7176,18 @@ def station_collage_paths(state: dict) -> tuple[str, str]:
     return os.path.join(folder, f"{name}.jpg"), os.path.join(folder, f"{name}_fanart.jpg")
 
 
-def make_station_collages(state: dict) -> dict:
-    """Draw the station's collages and remove the older ones (of any station). Returns {"cover", "fanart"}
-    (each "" when there were too few covers)."""
-    covers = cover_files_for_tracks(station_history_files(state))
+def make_station_collages(state: dict, covers: list[str] | None = None) -> dict:
+    """Draw the station's collages (from covers, else the history's) and remove the older ones (of any station).
+    Returns {"cover", "fanart"} (each "" when there were too few covers)."""
+    if covers is None:
+        covers = cover_files_for_tracks(station_history_files(state))
     cover, fanart = station_collage_paths(state)
-    made = {"cover": cover if draw_collage(covers, "cover", cover) else "",
-            "fanart": fanart if draw_collage(covers, "fanart", fanart) else ""}
+    made = {}
+    for kind, path in (("cover", cover), ("fanart", fanart)):
+        redrawn = os.path.exists(path)  # drawn again with more covers: Kodi would show its cached copy
+        made[kind] = path if draw_collage(covers, kind, path) else ""
+        if redrawn:
+            forget_cached_image(path)
     folder = os.path.dirname(cover)
     for name in os.listdir(folder) if os.path.isdir(folder) else []:
         path = os.path.join(folder, name)
@@ -8565,7 +8576,9 @@ def keep_favourite_artwork(station: dict, cover: str, fanart: str) -> bool:
             kept.update({kind: target, f"{kind}_plain": plain_copy})
     if not kept:
         return False
-    remove_favourite_artwork(favourite_id, keep=list(kept.values()))
+    earlier = [str(station.get(key) or "") for kind in ("cover", "fanart") if kind not in kept
+               for key in (kind, f"{kind}_plain")]  # a kind not drawn this time keeps its earlier picture (F56)
+    remove_favourite_artwork(favourite_id, keep=list(kept.values()) + [path for path in earlier if path])
     station.pop("artwork_number", None)  # before the look of the number was kept with it
     station.update(kept, artwork_mark=favourite_number_mark(station["number"]) if isinstance(station.get("number"), int) else "")
     return True

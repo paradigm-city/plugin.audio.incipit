@@ -1695,6 +1695,9 @@ def prune_radio_backlog(state: dict, position: int) -> int:
 
 STATION_ARTWORK_INTERVAL_SECONDS = 20  # a new collage with every song (the playing one top left); not more often
 # than this while songs are skipped quickly
+STATION_ARTWORK_RETRY_SECONDS = 15  # a collage short of covers is drawn again a few times while the song plays, when
+STATION_ARTWORK_RETRIES = 4  # more covers can be read: Kodi caches a cover only once it has shown it, so the playing
+# song's is often readable only some seconds after the song started (F55)
 
 
 def add_to_station_history(state: dict, path: str) -> None:
@@ -1714,15 +1717,37 @@ def refresh_station_artwork(state: dict) -> bool:
     if not state.get("history") and state.get("current_song"):
         add_to_station_history(state, str(state["current_song"]))  # the station's first song
     cover, fanart = plugin.station_collage_paths(state)
-    if state.get("station_fanart") == fanart or state.get("station_artwork_tried") == fanart:
+    if state.get("station_fanart") == fanart:
+        return False
+    now = int(time.time())
+    retry = state.get("station_artwork_tried") == fanart  # drawn for this history, short of covers
+    retries = int(state.get("station_artwork_retries") or 0) if retry else 0
+    if retry and (retries >= STATION_ARTWORK_RETRIES
+                  or now - int(state.get("station_artwork_ts") or 0) < STATION_ARTWORK_RETRY_SECONDS):
         return False
     has_one = bool(state.get("station_fanart")) and int(state.get("station_artwork_station") or 0) == \
         int(state.get("playing_started_ts") or 0)
-    if has_one and time.time() - int(state.get("station_artwork_ts") or 0) < STATION_ARTWORK_INTERVAL_SECONDS:
+    if not retry and has_one and now - int(state.get("station_artwork_ts") or 0) < STATION_ARTWORK_INTERVAL_SECONDS:
         return False
-    made = plugin.make_station_collages(state)
+    tries = retries + 1 if retry else 0
+    more = f"trying again in {STATION_ARTWORK_RETRY_SECONDS} s (Kodi may not have read the playing song's cover yet)" \
+        if tries < STATION_ARTWORK_RETRIES else "no more tries until the next song"
+    songs = plugin.station_history_files(state)
+    covers = plugin.cover_files_for_tracks(songs)
+    if retry and len(covers) <= int(state.get("station_artwork_covers") or 0):
+        state.update(station_artwork_retries=tries, station_artwork_ts=now)
+        log_radio(f"Radio mode: station artwork: still {len(covers)} readable cover(s) of {len(songs)} song(s); "
+                  f"{more}.")
+        return False
+    made = plugin.make_station_collages(state, covers)
     state.update(station_cover=made["cover"], station_fanart=made["fanart"], station_artwork_tried=fanart,
-                 station_artwork_ts=int(time.time()), station_artwork_station=int(state.get("playing_started_ts") or 0))
+                 station_artwork_ts=now, station_artwork_station=int(state.get("playing_started_ts") or 0),
+                 station_artwork_covers=len(covers), station_artwork_retries=tries)
+    if not made["fanart"]:
+        log_radio(f"Radio mode: station artwork: {len(covers)} readable cover(s) of {len(songs)} song(s): "
+                  + ("a cover collage" if made["cover"] else
+                     f"too few for a collage (it needs {plugin.collage_minimum('cover')})")
+                  + f", the wide background needs {plugin.collage_minimum('fanart')}; {more}.")
     if made["fanart"] or made["cover"]:
         state["ui_refresh_requested"] = True
         if state.get("favourite_id"):  # a favourite keeps its station's most recent artwork
