@@ -46,7 +46,7 @@ Not fixed. The planned fix is the library sync: remove a song's sound print when
 
 Found on 2026-11-13 after `feature/ai-requests` was merged into `main` (1f3abd8, merge 332ee48): GitHub's test run failed, and the same four tests fail on 1f3abd8 alone, so the merge itself is not the cause. The code works as intended; the tests still expected what came before: the AI log's cost line now ends with the request's fingerprint, the station's start line names a model and effort for ratings and for checks, Settings > Advanced has four new settings (`mix_assist_rating_model`, `mix_assist_rating_effort`, `mix_assist_check_model`, `mix_assist_check_effort`), and these are read by name from `main.AI_PURPOSE_SETTINGS`, which the check for unused settings didn't see.
 
-Fixed (2026-11-13, `fix/ai-requests-tests`): the four tests follow the change; the check for unused settings counts the settings named in `AI_PURPOSE_SETTINGS`.
+Fixed in 095aca8 (2026-11-13): the four tests follow the change; the check for unused settings counts the settings named in `AI_PURPOSE_SETTINGS`.
 
 **Test:** `test_logs.AiLogTest.test_requests_and_answers_go_to_the_log_under_ai`, `test_packaging.SettingsXmlTest.test_every_declared_setting_is_used`, `test_radio_mode.StationStartDescriptionTest.test_with_ai_mix_assist_its_settings`, `test_settings_layout.LayoutTest.test_the_sound_engine_and_claude_code_are_advanced`
 
