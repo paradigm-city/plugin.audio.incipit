@@ -98,9 +98,16 @@ def summarise(events: Iterable[Event]) -> Dict[str, float]:
                 add(key, float(fields.get(key) or 0))
             if fields.get("seconds") is not None:
                 seconds.append(float(fields["seconds"]))
+            if fields.get("turns"):  # recorded since 2026-11-12 (roadmap I40)
+                add("timed_requests")
+                add("turns", fields["turns"])
+                add("api_seconds", float(fields.get("duration_api_ms") or 0) / 1000)
         elif kind == "cache":
             add("cache_hits", fields.get("hits", 0))
             add("cache_misses", fields.get("misses", 0))
+        elif kind == "verdict_cache":
+            add("verdict_hits", fields.get("hits", 0))
+            add("verdict_misses", fields.get("misses", 0))
         elif kind == "rated":
             add("rated", fields.get("count", 0))
         elif kind == "mix":

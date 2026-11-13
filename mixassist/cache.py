@@ -79,22 +79,35 @@ def kind_of_key(key: str) -> str:
     return "album" if key.startswith(("rg:", "album:")) else "track"
 
 
-class RatingCache:
-    def __init__(self, path: str, version: str = ""):
-        self.path = path
-        self.version = version or prompt_version()
-        directory = os.path.dirname(path)
-        if directory:
-            os.makedirs(directory, exist_ok=True)
-        self.connection = sqlite3.connect(path)
-        self.connection.execute(SCHEMA)
+VERDICT_SCHEMA = """
+CREATE TABLE IF NOT EXISTS verdicts (
+    key TEXT PRIMARY KEY,
+    verdict TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    stored_ts INTEGER NOT NULL
+)
+"""
+
+VERDICT_KEEP_DAYS = 365
+
+
+class VerdictCache:
+    """The intent check's verdicts, kept by a fingerprint of everything the verdict depends on (roadmap I41): the
+    model and effort that judged (tag), the intent check's prompt (with its perspective), the intent's text, the
+    seed's line and the track's line (its description from the rating, year and "little known" mark included). Any
+    change to one of them asks the AI again. Shares the rating cache's database file."""
+
+    def __init__(self, connection: sqlite3.Connection, tag: str):
+        self.connection = connection
+        self.tag = tag
+        self.connection.execute(VERDICT_SCHEMA)
+        self.connection.execute("DELETE FROM verdicts WHERE stored_ts < ?",
+                                (int(time.time()) - VERDICT_KEEP_DAYS * 86400,))
         self.connection.commit()
 
-    def close(self) -> None:
-        self.connection.close()
-
-    def get(self, key: str) -> Optional[dict]:
-        return self.get_many([key]).get(key)
+    def key(self, prompt: str, intent: str, seed_line: str, track_line: str) -> str:
+        return hashlib.sha1("\0".join((self.tag, prompt, intent.strip(), seed_line, track_line)).encode("utf-8")
+                            ).hexdigest()
 
     def get_many(self, keys: Iterable[str]) -> Dict[str, dict]:
         wanted = list(dict.fromkeys(keys))
@@ -102,9 +115,63 @@ class RatingCache:
         for start in range(0, len(wanted), 500):
             chunk = wanted[start:start + 500]
             rows = self.connection.execute(
+                f"SELECT key, verdict, reason FROM verdicts WHERE key IN ({','.join('?' * len(chunk))})", chunk
+            ).fetchall()
+            for key, verdict, reason in rows:
+                found[key] = {"verdict": verdict, "reason": reason}
+        return found
+
+    def put_many(self, verdicts: Dict[str, dict]) -> None:
+        now = int(time.time())
+        self.connection.executemany(
+            "INSERT OR REPLACE INTO verdicts VALUES (?, ?, ?, ?)",
+            [(key, str(value.get("verdict", "")), str(value.get("reason", "")), now)
+             for key, value in verdicts.items() if value.get("verdict")])
+        self.connection.commit()
+
+    def count(self) -> int:
+        return self.connection.execute("SELECT COUNT(*) FROM verdicts").fetchone()[0]
+
+
+class RatingCache:
+    """model: only ratings by this model count (a rating from another model is rated again when needed, so two
+    models' ratings never share one property space); "" takes any. verdict_tag (the checks' model and effort): also
+    keep the intent check's verdicts (self.verdicts); without it self.verdicts is None and nothing is kept."""
+
+    def __init__(self, path: str, version: str = "", model: str = "", verdict_tag: str = ""):
+        self.path = path
+        self.version = version or prompt_version()
+        self.model = model
+        directory = os.path.dirname(path)
+        if directory:
+            os.makedirs(directory, exist_ok=True)
+        self.connection = sqlite3.connect(path, timeout=10)
+        self.connection.execute(SCHEMA)
+        self.connection.commit()
+        self.verdicts = VerdictCache(self.connection, verdict_tag) if verdict_tag else None
+
+    def close(self) -> None:
+        self.connection.close()
+
+    def where(self) -> tuple:
+        """The condition for entries that count: the current prompt (and model, when one is set)."""
+        if self.model:
+            return "prompt_version = ? AND model = ?", [self.version, self.model]
+        return "prompt_version = ?", [self.version]
+
+    def get(self, key: str) -> Optional[dict]:
+        return self.get_many([key]).get(key)
+
+    def get_many(self, keys: Iterable[str]) -> Dict[str, dict]:
+        wanted = list(dict.fromkeys(keys))
+        found: Dict[str, dict] = {}
+        condition, values = self.where()
+        for start in range(0, len(wanted), 500):
+            chunk = wanted[start:start + 500]
+            rows = self.connection.execute(
                 f"SELECT key, vector, familiarity, description FROM units "
-                f"WHERE prompt_version = ? AND key IN ({','.join('?' * len(chunk))})",
-                [self.version] + chunk,
+                f"WHERE {condition} AND key IN ({','.join('?' * len(chunk))})",
+                values + chunk,
             ).fetchall()
             for key, vector, familiarity, description in rows:
                 entry = json.loads(vector)
@@ -123,14 +190,15 @@ class RatingCache:
             self.connection.commit()
 
     def library(self, kind: str = "album") -> List[dict]:
-        """All vectors of one kind rated with the current prompt: the library reference."""
+        """All vectors of one kind rated with the current prompt (and model): the library reference."""
+        condition, values = self.where()
         rows = self.connection.execute(
-            "SELECT vector FROM units WHERE prompt_version = ? AND kind = ?", (self.version, kind)).fetchall()
+            f"SELECT vector FROM units WHERE {condition} AND kind = ?", values + [kind]).fetchall()
         return [json.loads(vector) for (vector,) in rows]
 
     def count(self) -> int:
-        return self.connection.execute(
-            "SELECT COUNT(*) FROM units WHERE prompt_version = ?", (self.version,)).fetchone()[0]
+        condition, values = self.where()
+        return self.connection.execute(f"SELECT COUNT(*) FROM units WHERE {condition}", values).fetchone()[0]
 
     def import_pilot(self, path: str) -> int:
         """Take over the pilot's JSON cache (tools/style_pilot/data/rating_cache.json): entries rated with the

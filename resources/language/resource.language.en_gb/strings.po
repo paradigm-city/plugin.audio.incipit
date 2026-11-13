@@ -169,7 +169,7 @@ msgid "Show statistics"
 msgstr ""
 
 msgctxt "#30427"
-msgid "What the AI costs and does: requests to the AI, tokens, the rating cache's hit rate, what it changed in mixes and stations, and how often you undid it. Today, the last 7 and 30 days, all time."
+msgid "What the AI costs and does: requests to the AI, tokens and times, how often ratings and verdicts were reused, what it changed in mixes and stations, and how often you undid it. Today, the last 7 and 30 days, all time."
 msgstr ""
 
 msgctxt "#30428"
@@ -210,6 +210,62 @@ msgstr ""
 
 msgctxt "#30437"
 msgid "Off"
+msgstr ""
+
+msgctxt "#30438"
+msgid "Model for ratings"
+msgstr ""
+
+msgctxt "#30439"
+msgid "Which Claude model rates your music on the style scales. Opus 5.5 is the tested default. Sonnet 5.5 is faster and uses less of your subscription, Haiku 5.5 even more so; both are untested here and may know less music. Ratings by one model are never mixed with another's: after a change, music is rated anew as mixes need it."
+msgstr ""
+
+msgctxt "#30440"
+msgid "Opus 5.5"
+msgstr ""
+
+msgctxt "#30441"
+msgid "Sonnet 5.5"
+msgstr ""
+
+msgctxt "#30442"
+msgid "Haiku 5.5"
+msgstr ""
+
+msgctxt "#30443"
+msgid "Effort for ratings"
+msgstr ""
+
+msgctxt "#30444"
+msgid "How long the model thinks before it rates. Medium is the tested default; Low is faster and uses less of your subscription, High takes longer and may rate little-known music more carefully."
+msgstr ""
+
+msgctxt "#30445"
+msgid "Low"
+msgstr ""
+
+msgctxt "#30446"
+msgid "Medium"
+msgstr ""
+
+msgctxt "#30447"
+msgid "High"
+msgstr ""
+
+msgctxt "#30448"
+msgid "Model for checks"
+msgstr ""
+
+msgctxt "#30449"
+msgid "Which Claude model works out what a mix or station is about and judges whether songs fit it. Opus 5.5 is the tested default. Sonnet 5.5 is faster and uses less of your subscription, Haiku 5.5 even more so; both are untested here and may judge more coarsely. Verdicts are remembered per model, so a change doesn't reuse the other model's."
+msgstr ""
+
+msgctxt "#30450"
+msgid "Effort for checks"
+msgstr ""
+
+msgctxt "#30451"
+msgid "How long the model thinks before it judges. Medium is the tested default; Low answers faster and uses less of your subscription, but may judge more coarsely; High takes longer and may judge borderline songs more carefully."
 msgstr ""
 
 msgctxt "#30600"

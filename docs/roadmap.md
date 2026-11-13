@@ -92,6 +92,10 @@ From a conversation, 2026-10-30. A station that stays close seeds every refill f
 asks the AI again what that song is about. The description from the start (or the favourite's saved one, F44) could
 be reused for refills from the same seed, which saves one AI request per refill. Not changed so far: the new
 description per refill is also what lets a drifting station move.
+2026-11-12, from the look at caching AI requests (I40–I43): a refill still needs a call to judge its candidates, so
+reuse saves the description part of the answer (a few hundred of its ~1,500 output tokens), not the request; the
+judging call that would take its place is stricter (I18), so the two go together. A reused description is also what
+lets I41's verdicts be reused.
 
 #### I8 · Refills without checks keep the artist rule against the queue
 
@@ -270,6 +274,55 @@ Built on 2026-11-10 (`feature/epoch-intent`): F51 (a compilation song's own year
 listening; Epoch for mixes' searches; later songs with a reference; MusicBrainz's dates for songs the library can't
 date; then I37. The listener liked the first station (2026-11-10); uncertain years are now taken as borderline,
 recordings matched by sound, and F52 is fixed.
+
+### AI requests
+
+From a conversation on 2026-11-12 about caching AI requests for speed and fewer tokens. What the statistics showed
+(`usage.db`, 1,649 requests from 2026-10-20 to 2026-11-10, all through the CLI on Opus 5.5 at medium effort): rating
+1,015 requests at 10.2 s each, describing 350 at 16.7 s, judging 277 at 16.8 s; 5.8 hours of waiting and $68 of
+API-equivalent cost in three weeks. Claude's prompt cache already works: the system prompts are read from it (input
+billed fresh: 2 tokens per request), and those reads are about 3 % of the cost. The rest is the answer (55–67 %; for
+the checks perhaps half of it thinking) and the message written to the cache (30–40 %; new data each time, written at
+1.25 × because the CLI places the cache marker itself). About 640 tokens per request are written anew even when the
+same request is sent twice (the CLI's own per-call text). The rating cache hits 64 % (7,981 of 12,519 units). A trial
+on 2026-11-12 put the CLI's own start-up at ~1.5 s per request. So the gains lie in asking less (reusing answers) and
+in shorter answers, not in Claude's prompt cache. Not possible on the subscription: the Batch API (half price, but
+API key only, I24); the CLI has no option for a 1-hour cache lifetime (and only 11 % of rating requests found the
+cache cold).
+
+#### I40 · Each request's turns and timings in the statistics
+
+Record from the CLI's answer `num_turns`, `duration_ms` and `duration_api_ms` with each `ai_call` event, and a
+fingerprint of the request (system prompt and message) and of each judged track (intent, perspective, track). Then a
+week's use shows how often a verdict cache (I41) would hit and where the time goes. 43 % of rating requests read
+4,953 tokens from the cache instead of 2,649, which looks like a second turn inside one request (the structured
+answer handed back); `num_turns` would tell, and a second turn costs time and tokens. First step before I41–I43.
+
+#### I41 · A verdict cache
+
+The intent check's verdicts kept by (prompt version with perspective, the intent's text, the seed, the track), like
+the rating cache keeps ratings. Hits where the intent is word for word the same: a favourite's saved description,
+a mix tidied up again, refills that reuse the station's description (I7); a hit skips the track in the request, a
+batch of hits skips the request. Only for the intent check: the seed-intent check judges a track with the rest of the
+mix as context. How often it would hit is unknown; I40 measures it first.
+
+#### I42 · A leaner CLI start
+
+Start the CLI with `--strict-mcp-config --setting-sources "" --disable-slash-commands` (or `--safe-mode`), so it
+loads no MCP servers, settings, plugins or skills of the listener's Claude Code set-up, which the checks never use. In
+a trial on 2026-11-12 (six one-word requests, subscription) it saved ~0.3 s of the ~1.5 s start-up per request and
+all requests worked on the subscription. Small, but it also keeps a listener's own Claude Code set-up from changing the add-on's
+requests.
+
+#### I43 · Effort and model per purpose
+
+The largest speed lever, a trade against quality: most of a request's time is the answer being written. Candidates:
+rating at low effort (its answer is nearly all the ratings themselves, so little to gain) and the checks at low effort
+(their answers look about half thinking), or rating on Sonnet 5.5 or Haiku 5.5. Needs a listening comparison on the
+pilot's mixes first. A rating model change must go into the rating cache's version, or ratings from two models end up
+in one property space. Smaller related tweaks: the name note in the message instead of the system prompt, so
+describing with and without a name share a cached prompt; larger rating batches (fewer fixed costs per album, but
+each request waits longer).
 
 ### Screen
 

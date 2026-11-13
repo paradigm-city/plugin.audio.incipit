@@ -10,6 +10,7 @@ Tested from Kodi 21's Python on Windows (docs/concept_ai_mix_assist.md, "Running
 from __future__ import annotations
 
 import glob
+import hashlib
 import itertools
 import json
 import os
@@ -30,6 +31,18 @@ API_CREDENTIALS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
 DEFAULT_MODEL = "claude-opus-5-5"
 DEFAULT_EFFORT = "medium"
 DEFAULT_TIMEOUT = 600
+
+# The choices the listener has for ratings and for the checks (Settings > Advanced > Claude Code), in the settings'
+# order: quality against speed and the subscription's usage. The first model and the middle effort are the tested
+# defaults.
+MODELS = ("claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5")
+EFFORTS = ("low", "medium", "high")
+
+# Parts of the listener's own Claude Code set-up that the add-on's requests never use; leaving them out makes the
+# CLI start faster (~0.3 s of ~1.5 s, 2026-11-12) and keeps that set-up from changing the requests: no MCP servers,
+# no settings files (user, project, local), no skills or slash commands. Authentication is not a setting: the
+# subscription's login still applies.
+LEAN_START = ["--strict-mcp-config", "--setting-sources", "", "--disable-slash-commands"]
 
 # Why a call failed, for messages to the listener.
 NOT_FOUND = "not_found"
@@ -114,14 +127,19 @@ def run_command(cli: str, args: Sequence[str], stdin_text: str = "", timeout: in
 
 def structured_command(system_prompt: str, schema: dict, model: str = DEFAULT_MODEL,
                        effort: str = DEFAULT_EFFORT) -> List[str]:
-    """Print mode with a replaced system prompt, structured output and no tools.
+    """Print mode with a replaced system prompt, structured output, no tools and a lean start (LEAN_START).
 
     Never --bare: it accepts only API-key authentication, so it would bypass the subscription."""
     return [
         "-p", "--output-format", "json", "--model", model, "--effort", effort,
         "--system-prompt", system_prompt, "--json-schema", json.dumps(schema),
         "--tools", "", "--no-session-persistence",
-    ]
+    ] + LEAN_START
+
+
+def fingerprint(*parts: str) -> str:
+    """A short fingerprint of a request's text: the same request gets the same one (the statistics count repeats)."""
+    return hashlib.sha1("\0".join(parts).encode("utf-8")).hexdigest()[:12]
 
 
 def classify_failure(text: str, status: Optional[int] = None) -> str:
@@ -154,7 +172,8 @@ def parse_structured(stdout: str, stderr: str = "") -> dict:
 
 def call_usage(stdout: str) -> dict:
     """What a print-mode call reports about itself: tokens, the equivalent API cost (not billed on a
-    subscription) and Claude's own time; {} when the answer isn't readable."""
+    subscription), how many turns it took (a second turn inside one request costs time and tokens) and its times:
+    the CLI's whole run and the time spent waiting for Claude's servers; {} when the answer isn't readable."""
     try:
         payload = json.loads(stdout)
     except ValueError:
@@ -162,13 +181,17 @@ def call_usage(stdout: str) -> dict:
     if not isinstance(payload, dict):
         return {}
     tokens = payload.get("usage") if isinstance(payload.get("usage"), dict) else {}
-    return {
+    result = {
         "input_tokens": int(tokens.get("input_tokens") or 0),
         "output_tokens": int(tokens.get("output_tokens") or 0),
         "cache_read_tokens": int(tokens.get("cache_read_input_tokens") or 0),
         "cache_write_tokens": int(tokens.get("cache_creation_input_tokens") or 0),
         "cost_usd": float(payload.get("total_cost_usd") or 0),
     }
+    for key in ("num_turns", "duration_ms", "duration_api_ms"):
+        if isinstance(payload.get(key), (int, float)):
+            result[key.replace("num_", "")] = int(payload[key])
+    return result
 
 
 def ask(cli: str, system_prompt: str, schema: dict, message: str, model: str = DEFAULT_MODEL,
@@ -178,7 +201,8 @@ def ask(cli: str, system_prompt: str, schema: dict, message: str, model: str = D
     if not cli:
         raise ClaudeError(NOT_FOUND, "The Claude CLI was not found.")
     started = time.monotonic()
-    report = {"system_prompt": system_prompt, "model": model, "ok": False}
+    report = {"system_prompt": system_prompt, "model": model, "effort": effort, "ok": False,
+              "request": fingerprint(system_prompt, json.dumps(schema, sort_keys=True), message)}
     request = next(REQUEST_NUMBERS)  # pairs a request with its answer in the log
     if trace.active():  # only then: prompt_label() remembers which prompts the log has in full
         trace.say(f"AI request {request} ({model}, effort {effort}), {trace.prompt_label(system_prompt)}\n"
@@ -200,9 +224,14 @@ def ask(cli: str, system_prompt: str, schema: dict, message: str, model: str = D
         raise
     finally:
         report["seconds"] = round(time.monotonic() - started, 1)
-        trace.say(f"AI request {request}: {report['seconds']} s, tokens in {report.get('input_tokens', 0)} "
+        timing = ""
+        if "duration_api_ms" in report:
+            timing = (f" ({report['duration_api_ms'] / 1000:.1f} s waiting for Claude's servers, "
+                      f"{report.get('turns', 1)} turn(s))")
+        trace.say(f"AI request {request}: {report['seconds']} s{timing}, tokens in {report.get('input_tokens', 0)} "
                   f"(cache read {report.get('cache_read_tokens', 0)}, written {report.get('cache_write_tokens', 0)}), "
-                  f"out {report.get('output_tokens', 0)}, API-equivalent cost ${report.get('cost_usd', 0):.4f}.")
+                  f"out {report.get('output_tokens', 0)}, API-equivalent cost ${report.get('cost_usd', 0):.4f}; "
+                  f"fingerprint {report['request']}.")
         usage.emit("ai_call", **report)
 
 
