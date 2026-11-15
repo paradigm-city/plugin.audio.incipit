@@ -1,0 +1,6 @@
+figs/
+work/
+catalogue.json
+facts.json
+figdata.npz
+*.pdf
