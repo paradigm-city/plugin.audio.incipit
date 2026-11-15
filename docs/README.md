@@ -8,6 +8,7 @@ Feature baseline: **1.0.87**
 
 ## Documents
 
+- `Incipit_Documentation.docx`: **the integrated documentation** (2026-11-15, version 1.0.102): goals and concepts, the sound engine's signal processing and search, architecture, design down to each function, databases, a strategy for software reviews, open issues and outlook. Made by `tools/documentation/` (see its README)
 - `concept_incipit.md`: **how mixes are made and kept now**: Source (the sound engine), Character, Intent
 - `concept_overview.md`
 - `concept_discovery_mode.md`

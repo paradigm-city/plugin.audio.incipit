@@ -376,6 +376,28 @@ From a conversation, 2026-10-31. addon.xml's description still ends with "Former
 mixes until 2026." (Kodi shows it on the add-on's page). The README's version notes 1.0.88 to 1.0.101 repeat
 CHANGELOG.md and are partly out of date; a link to the changelog could replace them.
 
+#### I45 · main.py split into modules
+
+From writing the integrated documentation, 2026-11-15 (`docs/Incipit_Documentation.docx`, chapters 15 and 23).
+`main.py` has 9,672 lines and 544 functions: menus, mixes, Radio, Discovery, repair, metadata, artwork, information
+pages and the checks' plumbing in one module, which makes navigation and review hard. Its areas (the section comments,
+listed in chapter 15 of the documentation) are natural seams, e.g. saved mixes and repair, metadata cache, Radio
+(plugin side), favourites, information window. Kodi only needs `main.py` as the entry point; the service imports it
+and would import the new modules instead. A dispatch table for `router()` (434 lines) would come with it.
+
+#### I46 · One module for the helpers shared by the plugin and the service
+
+From writing the integrated documentation, 2026-11-15. 49 functions exist under the same name in `main.py` and
+`service.py` (settings, JSON files, JSON-RPC, metadata cache, path keys); `tests/test_shared_helpers.py` keeps the
+copies alike. A shared module (Kodi's Python, no side effects on import) would remove the copies.
+
+#### I47 · Docstrings for main.py and service.py
+
+From writing the integrated documentation, 2026-11-15. About 37 % of `main.py`'s and 25 % of `service.py`'s
+functions have a docstring (the packages: about half, the important functions all). The documentation's method
+catalogue (Appendix A) describes the others from their names only, marked ◦. Docstrings for the longer and
+most-called undocumented functions first (chapter 22 of the documentation lists them).
+
 ## Parked
 
 ### I15 · The worker processes watch their parent
