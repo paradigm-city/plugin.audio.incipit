@@ -18,7 +18,7 @@ CHECK_RADIO_START = main.check_radio_start
 class RadioMixAssistTest(RadioBase):
     def setUp(self):
         super().setUp()
-        service.RADIO_CHECK.update(thread=None, station=0, kind="", result=None, fallback=[], seed="")
+        service.RADIO_CHECK.update(thread=None, station=0, kind="", result=None, fallback=[], seed="", stop=None)
         self.addCleanup(service.RADIO_CHECK.update, thread=None, result=None)
         patcher = mock.patch.object(main, "mix_assist_available", return_value=True)
         patcher.start()
@@ -404,6 +404,65 @@ class RadioMixAssistTest(RadioBase):
         main.save_radio_state(dict(self.radio(), playing_started_ts=self.radio()["playing_started_ts"] + 1))
         self.tick()
         self.assertEqual(self.files(), queue)
+
+    def held_refill_check(self):
+        """The refill check waits (until release is set), then takes its next step; steps records whether it went
+        on after that."""
+        kodi.settings["log_radio"] = "true"
+        reached, release, steps = threading.Event(), threading.Event(), []
+
+        def held(*args, check=None, **kwargs):
+            reached.set()
+            release.wait(5)
+            check()  # its next step
+            steps.append("went on")
+            return self.choose_every_other(*args, check=check, **kwargs)
+
+        self.refill_check.side_effect = held
+        self.started_station()  # the refill check now runs (and waits)
+        self.assertTrue(reached.wait(5))
+        return release, steps
+
+    def stopping_lines(self):
+        return [message for message, _level in kodi.logs if "stopping it at its next step" in message]
+
+    def test_a_check_for_an_earlier_station_stops_at_its_next_step(self):
+        release, steps = self.held_refill_check()
+        before = self.files()
+        main.save_radio_state(dict(self.radio(), playing_started_ts=self.radio()["playing_started_ts"] + 1))
+        self.tick()  # another station plays now
+        self.assertTrue(service.RADIO_CHECK["stop"].is_set())
+        (line,) = self.stopping_lines()
+        self.assertIn("was made for an earlier station", line)
+        release.set()
+        self.finish_check()
+        self.assertEqual((steps, service.RADIO_CHECK["result"]), ([], {"stopped": True}))
+        self.tick()  # dropped; the new station's own refill check starts
+        self.assertTrue(any("made for an earlier station; its result is dropped" in message
+                            for message, _level in kodi.logs))
+        self.assertEqual(self.files(), before)
+        self.assertEqual(self.refill_check.call_count, 2)
+        self.assertTrue(any("refill check stopped after" in message for message, _level in kodi.logs))
+        self.assertEqual(len(self.stopping_lines()), 1)  # asked once
+
+    def test_a_check_stops_when_the_radio_ends(self):
+        release, steps = self.held_refill_check()
+        main.save_radio_state(dict(self.radio(), phase="off"))
+        self.tick()
+        (line,) = self.stopping_lines()
+        self.assertIn("a station that has ended (radio off)", line)
+        release.set()
+        self.finish_check()
+        self.assertEqual((steps, service.RADIO_CHECK["result"]), ([], {"stopped": True}))
+
+    def test_the_playing_stations_check_goes_on(self):
+        release, steps = self.held_refill_check()
+        self.tick()
+        self.assertFalse(service.RADIO_CHECK["stop"].is_set())
+        release.set()
+        self.finish_check()
+        self.assertEqual(steps, ["went on"])
+        self.assertEqual(self.stopping_lines(), [])
 
     def test_station_strictness_and_drift_reach_the_check(self):
         kodi.settings.update({"mix_assist_station_strictness": "4", "mix_assist_radio_drift": "2",
