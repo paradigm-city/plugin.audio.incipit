@@ -8,7 +8,7 @@ How this file is kept up to date:
 - A fixed finding moves to **Resolved**, keeping its number, with the commit that fixed it.
 - A finding reproduced by a test lists that test under **Test**. Such tests are marked `@unittest.expectedFailure`. `tests/test_findings.py` checks that every one of these tests is listed under **Open**, and that every test listed under **Open** still fails. When a fix makes such a test pass, CI fails until the decorator is removed and the finding is moved to **Resolved**.
 
-Last reviewed: 2026-10-31
+Last reviewed: 2026-11-20
 
 ## Open
 
@@ -41,6 +41,14 @@ Found on 2026-10-28 while planning how to keep the sound prints in step with Kod
 Not fixed. The planned fix is the library sync: remove a song's sound print when Kodi removes the song, prune at startup, and leave out stored songs that Kodi doesn't list when searching.
 
 ## Resolved
+
+### F58 · A new station's checks waited for the old station's check
+
+Found on 2026-11-20 by the listener: after a station seeded from "Mr. Bloe - Groovin' With Mr.Bloe" had played a while, a new station was started from another song in the playlist (Dunkelziffer - Keine Python), and the log went on with "Checks against the seed Mr. Bloe ...". The old station's seed was not active again: its refill check had started 30 s before the new station (22:32:08) and ran on in the background for 128 s, asking the AI in 4 batches, although its result was then dropped ("the check was made for an earlier station"). Only one check runs at a time (`service.RADIO_CHECK`), so the new station's start check began only after it, 100 s late (22:34:16). By then the first song was about to end, so the start check left the next song alone (`RADIO_START_KEEP_NEXT_SECONDS`): Donna Summer's "Love to Love You Baby", which it had found not to fit ("1975 commercial disco"), played anyway. The same happened when the radio ended during a check: it ran to its end.
+
+Fixed in 8e70358 (2026-11-20): each tick asks a running check whose station has gone (another station plays, or the radio is off) to stop at its next step (`service.stop_stale_radio_check`), and logs that once; the AI request under way finishes first, so the wait is one request (about 10 to 20 s) instead of the whole check. The stopped check is logged as "check stopped after N s" and its result dropped as before.
+
+**Test:** `test_radio_mix_assist.RadioMixAssistTest.test_a_check_for_an_earlier_station_stops_at_its_next_step`, `test_radio_mix_assist.RadioMixAssistTest.test_a_check_stops_when_the_radio_ends`, `test_radio_mix_assist.RadioMixAssistTest.test_the_playing_stations_check_goes_on`
 
 ### F57 · Four tests failed after the AI-requests change
 

@@ -1190,9 +1190,14 @@ RADIO_CHECKED_THRESHOLD = 3      # with AI Mix Assist: top up when fewer songs r
 RADIO_CHECK_SIZE = 75            # candidates per checked refill (MusicIP's maximum was 75)
 RADIO_START_KEEP_NEXT_SECONDS = 30  # the start check leaves the next song alone when the playing one ends sooner
 
-# One AI Mix Assist check at a time, in a background thread; the radio tick applies its result.
+# One AI Mix Assist check at a time, in a background thread; the radio tick applies its result. "stop" (an Event)
+# asks it to end at its next step, when the station it was made for has gone (stop_stale_radio_check).
 RADIO_CHECK: dict = {"thread": None, "station": 0, "kind": "", "result": None, "fallback": [], "seed": "",
-                     "superseded": False}
+                     "superseded": False, "stop": None}
+
+
+class RadioCheckStopped(Exception):
+    """A check was stopped: the station it was made for has gone."""
 
 
 def radio_state_path() -> str:
@@ -1297,6 +1302,7 @@ def follow_playlist_edits(state: dict) -> str:
 def run_radio_tick() -> None:
     state = load_radio_state()
     phase = str(state.get("phase") or "off")
+    stop_stale_radio_check(state)
 
     if phase == "seeking":
         if int(time.time()) - int(state.get("tuning_started_ts") or 0) < RADIO_STOP_GRACE_SECONDS:
@@ -1452,23 +1458,46 @@ def radio_check_busy() -> bool:
 def start_radio_check(state: dict, kind: str, job, fallback=(), seed: str = "") -> None:
     """Run job() (an AI Mix Assist check) in a background thread; apply_radio_check() takes the result."""
     monitor = xbmc.Monitor()
+    stop = threading.Event()
 
     def check() -> None:
         if monitor.abortRequested():
             raise RuntimeError("Kodi is shutting down.")
+        if stop.is_set():
+            raise RadioCheckStopped()
 
     def run() -> None:
         try:
             RADIO_CHECK["result"] = job(check)
+        except RadioCheckStopped:
+            RADIO_CHECK["result"] = {"stopped": True}
         except Exception as exc:
             RADIO_CHECK["result"] = {"error": exc}
 
     RADIO_CHECK.update(station=radio_station_id(state), kind=kind, result=None, fallback=list(fallback), seed=seed,
-                       superseded=False, started=time.time())
+                       superseded=False, started=time.time(), stop=stop)
     RADIO_CHECK["thread"] = threading.Thread(target=run, daemon=True)
     RADIO_CHECK["thread"].start()
     log_radio(f"Radio mode: {kind} check started in the background (seed {seed!r}, {len(fallback)} unchecked song(s) "
               f"in reserve).")
+
+
+def stop_stale_radio_check(state: dict) -> None:
+    """A running check whose station has gone (a new station started, or the radio ended) is asked to stop at its
+    next step, so it spends no more AI requests and the new station's start check need not wait for it. The AI
+    request under way finishes first; its result is then dropped (apply_radio_check)."""
+    stop = RADIO_CHECK.get("stop")
+    if not radio_check_running() or stop is None or stop.is_set():
+        return
+    phase = str(state.get("phase") or "off")
+    if phase == "playing" and RADIO_CHECK.get("station") == radio_station_id(state):
+        return
+    stop.set()
+    seconds = time.time() - float(RADIO_CHECK.get("started") or time.time())
+    log_radio(f"Radio mode: the {RADIO_CHECK.get('kind')} check for {RADIO_CHECK.get('seed')!r} (running for "
+              f"{seconds:.0f} s) was made for "
+              + ("an earlier station" if phase == "playing" else f"a station that has ended (radio {phase})")
+              + "; stopping it at its next step (the AI request under way finishes first).")
 
 
 def start_radio_start_check(state: dict, plugin) -> None:
@@ -1568,6 +1597,9 @@ def keep_radio_from_running_dry(state: dict, plugin, position: int) -> None:
 
 def log_radio_check_result(kind: str, result: dict) -> None:
     seconds = time.time() - float(RADIO_CHECK.get("started") or time.time())
+    if result.get("stopped"):
+        log_radio(f"Radio mode: {kind} check stopped after {seconds:.0f} s.")
+        return
     if result.get("error") is not None:
         log_radio(f"Radio mode: {kind} check failed after {seconds:.0f} s.")
         return
